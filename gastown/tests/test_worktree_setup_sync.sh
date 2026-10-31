@@ -110,6 +110,129 @@ test_sync_still_works_with_configured_tracking() {
         fail "sync should have kept the worktree on $branch"
 }
 
+# Dirty work must be available to the provider after pre_start, including a
+# marker-only tree. Never "recover" it by stashing, discarding, or hiding it.
+test_dirty_worktree_resumes_unchanged() {
+    local base="$1" kind="$2"
+    local rig="$base/rig" wt="$base/wt" branch before_head excludes attempt
+    new_upstream_and_rig "$base"
+    printf 'original\n' > "$rig/tracked.txt"
+    git_c -C "$rig" add tracked.txt
+    git_c -C "$rig" commit -qm 'tracked fixture'
+    git_c -C "$rig" push -q origin main
+    sh "$SCRIPT" "$rig" "$wt" recovery
+    branch=$(git_c -C "$wt" branch --show-current)
+
+    # A pre-existing stash belongs to the user, not to startup recovery.
+    printf 'stashed work\n' > "$wt/tracked.txt"
+    git_c -C "$wt" stash push -qm 'preserved user stash'
+    case "$kind" in
+        tracked)
+            printf 'staged work\n' > "$wt/tracked.txt"
+            git_c -C "$wt" add tracked.txt
+            printf 'unstaged work\n' >> "$wt/tracked.txt"
+            ;;
+        untracked) printf 'untracked work\n' > "$wt/untracked.txt" ;;
+        marker) printf 'active cleanup marker\n' > "$wt/.worktree-stale" ;;
+        named-unpushed)
+            git_c -C "$wt" checkout -qb preserved-work
+            git_c -C "$wt" commit -q --allow-empty -m 'unpushed work'
+            printf 'unfinished work\n' > "$wt/tracked.txt"
+            ;;
+        detached-unreachable)
+            git_c -C "$wt" checkout -q --detach
+            git_c -C "$wt" commit -q --allow-empty -m 'detached work'
+            printf 'unfinished detached work\n' > "$wt/untracked.txt"
+            ;;
+        *) fail "unknown dirty fixture: $kind" ;;
+    esac
+
+    # A newer upstream exists; resuming dirty work must not fetch or move refs.
+    git_c -C "$rig" commit -q --allow-empty -m 'new upstream'
+    git_c -C "$rig" push -q origin main
+    before_head=$(git_c -C "$wt" rev-parse HEAD)
+    git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.before" || :
+    git_c -C "$rig" for-each-ref > "$base/refs.before"
+    git_c -C "$wt" stash list --format='%gd %H %gs' > "$base/stash.before"
+    git_c -C "$wt" status --porcelain=v1 -z > "$base/status.before"
+    git_c -C "$wt" diff --binary > "$base/work.before"
+    git_c -C "$wt" diff --cached --binary > "$base/index.before"
+    cp "$wt/tracked.txt" "$base/tracked.before"
+    if [ -f "$wt/untracked.txt" ]; then
+        cp "$wt/untracked.txt" "$base/untracked.before"
+    fi
+    if [ -f "$wt/.worktree-stale" ]; then
+        cp "$wt/.worktree-stale" "$base/marker.before"
+    fi
+    excludes=$(git_c -C "$wt" rev-parse --git-path info/exclude)
+    printf '\n# preserved user exclude\nuser-local-only/\n' >> "$excludes"
+    cp "$excludes" "$base/exclude.before"
+
+    # A second invocation models the restart loop; both must reach the
+    # provider with the same preserved work, not just report exit status zero.
+    for attempt in 1 2; do
+        if sh "$SCRIPT" "$rig" "$wt" recovery --sync > "$base/sync-$attempt.log" 2>&1; then
+            printf 'provider resumed\n' > "$base/provider-$attempt"
+        else
+            cat "$base/sync-$attempt.log" >&2
+            fail "$kind pre_start blocked the provider on attempt $attempt"
+        fi
+        [ -s "$base/provider-$attempt" ] || fail "$kind provider did not resume"
+        grep -q 'left as-is: dirty' "$base/sync-$attempt.log" ||
+            fail "$kind startup must explain that sync was skipped"
+        [ "$(git_c -C "$wt" rev-parse HEAD)" = "$before_head" ] || fail "$kind HEAD moved"
+        git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.after" || :
+        git_c -C "$rig" for-each-ref > "$base/refs.after"
+        git_c -C "$wt" stash list --format='%gd %H %gs' > "$base/stash.after"
+        git_c -C "$wt" status --porcelain=v1 -z > "$base/status.after"
+        git_c -C "$wt" diff --binary > "$base/work.after"
+        git_c -C "$wt" diff --cached --binary > "$base/index.after"
+        for state in branch refs stash status work index; do
+            cmp "$base/$state.before" "$base/$state.after" || fail "$kind changed $state"
+        done
+        cmp "$base/tracked.before" "$wt/tracked.txt" || fail "$kind changed tracked bytes"
+        cmp "$base/exclude.before" "$excludes" || fail "$kind changed shared excludes"
+        if [ -f "$base/untracked.before" ]; then
+            cmp "$base/untracked.before" "$wt/untracked.txt" || fail "$kind changed untracked bytes"
+        fi
+        if [ -f "$base/marker.before" ]; then
+            cmp "$base/marker.before" "$wt/.worktree-stale" || fail "$kind removed or changed marker"
+        fi
+    done
+}
+
+test_clean_unsafe_sync_fails_without_moving_work() {
+    local base="$1" kind="$2"
+    local rig="$base/rig" wt="$base/wt" before_head excludes
+    new_upstream_and_rig "$base"
+    sh "$SCRIPT" "$rig" "$wt" unsafe
+    case "$kind" in
+        stable-unpushed) git_c -C "$wt" commit -q --allow-empty -m 'unique stable work' ;;
+        detached-unreachable)
+            git_c -C "$wt" checkout -q --detach
+            git_c -C "$wt" commit -q --allow-empty -m 'unique detached work'
+            ;;
+        no-origin) git_c -C "$rig" remote remove origin ;;
+        failed-fetch) git_c -C "$rig" remote set-url origin "$base/missing-origin.git" ;;
+        *) fail "unknown unsafe fixture: $kind" ;;
+    esac
+    before_head=$(git_c -C "$wt" rev-parse HEAD)
+    git_c -C "$rig" for-each-ref > "$base/refs.before"
+    git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.before" || :
+    excludes=$(git_c -C "$wt" rev-parse --git-path info/exclude)
+    cp "$excludes" "$base/exclude.before"
+    if sh "$SCRIPT" "$rig" "$wt" unsafe --sync > "$base/sync.log" 2>&1; then
+        fail "$kind clean worktree must retain its fail-closed sync contract"
+    fi
+    [ "$(git_c -C "$wt" rev-parse HEAD)" = "$before_head" ] || fail "$kind HEAD moved"
+    git_c -C "$rig" for-each-ref > "$base/refs.after"
+    git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.after" || :
+    cmp "$base/refs.before" "$base/refs.after" || fail "$kind moved refs"
+    cmp "$base/branch.before" "$base/branch.after" || fail "$kind switched branch"
+    cmp "$base/exclude.before" "$excludes" || fail "$kind changed excludes"
+    [ -z "$(git_c -C "$wt" status --porcelain)" ] || fail "$kind tree changed"
+}
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 new_upstream_and_rig "$tmp"
@@ -117,4 +240,30 @@ new_upstream_and_rig "$tmp"
 test_sync_pulls_when_branch_lacks_origin_tracking "$tmp"
 test_sync_still_works_with_configured_tracking "$tmp"
 
+failures=0
+for kind in tracked untracked marker named-unpushed detached-unreachable; do
+    mkdir "$tmp/dirty-$kind"
+    set +e
+    (set -e; test_dirty_worktree_resumes_unchanged "$tmp/dirty-$kind" "$kind")
+    result=$?
+    set -e
+    if [ "$result" -eq 0 ]; then
+        echo "PASS: dirty $kind recovery preserves work"
+    else
+        failures=$((failures + 1))
+    fi
+done
+for kind in stable-unpushed detached-unreachable no-origin failed-fetch; do
+    mkdir "$tmp/unsafe-$kind"
+    set +e
+    (set -e; test_clean_unsafe_sync_fails_without_moving_work "$tmp/unsafe-$kind" "$kind")
+    result=$?
+    set -e
+    if [ "$result" -eq 0 ]; then
+        echo "PASS: clean $kind sync fails safely"
+    else
+        failures=$((failures + 1))
+    fi
+done
+[ "$failures" -eq 0 ] || fail "$failures worktree sync cases failed"
 echo "worktree-setup sync tests passed"

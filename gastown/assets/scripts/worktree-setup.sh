@@ -72,8 +72,11 @@ sync_worktree() {
         return 1
     }
     if [ -n "$WT_STATUS" ]; then
-        echo "worktree-setup: refusing to sync dirty provider worktree at $WT" >&2
-        return 1
+        # The provider must be able to resume and salvage unfinished work.
+        # Skip sync before fetching or switching refs: keep the index, worktree,
+        # stashes, and even detached commits exactly where the agent left them.
+        echo "worktree-setup: left as-is: dirty provider worktree at $WT; skipping sync to resume preserved work" >&2
+        return 0
     fi
     if ! git -C "$WT" remote get-url origin >/dev/null 2>&1; then
         echo "worktree-setup: refusing to sync provider worktree without origin at $WT" >&2
