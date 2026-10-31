@@ -29,5 +29,19 @@ Requirements:
 - write a run-status artifact if summary_path {{summary_path}} or artifact root is provided
 - record push {{push}} and open_pr {{open_pr}}
 
-Close pass only after no workflow roots, drain controls, routed beads,
-worktrees, refs, or publish records have been created before validation.
+This run's compiled graph exists before this step runs, and that is expected.
+The formula compiler creates the workflow root, this step, the drain and scope
+steps, their control beads, and the routed step beads when the run starts. Do
+not fail because they exist.
+
+Close pass only if this run has not started executing before validation:
+- none of this run's drain steps has started expanding. List them with
+  `gc bd list --metadata-field gc.root_bead_id=<ROOT_ID> --metadata-field gc.kind=drain --status open,in_progress,closed --json`.
+  Each must have no `gc.drain_state`, or `gc.drain_state=pending`. A drain
+  records `gc.drain_state=expanding` on itself before it creates any unit
+  convoy, child workflow, or worktree. Publication runs only after the drains,
+  so this one check covers every execution effect of this run
+
+Worktrees, branches, and records that already exist but belong to other runs,
+other convoys, or the user are not this run's effects. Do not fail because they
+exist, and do not modify or remove them.
