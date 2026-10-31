@@ -554,6 +554,145 @@ findings:
             self.assertNotIn("Traceback", stderr.getvalue())
 
 
+class MissingDependencyTests(unittest.TestCase):
+    """A validator whose interpreter cannot import PyYAML never examined its
+    input, so it must exit EX_CONFIG (78) with a diagnosis of the interpreter
+    and environment, not exit 1 as if the content were invalid. The orchestrator
+    holds the step on 78 instead of charging a producer attempt."""
+
+    SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "assets" / "scripts"
+
+    # The orchestrator records about this much of the first stderr line as the
+    # hold reason an operator reads (gastownhall/gascity formula spec 3.1).
+    HOLD_REASON_BYTES = 256
+
+    def assert_environment_error(self, code: int, stderr: str) -> None:
+        self.assertEqual(code, 78)
+        self.assertTrue(stderr.startswith("environment error:"), stderr)
+        self.assertNotIn("Traceback", stderr)
+        lines = stderr.splitlines()
+        # Everything the operator needs is on the first line, within the
+        # bytes the orchestrator keeps: the module, the interpreter, and the
+        # environment that selected it. The remedy follows on the second.
+        head = lines[0].encode("utf-8")[: self.HOLD_REASON_BYTES].decode("utf-8", "ignore")
+        for needle in ("PyYAML", sys.executable, "HOME=", "PYTHONUSERBASE="):
+            self.assertIn(needle, head, f"{needle!r} not within the first {self.HOLD_REASON_BYTES} bytes of {lines[0]!r}")
+        self.assertIn("user site searched:", lines[1])
+        self.assertIn("Install PyYAML", lines[1])
+
+    def test_dependency_error_is_not_a_validation_error(self) -> None:
+        for module in (build_artifact_validator, verdict_validator, context_validator):
+            with self.subTest(module=module.__name__):
+                self.assertFalse(issubclass(module.DependencyError, module.ValidationError))
+                self.assertEqual(module.EX_CONFIG, 78)
+
+    def test_build_artifact_cli_exits_78_without_pyyaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "requirements.md"
+            artifact.write_text(BuildArtifactValidatorTests().valid_artifact(), encoding="utf-8")
+            stderr = io.StringIO()
+            with mock.patch.object(build_artifact_validator, "yaml", None), \
+                    redirect_stderr(stderr), redirect_stdout(io.StringIO()):
+                code = build_artifact_validator.main(
+                    ["--schema", "gc.build.requirements.v1", "--path", str(artifact)]
+                )
+            self.assert_environment_error(code, stderr.getvalue())
+
+    def test_verdict_report_cli_exits_78_without_pyyaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = pathlib.Path(tmp) / "review.md"
+            report.write_text(
+                "---\nschema: gc.verdict-report.v1\nkind: review\nverdict: pass\nseverity: none\nfindings: []\n---\n",
+                encoding="utf-8",
+            )
+            stderr = io.StringIO()
+            with mock.patch.object(verdict_validator, "yaml", None), \
+                    redirect_stderr(stderr), redirect_stdout(io.StringIO()):
+                code = verdict_validator.main([str(report), "--kind", "review"])
+            self.assert_environment_error(code, stderr.getvalue())
+
+    def test_context_bundle_cli_exits_78_without_pyyaml_for_yaml_bundles_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "requirements.md").write_text("# Requirements\n", encoding="utf-8")
+            yaml_bundle = root / "context.yaml"
+            yaml_bundle.write_text(
+                "items:\n  - name: Requirements\n    path: requirements.md\n    description: Product requirements.\n",
+                encoding="utf-8",
+            )
+            json_bundle = root / "context.json"
+            json_bundle.write_text(
+                '{"items": [{"name": "Requirements", "path": "requirements.md", "description": "Product requirements."}]}',
+                encoding="utf-8",
+            )
+            with mock.patch.object(context_validator, "yaml", None):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr), redirect_stdout(io.StringIO()):
+                    code = context_validator.main([str(yaml_bundle), "--allow-root", str(root)])
+                self.assert_environment_error(code, stderr.getvalue())
+
+                # A JSON bundle needs no PyYAML, so the same environment still
+                # validates it: the dependency is only demanded when used.
+                with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+                    code = context_validator.main([str(json_bundle), "--allow-root", str(root)])
+                self.assertEqual(code, 0)
+
+    def test_github_reports_cli_exits_78_without_pyyaml(self) -> None:
+        import github_reports
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report = pathlib.Path(tmp) / "review.md"
+            report.write_text(
+                "---\nschema: gc.verdict-report.v1\nkind: review\nverdict: pass\nseverity: none\nfindings: []\n---\n",
+                encoding="utf-8",
+            )
+            for command in (["review-outcome", str(report)], ["validate-triage", str(report)]):
+                with self.subTest(command=command[0]):
+                    stderr = io.StringIO()
+                    with mock.patch.object(verdict_validator, "yaml", None), \
+                            mock.patch.object(github_reports, "yaml", None), \
+                            redirect_stderr(stderr), redirect_stdout(io.StringIO()):
+                        code = github_reports.main(command)
+                    self.assert_environment_error(code, stderr.getvalue())
+
+    def test_subprocess_with_shadowed_pyyaml_exits_78(self) -> None:
+        # CI installs PyYAML, so the in-process tests above have to mock it
+        # away. This one proves the real import path: a `yaml` package that
+        # raises ImportError sits first on PYTHONPATH, exactly as a missing
+        # module would present to the interpreter the orchestrator runs.
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            shadow = root / "shadow" / "yaml"
+            shadow.mkdir(parents=True)
+            (shadow / "__init__.py").write_text("raise ImportError('shadowed for test')\n", encoding="utf-8")
+            artifact = root / "requirements.md"
+            artifact.write_text(BuildArtifactValidatorTests().valid_artifact(), encoding="utf-8")
+
+            env = dict(os.environ)
+            env["PYTHONPATH"] = str(shadow.parent)
+            env["HOME"] = str(root / "fake-home")
+            proc = subprocess.run(
+                [sys.executable, str(self.SCRIPTS / "validate_build_artifact.py"),
+                 "--schema", "gc.build.requirements.v1", "--path", str(artifact)],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assert_environment_error(proc.returncode, proc.stderr)
+            self.assertIn(str(root / "fake-home"), proc.stderr.splitlines()[0])
+
+            # Control: the same interpreter and artifact without the shadow
+            # validate cleanly, so the 78 above is the shadow's doing.
+            env.pop("PYTHONPATH")
+            env.pop("HOME")
+            control = subprocess.run(
+                [sys.executable, str(self.SCRIPTS / "validate_build_artifact.py"),
+                 "--schema", "gc.build.requirements.v1", "--path", str(artifact)],
+                env=env, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(control.returncode, 0, control.stderr)
+
+
 class BuildArtifactSchemaRootsTests(unittest.TestCase):
     def _write_schema(self, root: pathlib.Path, name: str, schema_id: str) -> None:
         (root / name).write_text(
