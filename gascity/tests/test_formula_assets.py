@@ -11,6 +11,7 @@ import unittest
 
 
 FORMULAS = {
+    "quick-start",
     "build-base",
     "build-basic",
     "build-basic-review",
@@ -65,6 +66,7 @@ ROLE_AGENTS = {
 }
 
 CATALOG_FORMULAS = {
+    "quick-start",
     "build-basic",
     "build-from-convoy",
     "build-from-decompose",
@@ -4465,6 +4467,7 @@ description = "Override sink that writes the base triage report contract."
                 "design-review-approved.sh",
                 "gap-analysis-approved.sh",
                 "implementation-review-approved.sh",
+                "source-delivery-approved.sh",
             ],
         )
         for script in scripts:
@@ -4512,6 +4515,7 @@ description = "Override sink that writes the base triage report contract."
                 "build-artifact-valid.sh",
                 "design-review-approved.sh",
                 "implementation-review-approved.sh",
+                "source-delivery-approved.sh",
             },
         )
 

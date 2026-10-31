@@ -907,3 +907,20 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 - Derived-pack implementation ledgers live in `compound-engineering`,
   `superpowers`, `bmad`, and `gstack`; keep them in sync with
   `tests/test_derived_pack_compatibility.py`.
+
+## Guided first local change (RFC8191)
+
+The `quick-start` formula belongs to this existing default pack. It consumes one
+source task, provisions through native `gc worktree`, pins its local input SHA,
+and separates implementation from independent review. The initial review may
+be followed by at most two repair rounds. A deterministic check runs the fixed
+repository verification command against the approved output commit. Local
+integration precedes source-task closure; no origin, push or GitHub account is
+required. Failures retain work and evidence. Cleanup uses native ownership,
+exact attempt and merged-commit gates. The root bead owns the durable delivery
+record; an artifact or completed step alone is never proof of source delivery.
+
+This guided route does not weaken the broader build methodology contracts. It
+teaches one complete local task before optional planning, fanout or publishing.
+Tests: `tests/test_quick_start.py`, `tests/test_source_delivery.py`, combined
+formula asset tests, and controller/model acceptance against the candidate gc.

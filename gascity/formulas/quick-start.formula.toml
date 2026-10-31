@@ -1,0 +1,76 @@
+formula = "quick-start"
+version = 1
+contract = "graph.v2"
+target_required = true
+sling_container_mode = "source"
+description = "Implement one local task in an owned worktree, independently review and verify it, integrate locally, then close the source task. No remote or GitHub account is required."
+
+[catalog]
+name = "quick-start"
+description = "Complete one local task with independent review and at most two repair rounds."
+
+[vars.verify_command]
+description = "Required repository verification command, run in the owned implementation worktree."
+required = true
+
+[[steps]]
+id = "prepare"
+title = "Pin task input and provision owned worktree"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/quick-start/prepare.md"
+
+[[steps]]
+id = "implement"
+title = "Implement and commit the local task"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "gc.implementation-worker", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/quick-start/implement.md"
+
+[[steps]]
+id = "review"
+title = "Independent review and bounded repair"
+needs = ["implement"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/quick-start/review.md"
+
+[steps.check]
+max_attempts = 3
+
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/checks/source-delivery-approved.sh"
+timeout = "11m"
+
+[[steps.children]]
+id = "repair"
+title = "Apply prior review findings when present"
+metadata = { "gc.run_target" = "gc.implementation-worker" }
+description_file = "../assets/workflows/quick-start/repair.md"
+
+[[steps.children]]
+id = "inspect"
+title = "Review the exact implementation commit"
+needs = ["repair"]
+metadata = { "gc.run_target" = "gc.implementation-reviewer" }
+description_file = "../assets/workflows/quick-start/inspect.md"
+
+[[steps]]
+id = "integrate"
+title = "Integrate verified output and close source task"
+needs = ["review"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/quick-start/integrate.md"
+
+[[steps]]
+id = "cleanup"
+title = "Safely retire the integrated worktree"
+needs = ["integrate"]
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/quick-start/cleanup.md"
+
+[[steps]]
+id = "delivery-body"
+title = "Local source delivery scope"
+needs = ["prepare", "implement", "review", "integrate", "cleanup"]
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "local-delivery", "gc.scope_role" = "body" }
+description_file = "../assets/workflows/quick-start/delivery-body.md"
