@@ -15,7 +15,13 @@ the user explicitly asks to run an implementation workflow through a formula.
 
 ## Operating Model
 
-1. Determine the target rig/root path, plan slug, and artifact root. Default to
+1. Resolve the target project from the user's path, current workspace or
+   `gc rig list`. Register an existing repository in place using
+   `gc --city /path/to/city rig add /any/path/to/project --name app`; keep its
+   current location, including paths outside the city. Follow `core.gc-rigs`
+   for registration and existing-queue adoption. When creating a city, use
+   `gc init /path/to/city` with the default Gas City pack.
+   Determine the plan slug and artifact root. Default to
    `<rig-root>/plans/<plan-slug>/`, unless the artifact helper selects
    `<rig-root>/gc-plans/<plan-slug>/` because `plans/` appears foreign.
 2. Inspect the target repo before asking questions whose answers are
