@@ -80,7 +80,7 @@ def finish_registration(repo):
         raise ValueError("untracked source changes exist; preserve them before registration")
     path = repo / ".gitignore"
     text = path.read_text()
-    # bd init legitimately removes the broad .beads/ exclusion and writes
+    # Provider initialization legitimately removes the broad .beads/ exclusion and writes
     # narrower runtime exclusions; no task source has run at this boundary.
     for sink in sinks:
         if sink not in text.splitlines():
@@ -109,7 +109,7 @@ def main():
     if args.action == "start":
         print("[1/4] Preparing your local practice repository", flush=True)
         scaffold(destination)
-    rigs = gc("rig", "list", "--json", json_output=True)["rigs"]
+    rigs = gc("gc", "rig", "list", "--json", json_output=True)["rigs"]
     practice = [rig for rig in rigs if rig["name"] == "practice"]
     if practice and Path(practice[0]["path"]).resolve() != destination.resolve():
         raise ValueError("an existing practice rig points elsewhere; no changes made to it")
@@ -118,8 +118,8 @@ def main():
             print("The guided task has not started. Run gc gc tutorial start.")
             return
         print("[2/4] Registering the practice repository", flush=True)
-        gc("rig", "add", str(destination), "--name", "practice")
-    rows = gc("--rig", "practice", "bd", "list", "--all", "--metadata-field",
+        gc("gc", "rig", "add", str(destination), "--name", "practice")
+    rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--metadata-field",
               "gc.tutorial=" + MARKER, "--limit", "0", "--json", json_output=True)
     if isinstance(rows, dict):
         rows = [rows]
@@ -132,7 +132,7 @@ def main():
             print("The practice repository exists; run gc gc tutorial start to submit its task.")
             return
         print("[3/4] Recording your first task", flush=True)
-        source = gc("--rig", "practice", "bd", "create", "Fix the greeting bug",
+        source = gc("gc", "--rig", "practice", "bd", "create", "Fix the greeting bug",
                     "--description", TASK, "--metadata", json.dumps({"gc.tutorial": MARKER}),
                     "--json", json_output=True)
     else:
@@ -145,12 +145,24 @@ def main():
         if not sha:
             raise ValueError("task was closed without verified integration evidence")
         git(destination, "merge-base", "--is-ancestor", sha, "HEAD")
+        workflow_id = source.get("metadata", {}).get("gc.delivery.workflow_root")
+        if not workflow_id:
+            raise ValueError("integration is recorded but workflow finalization evidence is missing")
+        workflow = gc("gc", "bd", "show", workflow_id, "--json", json_output=True)
+        if workflow["status"] != "closed":
+            print(f"Code integrated at {sha}; workflow {workflow_id} is finishing cleanup.")
+            return
+        if workflow.get("metadata", {}).get("gc.outcome") != "pass":
+            raise ValueError(f"code integrated, but workflow {workflow_id} finalization did not pass")
+        record = json.loads(workflow.get("metadata", {}).get("gc.delivery.record", "{}"))
+        if not record.get("cleanup_complete") or Path(record["worktree"]).exists():
+            raise ValueError("workflow finalization lacks verified cleanup evidence")
         print(f"Verified local integration: {sha}\nRepository: {destination}")
         print("Continue with hands-on tutorial 1 using this same city.")
         return
     if args.action == "start":
         print("[4/4] Starting implementation and independent review", flush=True)
-        print(gc("--rig", "practice", "sling", "practice/gc.run-operator", source_id, "--on", "quick-start",
+        print(gc("gc", "--rig", "practice", "sling", "practice/gc.run-operator", source_id, "--on", "quick-start",
                  "--var", "verify_command=" + VERIFY_COMMAND), end="")
     print("Watch: gc status\nInspect: gc gc tutorial status\nPause: gc stop\nResume: gc start")
     print("The source task closes only after the reviewed and tested commit is integrated locally.")

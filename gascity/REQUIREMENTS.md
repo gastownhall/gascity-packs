@@ -915,7 +915,8 @@ source task, provisions through native `gc worktree`, pins its local input SHA,
 and separates implementation from independent review. The initial review may
 be followed by at most two repair rounds. A deterministic check runs the fixed
 repository verification command against the approved output commit. Local
-integration precedes source-task closure; no origin, push or GitHub account is
+integration and required cleanup precede source-task closure by the native
+workflow finalizer through gc.source_bead_id/gc.source_store_ref; no origin, push or GitHub account is
 required. Failures retain work and evidence. Cleanup uses native ownership,
 exact attempt and merged-commit gates. The root bead owns the durable delivery
 record; an artifact or completed step alone is never proof of source delivery.

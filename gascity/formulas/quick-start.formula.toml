@@ -56,7 +56,7 @@ description_file = "../assets/workflows/quick-start/inspect.md"
 
 [[steps]]
 id = "integrate"
-title = "Integrate verified output and close source task"
+title = "Integrate the reviewed and tested output"
 needs = ["review"]
 metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/quick-start/integrate.md"

@@ -46,6 +46,8 @@ def test_status_reads_existing_task_without_restarting_it(tutorial, tmp_path, mo
     import source_delivery
     destination = tmp_path / "projects/practice"
     def observations(*args, **kwargs):
+        assert args[0] == "gc"
+        args = args[1:]
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -64,6 +66,8 @@ def test_start_routes_existing_task_without_manual_rig_defaults(tutorial, tmp_pa
     destination = tmp_path / "projects/practice"
     calls = []
     def observations(*args, **kwargs):
+        assert args[0] == "gc"
+        args = args[1:]
         calls.append(args)
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
@@ -104,3 +108,25 @@ def test_registration_never_commits_unfinished_source(tutorial, tmp_path):
     with pytest.raises(ValueError, match="source changes"):
         tutorial.finish_registration(repo)
     assert subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True) == before
+
+
+def test_status_does_not_call_skipped_cleanup_a_completed_tutorial(tutorial, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    destination = tmp_path / "projects/practice"
+    def observations(*args, **kwargs):
+        assert args[0] == "gc"
+        if args[:3] == ("gc", "rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+            return [{"id": "practice-1", "status": "closed", "metadata": {
+                "gc.delivery.integrated_sha": "a" * 40, "gc.delivery.workflow_root": "flow-1"}}]
+        if args[:4] == ("gc", "bd", "show", "flow-1"):
+            return {"id": "flow-1", "status": "closed", "metadata": {"gc.outcome": "skipped"}}
+        raise AssertionError(args)
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "git", lambda *args: "")
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "status"])
+    with pytest.raises(ValueError, match="finalization"):
+        tutorial.main()

@@ -28,3 +28,14 @@ def test_embedded_script_modes_match_git_release_content():
     for path in ROOT.rglob("*"):
         if path.is_file() and path.suffix in {".py", ".sh", ".bash"} and "__pycache__" not in path.parts:
             assert path.stat().st_mode & 0o111, f"embedded/native mode mismatch: {path.relative_to(ROOT)}"
+
+
+def test_missing_interpreter_is_configuration_failure_before_work(tmp_path):
+    import subprocess
+    paths = [ROOT / "commands/tutorial/run.sh", ROOT / "commands/source-delivery/run.sh",
+             ROOT / "assets/scripts/checks/source-delivery-approved.sh"]
+    for path in paths:
+        result = subprocess.run(["/bin/bash", str(path)], text=True, capture_output=True,
+                                env={"PATH": str(tmp_path), "GC_PACK_DIR": str(ROOT)})
+        assert result.returncode == 78, (path, result.returncode, result.stderr)
+        assert "python3" in result.stderr and "Install" in result.stderr

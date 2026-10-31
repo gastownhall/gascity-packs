@@ -66,8 +66,10 @@ class InfrastructureError(RuntimeError):
 
 def gc(*args, json_output=False):
     import json
+    if not args or args[0] != "gc":
+        raise ValueError("expected an explicit gc command")
     try:
-        result = subprocess.check_output([os.environ.get("GC_BIN", "gc"), *args], text=True)
+        result = subprocess.check_output([os.environ.get("GC_BIN", "gc"), *args[1:]], text=True)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise InfrastructureError(f"Gas City operation unavailable: {exc}") from exc
     if not json_output:
@@ -80,7 +82,7 @@ def gc(*args, json_output=False):
 
 
 def bead(bead_id):
-    value = gc("bd", "show", bead_id, "--json", json_output=True)
+    value = gc("gc", "bd", "show", bead_id, "--json", json_output=True)
     if not isinstance(value, dict) or value.get("id") != bead_id:
         raise ValueError(f"expected exactly one bead: {bead_id}")
     return value
@@ -88,7 +90,7 @@ def bead(bead_id):
 
 def save(root, record):
     import json
-    gc("bd", "update", root, "--set-metadata", "gc.delivery.record=" + json.dumps(record, separators=(",", ":")))
+    gc("gc", "bd", "update", root, "--set-metadata", "gc.delivery.record=" + json.dumps(record, separators=(",", ":")))
 
 
 def load(root):
@@ -104,7 +106,7 @@ def workspace_args(record):
         "--repo", record["repo"], "--root", record["worktree_root"],
         "--path", record["worktree"], "--branch", record["branch"],
         "--base", record["base_ref"], "--base-sha", record["base_sha"],
-        "--bead", record["source"], "--store-ref", record["repo"],
+        "--bead", record["source"], "--store-ref", record.get("store_ref", record["repo"]),
         "--creator", "formula-quick-start", "--owner", "formula",
         "--generation", record["root"], "--json",
     ]
@@ -113,7 +115,8 @@ def workspace_args(record):
 def prepare(root, source, repo, workspace_root, verify_command):
     import json
     repo = str(Path(repo).resolve())
-    existing = bead(root).get("metadata", {}).get("gc.delivery.record")
+    root_row = bead(root)
+    existing = root_row.get("metadata", {}).get("gc.delivery.record")
     if existing:
         record = json.loads(existing)
         if (record["source"], record["repo"], record["verify_command"]) != (source, repo, verify_command):
@@ -130,25 +133,39 @@ def prepare(root, source, repo, workspace_root, verify_command):
         # Root identity, rather than a title, makes branch/path ownership unique.
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", root):
             raise ValueError("unsafe workflow root identity")
-        record = dict(root=root, source=source, repo=repo, base_ref=base_ref,
+        store_ref = root_row.get("metadata", {}).get("gc.root_store_ref")
+        if not store_ref:
+            raise ValueError("workflow root has no authoritative store reference")
+        record = dict(root=root, source=source, repo=repo, store_ref=store_ref, base_ref=base_ref,
                       base_sha=base, predecessor_sha=base, worktree_root=workspace_root,
                       worktree=str(Path(workspace_root) / root), branch="gc/" + root,
                       verify_command=verify_command)
         # Pin the input before provisioning, so a crash cannot choose a newer base.
         save(root, record)
+    # Native workflow finalization closes the source only after integration
+    # and cleanup pass. Keeping input work open preserves remaining graph demand.
+    source_link = root_row.get("metadata", {}).get("gc.source_bead_id")
+    if source_link and source_link != source:
+        raise ValueError("workflow source link differs from the prepared source")
+    source_store_ref = record.get("store_ref") or root_row.get("metadata", {}).get("gc.root_store_ref")
+    if not source_store_ref:
+        raise ValueError("workflow source store reference is missing")
+    gc("gc", "bd", "update", root, "--set-metadata", "gc.source_bead_id=" + source,
+       "--set-metadata", "gc.source_store_ref=" + source_store_ref)
     if record.get("integrated_sha"):
         return record
-    report = gc("worktree", "ensure", *workspace_args(record), json_output=True)
+    report = gc("gc", "worktree", "ensure", *workspace_args(record), json_output=True)
     record["attempt_id"] = report["provenance"]["attempt_id"]
     save(root, record)
-    gc("bd", "update", source, "--set-metadata", "work_dir=" + record["worktree"])
+    gc("gc", "bd", "update", source, "--set-metadata", "work_dir=" + record["worktree"],
+       "--set-metadata", "gc.delivery.workflow_root=" + root)
     return record
 
 
 def verify_output(root):
     import hashlib
     record = load(root)
-    gc("worktree", "verify", *workspace_args(record), json_output=True)
+    gc("gc", "worktree", "verify", *workspace_args(record), json_output=True)
     tree = record["worktree"]
     clean(tree)
     output = git(tree, "rev-parse", "HEAD")
@@ -212,7 +229,7 @@ def main():
             record.update(reviewed_sha=args.sha, review_status=args.status, findings=args.findings)
             save(root, record)
         elif args.action == "integrate":
-            gc("worktree", "verify", *workspace_args(record), json_output=True)
+            gc("gc", "worktree", "verify", *workspace_args(record), json_output=True)
             if record.get("review_status") != "approved":
                 raise ValueError("review is not approved")
             integrated = integrate(record["repo"], record["worktree"], record["base_sha"],
@@ -220,20 +237,18 @@ def main():
                                    record.get("tested_sha", ""))
             record["integrated_sha"] = integrated
             save(root, record)
-            source = bead(record["source"])
-            if source.get("status") != "closed":
-                gc("bd", "update", record["source"], "--set-metadata", "gc.outcome=pass",
-                   "--set-metadata", "gc.delivery.integrated_sha=" + integrated)
-                gc("bd", "close", record["source"], "--reason", "Integrated reviewed and tested commit " + integrated)
-            source = bead(record["source"])
-            if source.get("status") != "closed" or source.get("metadata", {}).get("gc.delivery.integrated_sha") != integrated:
-                raise ValueError("source closure does not match integrated evidence")
+            gc("gc", "bd", "update", record["source"], "--set-metadata",
+               "gc.delivery.integrated_sha=" + integrated)
+            # Leave the source open. The native finalizer owns source closure
+            # after cleanup and every other required graph stage pass.
         elif args.action == "cleanup":
             if not record.get("integrated_sha"):
                 raise ValueError("unintegrated work must be retained")
             if git(record["repo"], "merge-base", "--is-ancestor", record["integrated_sha"], "HEAD"):
                 raise ValueError("integrated output no longer reachable")
-            gc("worktree", "cleanup", *workspace_args(record), "--attempt-id", record["attempt_id"], json_output=True)
+            gc("gc", "worktree", "cleanup", *workspace_args(record), "--attempt-id", record["attempt_id"], json_output=True)
+            record["cleanup_complete"] = True
+            save(root, record)
     print(json.dumps(record, indent=2))
 
 
