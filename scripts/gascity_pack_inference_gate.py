@@ -208,7 +208,7 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
     "mol-deacon-patrol": (
         "Work-layer health",
         "queue-starvation-check",
-        "gc agents list --json --active",
+        "gc session list --state=active --json",
         "gc bd create --type=task --labels=warrant",
         "\"gc.routed_to\":\"{{binding_prefix}}dog\"",
     ),
