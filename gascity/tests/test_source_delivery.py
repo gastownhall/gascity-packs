@@ -358,6 +358,9 @@ def test_cli_preserves_dispatcher_configuration_hold_protocol(delivery, tmp_path
         if argv[0] != "gc-contract-probe":
             return original(argv, **kwargs)
         if argv[:4] == ["gc-contract-probe", "bd", "show", "flow-1"]:
+            # Native gc bd emits scope information before the validator runs.
+            # It must remain visible without replacing the actual hold reason.
+            kwargs.get("stderr", sys.stderr).write('gc bd: answering from the rig "practice" store\n')
             return json.dumps({"id":"flow-1", "metadata":{"gc.delivery.record":json.dumps(record)}})
         if argv[1:3] == ["worktree", "verify"]:
             return "{}"
@@ -368,8 +371,42 @@ def test_cli_preserves_dispatcher_configuration_hold_protocol(delivery, tmp_path
     with pytest.raises(SystemExit) as ended:
         runpy.run_path(str(SCRIPT), run_name="__main__")
     assert ended.value.code == expected
+    diagnostic = capsys.readouterr().err
+    first = next(line for line in diagnostic.splitlines() if line.strip())
+    assert first.startswith("source delivery " + ("environment:" if expected == 78 else "infrastructure:")), diagnostic
+    assert 'gc bd: answering from the rig "practice" store' in diagnostic
     if failure == "module":
-        diagnostic = capsys.readouterr().err
-        assert "PyYAML not importable" in diagnostic
-        assert sys.executable in diagnostic
+        assert "PyYAML not importable" in first
+        assert sys.executable in first
     assert git(repo, "rev-parse", "HEAD") == base
+
+
+@pytest.mark.parametrize("unexpected", [False, True])
+def test_cli_retains_child_diagnostics_without_corrupting_json(delivery, monkeypatch, capsys, unexpected):
+    import json
+    import runpy
+    import sys
+    record = {"root": "flow-1", "source": "task-1"}
+    original = subprocess.check_output
+    def boundary(argv, **kwargs):
+        if argv[0] != "gc-stdio-probe":
+            return original(argv, **kwargs)
+        assert argv == ["gc-stdio-probe", "bd", "show", "flow-1", "--json"]
+        kwargs["stderr"].write("native diagnostic retained\n")
+        if unexpected:
+            raise RuntimeError("unexpected native boundary bug")
+        return json.dumps({"id": "flow-1", "metadata": {"gc.delivery.record": json.dumps(record)}})
+    monkeypatch.setattr(subprocess, "check_output", boundary)
+    monkeypatch.setenv("GC_BIN", "gc-stdio-probe")
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "show", "--root", "flow-1"])
+    if unexpected:
+        with pytest.raises(RuntimeError, match="unexpected native boundary bug"):
+            runpy.run_path(str(SCRIPT), run_name="__main__")
+    else:
+        with pytest.raises(SystemExit) as ended:
+            runpy.run_path(str(SCRIPT), run_name="__main__")
+        assert ended.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.err == "native diagnostic retained\n"
+    if not unexpected:
+        assert json.loads(captured.out) == record

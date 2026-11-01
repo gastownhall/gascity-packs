@@ -8,6 +8,7 @@ from pathlib import Path
 import os
 import re
 import subprocess
+import sys
 
 
 def git(repo, *args):
@@ -123,7 +124,7 @@ def gc(*args, json_output=False):
     if not args or args[0] != "gc":
         raise ValueError("expected an explicit gc command")
     try:
-        result = subprocess.check_output([os.environ.get("GC_BIN", "gc"), *args[1:]], text=True)
+        result = subprocess.check_output([os.environ.get("GC_BIN", "gc"), *args[1:]], text=True, stderr=sys.stderr)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise InfrastructureError(f"Gas City operation unavailable: {exc}") from exc
     if not json_output:
@@ -320,18 +321,32 @@ def main():
     print(json.dumps(record, indent=2))
 
 
+def _cli():
+    """Keep the terminal failure first while preserving child diagnostics."""
+    import contextlib
+    import shutil
+    import tempfile
+    status = 0
+    # Anonymous, process-owned I/O buffer: native gc diagnostics can precede
+    # validation, but the dispatcher uses the first stderr line as its reason.
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as diagnostics:
+        try:
+            with contextlib.redirect_stderr(diagnostics):
+                main()
+        except ValidatorEnvironmentError as exc:
+            print(f"source delivery environment: {exc}", file=sys.stderr)
+            status = 78
+        except InfrastructureError as exc:
+            print(f"source delivery infrastructure: {exc}", file=sys.stderr)
+            status = 75
+        except (ValueError, subprocess.SubprocessError) as exc:
+            print(f"source delivery: {exc}", file=sys.stderr)
+            status = 1
+        finally:
+            diagnostics.seek(0)
+            shutil.copyfileobj(diagnostics, sys.stderr)
+    return status
+
+
 if __name__ == "__main__":
-    try:
-        main()
-    except ValidatorEnvironmentError as exc:
-        import sys
-        print(f"source delivery environment: {exc}", file=sys.stderr)
-        sys.exit(78)
-    except InfrastructureError as exc:
-        import sys
-        print(f"source delivery infrastructure: {exc}", file=sys.stderr)
-        sys.exit(75)
-    except (ValueError, subprocess.SubprocessError) as exc:
-        import sys
-        print(f"source delivery: {exc}", file=sys.stderr)
-        sys.exit(1)
+    sys.exit(_cli())
