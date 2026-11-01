@@ -23,7 +23,7 @@ max_attempts = 8
 
 [steps.check.check]
 mode = "exec"
-path = ".gc/scripts/checks/implementation-review-approved.sh"
+path = "../assets/scripts/checks/implementation-review-approved.sh"
 timeout = "10m"
 
 [[steps.children]]

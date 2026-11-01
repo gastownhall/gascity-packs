@@ -5279,7 +5279,7 @@ description = "Override sink that writes the base triage report contract."
                 step = next(step for step in formula["steps"] if step["id"] == step_id)
                 self.assertEqual(
                     step["check"]["check"]["path"],
-                    ".gc/scripts/checks/implementation-review-approved.sh",
+                    "../assets/scripts/checks/implementation-review-approved.sh",
                 )
 
         story_root = bmad_root / "assets" / "workflows" / "bmad-story-development"
