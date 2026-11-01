@@ -123,25 +123,45 @@ sync_worktree() {
         echo "worktree-setup: provider worktree has no valid HEAD: $WT" >&2
         return 1
     }
-    CURRENT_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-    if [ -z "$CURRENT_BRANCH" ]; then
-        REACHABLE_REF=$(git -C "$RIG_ROOT" for-each-ref \
-            --format='%(refname)' --contains "$CURRENT_HEAD" \
-            refs/heads refs/remotes | head -n 1)
-        if [ -z "$REACHABLE_REF" ]; then
-            echo "worktree-setup: detached provider HEAD $CURRENT_HEAD is not ref-reachable; preserving it and refusing sync" >&2
+    if CURRENT_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null); then
+        :
+    else
+        HEAD_STATUS=$?
+        if [ "$HEAD_STATUS" -ne 1 ]; then
+            echo "worktree-setup: could not inspect provider HEAD at $WT; refusing sync" >&2
             return 1
+        fi
+        # A detached commit with no durable ref must stay checked out so the
+        # provider can resume it. A failed ref query is not evidence of this.
+        REACHABLE_REFS=$(git -C "$RIG_ROOT" for-each-ref \
+            --format='%(refname)' --contains "$CURRENT_HEAD" \
+            refs/heads refs/remotes) || {
+            echo "worktree-setup: could not inspect refs containing $CURRENT_HEAD; refusing sync" >&2
+            return 1
+        }
+        if [ -z "$REACHABLE_REFS" ]; then
+            echo "worktree-setup: left as-is: detached provider HEAD $CURRENT_HEAD is not ref-reachable; skipping sync to resume preserved work" >&2
+            return 0
         fi
     fi
 
     if git -C "$RIG_ROOT" show-ref --verify --quiet \
         "refs/heads/$STABLE_BRANCH"; then
-        if ! GIT_GRAFT_FILE=/dev/null \
+        if GIT_GRAFT_FILE=/dev/null \
             git --no-replace-objects -C "$RIG_ROOT" merge-base \
                 --is-ancestor "refs/heads/$STABLE_BRANCH" "$DEFAULT_REF" \
                 2>/dev/null; then
-            echo "worktree-setup: stable provider branch $STABLE_BRANCH has unique or diverged work; preserving it and refusing sync" >&2
-            return 1
+            :
+        else
+            ANCESTOR_STATUS=$?
+            if [ "$ANCESTOR_STATUS" -ne 1 ]; then
+                echo "worktree-setup: could not inspect stable provider branch ancestry at $WT; refusing sync" >&2
+                return 1
+            fi
+            # Exit 1 proves non-ancestry: leave unique/diverged commits on
+            # their original branch and let the provider continue its work.
+            echo "worktree-setup: left as-is: stable provider branch $STABLE_BRANCH has unique or diverged work; skipping sync to resume preserved work" >&2
+            return 0
         fi
         if [ "$CURRENT_BRANCH" != "$STABLE_BRANCH" ]; then
             if ! git -C "$WT" checkout "$STABLE_BRANCH"; then

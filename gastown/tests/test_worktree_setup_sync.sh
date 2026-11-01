@@ -203,34 +203,132 @@ test_dirty_worktree_resumes_unchanged() {
 
 test_clean_unsafe_sync_fails_without_moving_work() {
     local base="$1" kind="$2"
-    local rig="$base/rig" wt="$base/wt" before_head excludes
+    local rig="$base/rig" wt="$base/wt" before_head excludes agent=unsafe
+    local real_git shim=
     new_upstream_and_rig "$base"
     sh "$SCRIPT" "$rig" "$wt" unsafe
     case "$kind" in
-        stable-unpushed) git_c -C "$wt" commit -q --allow-empty -m 'unique stable work' ;;
-        detached-unreachable)
-            git_c -C "$wt" checkout -q --detach
-            git_c -C "$wt" commit -q --allow-empty -m 'unique detached work'
-            ;;
         no-origin) git_c -C "$rig" remote remove origin ;;
         failed-fetch) git_c -C "$rig" remote set-url origin "$base/missing-origin.git" ;;
+        missing-head) git_c -C "$wt" symbolic-ref HEAD refs/heads/unborn ;;
+        invalid-stable) agent='invalid agent name' ;;
+        invalid-default) git_c -C "$rig" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/missing ;;
+        failed-ancestry|failed-reachability)
+            if [ "$kind" = failed-reachability ]; then
+                git_c -C "$wt" checkout -q --detach
+                git_c -C "$wt" commit -q --allow-empty -m 'unreferenced work'
+            fi
+            real_git=$(command -v git)
+            shim="$base/bin"
+            mkdir "$shim"
+            cat > "$shim/git" <<'GIT_SHIM'
+#!/bin/sh
+case "$FAIL_GIT_OPERATION:$*" in
+    failed-ancestry:*merge-base*|failed-reachability:*for-each-ref*) exit 128 ;;
+esac
+exec "$REAL_GIT" "$@"
+GIT_SHIM
+            chmod +x "$shim/git"
+            ;;
+
         *) fail "unknown unsafe fixture: $kind" ;;
     esac
-    before_head=$(git_c -C "$wt" rev-parse HEAD)
+    before_head=$(git_c -C "$wt" rev-parse --verify HEAD 2>/dev/null || :)
     git_c -C "$rig" for-each-ref > "$base/refs.before"
     git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.before" || :
     excludes=$(git_c -C "$wt" rev-parse --git-path info/exclude)
     cp "$excludes" "$base/exclude.before"
-    if sh "$SCRIPT" "$rig" "$wt" unsafe --sync > "$base/sync.log" 2>&1; then
+    if PATH="${shim:-$PATH}:$PATH" REAL_GIT="${real_git:-}" FAIL_GIT_OPERATION="$kind" \
+        sh "$SCRIPT" "$rig" "$wt" "$agent" --sync > "$base/sync.log" 2>&1; then
         fail "$kind clean worktree must retain its fail-closed sync contract"
     fi
-    [ "$(git_c -C "$wt" rev-parse HEAD)" = "$before_head" ] || fail "$kind HEAD moved"
+    [ "$(git_c -C "$wt" rev-parse --verify HEAD 2>/dev/null || :)" = "$before_head" ] || fail "$kind HEAD moved"
     git_c -C "$rig" for-each-ref > "$base/refs.after"
     git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.after" || :
     cmp "$base/refs.before" "$base/refs.after" || fail "$kind moved refs"
     cmp "$base/branch.before" "$base/branch.after" || fail "$kind switched branch"
     cmp "$base/exclude.before" "$excludes" || fail "$kind changed excludes"
     [ -z "$(git_c -C "$wt" status --porcelain)" ] || fail "$kind tree changed"
+}
+
+# Clean unfinished work must reach the same provider continuation seam as dirt.
+# Remote tracking refs may advance during fetch; local/work refs must not move.
+test_clean_unfinished_work_resumes_unchanged() {
+    local base="$1" kind="$2" rig="$1/rig" wt="$1/wt"
+    local before_head excludes index attempt state remote_head
+    new_upstream_and_rig "$base"
+    printf 'committed bytes\n' > "$rig/tracked.txt"
+    printf '\000\001\377' > "$rig/binary.dat"
+    git_c -C "$rig" add tracked.txt binary.dat
+    git_c -C "$rig" commit -qm 'clean fixture'
+    git_c -C "$rig" push -q origin main
+    sh "$SCRIPT" "$rig" "$wt" unfinished
+    printf 'stashed bytes\n' > "$wt/tracked.txt"
+    git_c -C "$wt" stash push -qm 'existing user stash'
+    case "$kind" in
+        stable-unpushed|stable-diverged) ;;
+        detached-unreachable) git_c -C "$wt" checkout -q --detach ;;
+        *) fail "unknown clean unfinished fixture: $kind" ;;
+    esac
+    printf '%s committed work\n' "$kind" >> "$wt/tracked.txt"
+    git_c -C "$wt" add tracked.txt
+    git_c -C "$wt" commit -qm "$kind unfinished commit"
+    before_head=$(git_c -C "$wt" rev-parse HEAD)
+    if [ "$kind" = detached-unreachable ]; then
+        [[ -z "$(git_c -C "$rig" for-each-ref --contains "$before_head")" ]] ||
+            fail "fixture detached commit is unexpectedly referenced"
+    fi
+    if [ "$kind" = stable-diverged ]; then
+        git_c clone -q "$base/upstream.git" "$base/advance"
+        printf 'upstream divergence\n' > "$base/advance/remote.txt"
+        git_c -C "$base/advance" add remote.txt
+        git_c -C "$base/advance" commit -qm 'remote diverged'
+        git_c -C "$base/advance" push -q origin main
+    fi
+    remote_head=$(git_c --git-dir="$base/upstream.git" rev-parse main)
+    excludes=$(git_c -C "$wt" rev-parse --git-path info/exclude)
+    printf '\n# user exclude\nignored-work.bin\n' >> "$excludes"
+    printf 'ignored but valuable\000\377' > "$wt/ignored-work.bin"
+    cp "$excludes" "$base/exclude.before"
+    cp "$wt/ignored-work.bin" "$base/untracked.before"
+    cp "$wt/tracked.txt" "$base/tracked.before"
+    cp "$wt/binary.dat" "$base/binary.before"
+    git_c -C "$wt" status --porcelain=v1 -z > "$base/status.before"
+    [[ ! -s "$base/status.before" ]] || fail "fixture must be clean"
+    index=$(git_c -C "$wt" rev-parse --git-path index)
+    cp "$index" "$base/index.before"
+    git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.before" || :
+    git_c -C "$rig" for-each-ref refs/heads refs/work refs/stash > "$base/refs.before"
+    git_c -C "$wt" stash list --format='%gd %H %gs' > "$base/stash.before"
+    git_c -C "$wt" cat-file -p HEAD > "$base/commit.before"
+    for attempt in 1 2; do
+        if sh "$SCRIPT" "$rig" "$wt" unfinished --sync > "$base/sync-$attempt.log" 2>&1; then
+            printf 'provider resumed\n' > "$base/provider-$attempt"
+        else
+            cat "$base/sync-$attempt.log" >&2
+            fail "$kind pre_start blocked the provider on attempt $attempt"
+        fi
+        [[ -s "$base/provider-$attempt" ]] || fail "$kind provider did not continue"
+        grep -q 'left as-is:.*skipping sync' "$base/sync-$attempt.log" ||
+            fail "$kind missing skipped-sync explanation"
+        [[ "$(git_c -C "$wt" rev-parse HEAD)" = "$before_head" ]] || fail "$kind HEAD moved"
+        git_c -C "$wt" symbolic-ref -q HEAD > "$base/branch.after" || :
+        git_c -C "$rig" for-each-ref refs/heads refs/work refs/stash > "$base/refs.after"
+        git_c -C "$wt" stash list --format='%gd %H %gs' > "$base/stash.after"
+        git_c -C "$wt" status --porcelain=v1 -z > "$base/status.after"
+        git_c -C "$wt" cat-file -p HEAD > "$base/commit.after"
+        for state in branch refs stash status commit; do
+            cmp "$base/$state.before" "$base/$state.after" || fail "$kind changed $state"
+        done
+        cmp "$base/index.before" "$index" || fail "$kind changed binary index"
+        cmp "$base/tracked.before" "$wt/tracked.txt" || fail "$kind changed tracked bytes"
+        cmp "$base/binary.before" "$wt/binary.dat" || fail "$kind changed binary bytes"
+        cmp "$base/untracked.before" "$wt/ignored-work.bin" || fail "$kind changed ignored user bytes"
+        cmp "$base/exclude.before" "$excludes" || fail "$kind changed excludes"
+        [[ "$(git_c -C "$rig" rev-parse refs/remotes/origin/main)" = "$remote_head" ]] ||
+            fail "$kind fetch did not refresh the remote tracking ref"
+        git_c -C "$wt" merge-base --is-ancestor "$before_head" HEAD || fail "$kind lost commit reachability"
+    done
 }
 
 tmp=$(mktemp -d)
@@ -253,7 +351,19 @@ for kind in tracked untracked marker named-unpushed detached-unreachable; do
         failures=$((failures + 1))
     fi
 done
-for kind in stable-unpushed detached-unreachable no-origin failed-fetch; do
+for kind in stable-unpushed stable-diverged detached-unreachable; do
+    mkdir "$tmp/unfinished-$kind"
+    set +e
+    (set -e; test_clean_unfinished_work_resumes_unchanged "$tmp/unfinished-$kind" "$kind")
+    result=$?
+    set -e
+    if [ "$result" -eq 0 ]; then
+        echo "PASS: clean $kind resumes with preserved work"
+    else
+        failures=$((failures + 1))
+    fi
+done
+for kind in no-origin failed-fetch missing-head invalid-stable invalid-default failed-ancestry failed-reachability; do
     mkdir "$tmp/unsafe-$kind"
     set +e
     (set -e; test_clean_unsafe_sync_fails_without_moving_work "$tmp/unsafe-$kind" "$kind")
