@@ -1,13 +1,20 @@
 Resolve the workflow root from the claimed step metadata. Read its record:
 `gc gc source-delivery show --root <root-id>`.
 Read the source task named in the record. Work only in its absolute `worktree`
-path; never edit the launcher checkout. Keep the input commit and ownership
-record intact. Implement the task, run the recorded verify_command, and commit
-focused changes on the attached branch. Preserve unrelated files.
+path; keep the input commit and ownership record intact.
 
-Leave the source task open. Close only this step with gc.outcome=pass once the
-implementation is committed and the worktree is clean. Report blockers instead
-of inventing verification evidence. Drain after closing the step.
+On the initial iteration, implement the task, run the recorded verify_command
+and commit focused changes on the attached branch. Preserve unrelated files.
+On later iterations, read `findings` and repair the requested issues in that
+same worktree. If verification failed after an approved review, rerun the
+recorded command, diagnose and repair that failure before re-review. Keep the
+fixed input, verification command and independent review evidence intact.
+
+Never approve your own changes, integrate, push or close source work. Close only
+this step with gc.outcome=pass after implementation or repairs are committed and
+the worktree is clean. The native loop permits initial implementation and review
+plus at most two repair rounds. Retain work and explain blockers when repair is
+impossible. Drain after closing the step.
 
 When a build, test or commit runs asynchronously, track its exact job handle and
 wait within a stated time bound. If that bound expires, inspect that job and

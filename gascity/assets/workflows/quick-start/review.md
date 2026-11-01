@@ -1,1 +1,1 @@
-The child review must approve the exact output. The native check executes the required verification command and records its SHA before integration is eligible.
+The children implement the task, then independently review its exact output. The native check executes the required verification command and records its SHA before integration is eligible. A failed review or verification repeats implementation and independent review, with at most two repair rounds.

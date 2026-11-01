@@ -20,16 +20,9 @@ metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-bod
 description_file = "../assets/workflows/quick-start/prepare.md"
 
 [[steps]]
-id = "implement"
-title = "Implement and commit the local task"
-needs = ["prepare"]
-metadata = { "gc.run_target" = "gc.implementation-worker", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
-description_file = "../assets/workflows/quick-start/implement.md"
-
-[[steps]]
 id = "review"
-title = "Independent review and bounded repair"
-needs = ["implement"]
+title = "Implement, independently review and repair within a bounded loop"
+needs = ["prepare"]
 metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "delivery-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/quick-start/review.md"
 
@@ -42,15 +35,15 @@ path = "../assets/scripts/checks/source-delivery-approved.sh"
 timeout = "11m"
 
 [[steps.children]]
-id = "repair"
-title = "Apply prior review findings when present"
+id = "implement"
+title = "Implement the task or repair prior review findings"
 metadata = { "gc.run_target" = "gc.implementation-worker" }
-description_file = "../assets/workflows/quick-start/repair.md"
+description_file = "../assets/workflows/quick-start/implement.md"
 
 [[steps.children]]
 id = "inspect"
 title = "Review the exact implementation commit"
-needs = ["repair"]
+needs = ["implement"]
 metadata = { "gc.run_target" = "gc.implementation-reviewer" }
 description_file = "../assets/workflows/quick-start/inspect.md"
 
@@ -71,6 +64,6 @@ description_file = "../assets/workflows/quick-start/cleanup.md"
 [[steps]]
 id = "delivery-body"
 title = "Local source delivery scope"
-needs = ["prepare", "implement", "review", "integrate", "cleanup"]
+needs = ["prepare", "review", "integrate", "cleanup"]
 metadata = { "gc.kind" = "scope", "gc.scope_name" = "local-delivery", "gc.scope_role" = "body" }
 description_file = "../assets/workflows/quick-start/delivery-body.md"
