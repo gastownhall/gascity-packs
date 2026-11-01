@@ -22,6 +22,7 @@ Launch inputs:
 - code_review_formula: {{code_review_formula}}
 - review_fix_formula: {{review_fix_formula}}
 - max_iterations: {{max_iterations}}
+- base_branch: {{base_branch}}
 - push: {{push}}
 - open_pr: {{open_pr}}
 """
@@ -109,6 +110,10 @@ default = "false"
 [vars.open_pr]
 description = "Set true to allow final PR creation after all checks pass."
 default = "false"
+
+[vars.base_branch]
+description = "Branch to cut implementation worktrees from and to target when publishing. Empty means the remote default branch. Set it per rig with formula_vars."
+default = ""
 
 [[steps]]
 id = "prepare"

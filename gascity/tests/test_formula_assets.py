@@ -145,7 +145,7 @@ METHODOLOGY_STAGE_CONTRACTS = {
     "implementation-base": {
         "steps": ["prepare-worktree", "implement", "close-source-anchor"],
         "target_required": True,
-        "vars": {"context_path", "implementation_target", "summary_path"},
+        "vars": {"base_branch", "context_path", "implementation_target", "summary_path"},
     },
     "implementation-item-base": {
         "steps": ["implement-item"],
@@ -3605,6 +3605,56 @@ class FormulaAssetTests(unittest.TestCase):
         self.assertEqual(helper["steps"][0]["metadata"]["gc.run_target"], "{{implementation_target}}")
         self.assertEqual(helper["steps"][0]["drain"]["formula"], "do-work-item")
         self.assertEqual(helper["steps"][0]["drain"]["member_access"], "exclusive")
+
+    def test_base_branch_reaches_every_worktree_and_publish_step(self) -> None:
+        # base_branch is optional: empty keeps today's behaviour (the remote
+        # default branch). Drains pass the parent's vars to item formulas as
+        # caller values (formula-spec-v2 section 3.3), so declaring it on the
+        # entrypoints is enough to reach do-work's prepare-worktree.
+        gascity_root = pathlib.Path(__file__).resolve().parents[1]
+        packs_root = gascity_root.parent
+        declaring = (
+            "implement",
+            "build-base",
+            "build-from-review-base",
+            "implementation-base",
+            "do-work",
+            "publish",
+        )
+        for name in declaring:
+            data = load_formula(gascity_root, name)
+            with self.subTest(formula=name):
+                self.assertEqual(data["vars"]["base_branch"].get("default"), "")
+                self.assertNotIn("required", data["vars"]["base_branch"])
+        dirs_by_pack = {"gascity": [gascity_root / "formulas"]}
+        for pack_name in THIRD_PARTY_BUILD_PACKS:
+            dirs_by_pack[pack_name] = [gascity_root / "formulas", packs_root / pack_name / "formulas"]
+        for pack_name, dirs in dirs_by_pack.items():
+            for formula_path in sorted(dirs[-1].glob("*.formula.toml")):
+                name = formula_path.name.removesuffix(".formula.toml")
+                resolved = resolve_formula_from_dirs(dirs, name)
+                step_ids = {step["id"] for step in resolved.get("steps", [])}
+                cuts_or_publishes = step_ids & {"prepare-worktree", "publish"}
+                if not cuts_or_publishes:
+                    continue
+                with self.subTest(pack=pack_name, formula=name):
+                    self.assertIn("base_branch", resolved["vars"], f"{name} steps {sorted(cuts_or_publishes)}")
+        for asset in (
+            "implement/prepare.md",
+            "implement/publish.md",
+            "build-base/prepare.md",
+            "build-base/publish.md",
+            "build-basic/publish.md",
+            "build-from-convoy-base/prepare-convoy.md",
+            "build-from-review-base/publish.md",
+            "implementation-base/prepare-worktree.md",
+            "do-work/prepare-worktree.md",
+            "publish/preflight.md",
+            "publish/open-pr.md",
+        ):
+            with self.subTest(asset=asset):
+                text = (gascity_root / "assets" / "workflows" / asset).read_text(encoding="utf-8")
+                self.assertIn("{{base_branch}}", text)
 
     def test_implement_prepare_is_validation_only(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
