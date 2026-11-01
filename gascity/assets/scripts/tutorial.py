@@ -152,6 +152,10 @@ def verified_delivery(source, destination, gc):
     record = json.loads(workflow.get("metadata", {}).get("gc.delivery.record", "{}"))
     if not record.get("cleanup_complete") or Path(record["worktree"]).exists():
         raise ValueError("workflow finalization lacks verified cleanup evidence")
+    if record.get("review_status") != "approved" or any(
+        record.get(field) != sha for field in ("output_sha", "reviewed_sha", "tested_sha", "integrated_sha")
+    ):
+        raise ValueError("delivery evidence does not identify one approved, reviewed and tested integrated commit")
     return sha
 
 

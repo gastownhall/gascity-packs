@@ -167,7 +167,7 @@ def test_client_lesson_records_dependency_before_submitting(tutorial, tmp_path, 
             marker = args[args.index("--metadata-field") + 1]
             return [predecessor] if marker == "gc.tutorial=" + tutorial.MARKER + ":api" else []
         if args[:4] == ("gc", "bd", "show", "flow-api"):
-            return {"id": "flow-api", "status": "closed", "metadata": {"gc.outcome": "pass", "gc.delivery.record": json.dumps({"cleanup_complete": True, "worktree": str(tmp_path / "retired")})}}
+            return {"id": "flow-api", "status": "closed", "metadata": {"gc.outcome": "pass", "gc.delivery.record": json.dumps({"cleanup_complete": True, "worktree": str(tmp_path / "retired"), "output_sha": api_sha, "reviewed_sha": api_sha, "tested_sha": api_sha, "integrated_sha": api_sha, "review_status": "approved"})}}
         if args[:5] == ("gc", "--rig", "practice", "bd", "create"):
             assert api_sha in args[args.index("--description") + 1]
             assert args[args.index("--deps") + 1] == "pr-api"
@@ -206,3 +206,25 @@ def test_client_lesson_refuses_closed_api_without_cleanup_evidence(tutorial, tmp
     monkeypatch.setattr("sys.argv", ["tutorial", "start", "--lesson", "client"])
     with pytest.raises(ValueError, match="finalization"):
         tutorial.main()
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("reviewed_sha", "b" * 40), ("tested_sha", "b" * 40),
+    ("output_sha", "b" * 40), ("integrated_sha", "b" * 40),
+    ("review_status", "rejected"),
+])
+def test_status_rejects_inconsistent_delivery_evidence(tutorial, tmp_path, field, bad_value):
+    import json
+    sha = "a" * 40
+    record = {"cleanup_complete": True, "worktree": str(tmp_path / "retired"),
+              "output_sha": sha, "reviewed_sha": sha, "tested_sha": sha,
+              "integrated_sha": sha, "review_status": "approved"}
+    record[field] = bad_value
+    source = {"id": "pr-task", "status": "closed", "metadata": {
+        "gc.delivery.integrated_sha": sha, "gc.delivery.workflow_root": "flow"}}
+    def observations(*args, **kwargs):
+        return {"id": "flow", "status": "closed", "metadata": {
+            "gc.outcome": "pass", "gc.delivery.record": json.dumps(record)}}
+    tutorial.git = lambda *args: ""
+    with pytest.raises(ValueError, match="reviewed and tested"):
+        tutorial.verified_delivery(source, tmp_path, observations)
