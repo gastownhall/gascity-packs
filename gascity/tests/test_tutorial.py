@@ -130,3 +130,79 @@ def test_status_does_not_call_skipped_cleanup_a_completed_tutorial(tutorial, tmp
     monkeypatch.setattr("sys.argv", ["tutorial", "status"])
     with pytest.raises(ValueError, match="finalization"):
         tutorial.main()
+
+
+def test_api_lesson_requires_verified_previous_delivery(tutorial, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    destination = tmp_path / "projects/practice"
+    def observations(*args, **kwargs):
+        if args[:3] == ("gc", "rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+            return [{"id": "pr-first", "status": "open"}] if args[args.index("--metadata-field") + 1] == "gc.tutorial=" + tutorial.MARKER else []
+        raise AssertionError(f"an incomplete lesson must not create or submit work: {args}")
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "start", "--lesson", "api"])
+    with pytest.raises(ValueError, match="complete"):
+        tutorial.main()
+
+
+def test_client_lesson_records_dependency_before_submitting(tutorial, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    import json
+    destination = tmp_path / "projects/practice"
+    calls = []
+    api_sha = "a" * 40
+    predecessor = {"id": "pr-api", "status": "closed", "metadata": {
+        "gc.delivery.integrated_sha": api_sha, "gc.delivery.workflow_root": "flow-api"}}
+    def observations(*args, **kwargs):
+        calls.append(args)
+        if args[:3] == ("gc", "rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+            marker = args[args.index("--metadata-field") + 1]
+            return [predecessor] if marker == "gc.tutorial=" + tutorial.MARKER + ":api" else []
+        if args[:4] == ("gc", "bd", "show", "flow-api"):
+            return {"id": "flow-api", "status": "closed", "metadata": {"gc.outcome": "pass", "gc.delivery.record": json.dumps({"cleanup_complete": True, "worktree": str(tmp_path / "retired")})}}
+        if args[:5] == ("gc", "--rig", "practice", "bd", "create"):
+            assert api_sha in args[args.index("--description") + 1]
+            assert args[args.index("--deps") + 1] == "pr-api"
+            return {"id": "pr-client", "status": "open"}
+        if args[:4] == ("gc", "--rig", "practice", "sling"):
+            assert any(call[:5] == ("gc", "--rig", "practice", "bd", "create") and "--deps" in call for call in calls)
+            assert args[4:6] == ("practice/gc.run-operator", "pr-client")
+            return "routed\n"
+        raise AssertionError(args)
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
+    monkeypatch.setattr(tutorial, "git", lambda *args: "")
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "start", "--lesson", "client"])
+    tutorial.main()
+    assert any(call[:4] == ("gc", "--rig", "practice", "sling") for call in calls)
+
+
+def test_client_lesson_refuses_closed_api_without_cleanup_evidence(tutorial, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    destination = tmp_path / "projects/practice"
+    def observations(*args, **kwargs):
+        if args[:3] == ("gc", "rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+            marker = args[args.index("--metadata-field") + 1]
+            return [{"id": "pr-api", "status": "closed", "metadata": {"gc.delivery.integrated_sha": "a" * 40, "gc.delivery.workflow_root": "flow-api"}}] if marker.endswith(":api") else []
+        if args[:4] == ("gc", "bd", "show", "flow-api"):
+            return {"id": "flow-api", "status": "closed", "metadata": {"gc.outcome": "skipped"}}
+        raise AssertionError(f"invalid predecessor must not create work: {args}")
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
+    monkeypatch.setattr(tutorial, "git", lambda *args: "")
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "start", "--lesson", "client"])
+    with pytest.raises(ValueError, match="finalization"):
+        tutorial.main()

@@ -95,83 +95,136 @@ def finish_registration(repo):
     if git(repo, "status", "--porcelain", "--untracked-files=all"):
         raise ValueError("registration left source changes; refusing to submit work")
 
+LESSONS = {
+    "greeting": ("Fix the greeting bug", TASK, None),
+    "api": ("Add a reusable greeting API", """Add greeting_parts(name) to hello.py. It must return a dictionary
+with exactly two keys: name is the supplied name, or world for an empty name;
+message is the greeting returned by the existing greet function. For Ada the
+result is {"name": "Ada", "message": "Hello, Ada!"}; for an empty name it is
+{"name": "world", "message": "Hello, world!"}. Preserve greet and its existing
+acceptance tests. Add unittest coverage for both API cases, run
+python3 -m unittest discover -s tests -v, and commit. Keep this local: independent
+review, tests, integration and cleanup must pass before the source closes.
+Do not push or create a pull request.
+""", "greeting"),
+    "client": ("Use the accepted greeting API from a command-line client", """Add client.py, a small command-line client that imports greeting_parts
+from hello.py. Running python3 client.py Ada must print one JSON object with
+name Ada and message Hello, Ada!; with no argument it must print name world and
+message Hello, world!. Use json.dumps, preserve the accepted API and existing
+tests, and add unittest coverage for both CLI invocations. Run
+python3 -m unittest discover -s tests -v and commit. Use the accepted API rather
+than reimplementing it. Keep this local: independent review, tests, integration
+and cleanup must pass before the source closes. Do not push or create a PR.
+""", "api"),
+}
+
+
+def lesson_marker(lesson):
+    return MARKER if lesson == "greeting" else MARKER + ":" + lesson
+
+
+def find_lesson_source(gc, lesson):
+    rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--metadata-field",
+              "gc.tutorial=" + lesson_marker(lesson), "--limit", "0", "--json", json_output=True)
+    if isinstance(rows, dict):
+        rows = [rows]
+    if len(rows) > 1:
+        raise ValueError(f"multiple {lesson} task records found; inspect before proceeding")
+    return rows[0] if rows else None
+
+
+def verified_delivery(source, destination, gc):
+    """Verify accepted source, native finalization, local ancestry and cleanup."""
+    import json
+    sha = source.get("metadata", {}).get("gc.delivery.integrated_sha")
+    if source.get("status") != "closed" or not sha:
+        raise ValueError("complete the previous lesson with verified local integration first")
+    git(destination, "merge-base", "--is-ancestor", sha, "HEAD")
+    workflow_id = source.get("metadata", {}).get("gc.delivery.workflow_root")
+    if not workflow_id:
+        raise ValueError("integration is recorded but workflow finalization evidence is missing")
+    workflow = gc("gc", "bd", "show", workflow_id, "--json", json_output=True)
+    if workflow["status"] != "closed":
+        print(f"Code integrated at {sha}; workflow {workflow_id} is finishing cleanup.")
+        return None
+    if workflow.get("metadata", {}).get("gc.outcome") != "pass":
+        raise ValueError(f"code integrated, but workflow {workflow_id} finalization did not pass")
+    record = json.loads(workflow.get("metadata", {}).get("gc.delivery.record", "{}"))
+    if not record.get("cleanup_complete") or Path(record["worktree"]).exists():
+        raise ValueError("workflow finalization lacks verified cleanup evidence")
+    return sha
+
+
 def main():
     import argparse
     import json
     from source_delivery import gc
-    parser = argparse.ArgumentParser(description="Run or inspect your first guided local change.")
+    parser = argparse.ArgumentParser(description="Run or inspect a guided local delivery lesson.")
     parser.add_argument("action", choices=["start", "status"], default="start", nargs="?")
+    parser.add_argument("--lesson", choices=list(LESSONS), default="greeting")
     args = parser.parse_args()
     city = os.environ.get("GC_CITY_PATH")
     if not city:
         raise ValueError("run this command inside an initialized city")
     destination = Path(city) / "projects" / "practice"
-    if args.action == "start":
-        print("[1/4] Preparing your local practice repository", flush=True)
-        scaffold(destination)
     rigs = gc("gc", "rig", "list", "--json", json_output=True)["rigs"]
     practice = [rig for rig in rigs if rig["name"] == "practice"]
     if practice and Path(practice[0]["path"]).resolve() != destination.resolve():
         raise ValueError("an existing practice rig points elsewhere; no changes made to it")
+    title, description, previous = LESSONS[args.lesson]
+    predecessor = None
+    if args.action == "start" and previous:
+        if not practice:
+            raise ValueError("complete the guided quickstart first; its practice rig is required")
+        predecessor = find_lesson_source(gc, previous)
+        if predecessor is None:
+            raise ValueError(f"complete the {previous} lesson first")
+        accepted = verified_delivery(predecessor, destination, gc)
+        if not accepted:
+            raise ValueError(f"complete {previous} workflow finalization before starting {args.lesson}")
+        description += f"\nRequired predecessor: {predecessor['id']}; accepted input commit: {accepted}.\n"
+        print(f"Previous lesson: {predecessor['id']}; verified accepted commit: {accepted}", flush=True)
+    if args.action == "start":
+        print("[1/4] Preparing your local practice repository", flush=True)
+        scaffold(destination)
     if not practice:
         if args.action == "status":
             print("The guided task has not started. Run gc gc tutorial start.")
             return
         print("[2/4] Registering the practice repository", flush=True)
         gc("gc", "rig", "add", str(destination), "--name", "practice")
-    rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--metadata-field",
-              "gc.tutorial=" + MARKER, "--limit", "0", "--json", json_output=True)
-    if isinstance(rows, dict):
-        rows = [rows]
-    if len(rows) > 1:
-        raise ValueError("multiple first-task records found; inspect before proceeding")
-    if not rows:
-        if args.action == "start":
-            finish_registration(destination)
+    source = find_lesson_source(gc, args.lesson)
+    if source is None:
         if args.action == "status":
-            print("The practice repository exists; run gc gc tutorial start to submit its task.")
+            print(f"The {args.lesson} lesson has not started. Run gc gc tutorial start --lesson {args.lesson}.")
             return
-        print("[3/4] Recording your first task", flush=True)
-        source = gc("gc", "--rig", "practice", "bd", "create", "Fix the greeting bug",
-                    "--description", TASK, "--metadata", json.dumps({"gc.tutorial": MARKER}),
-                    "--json", json_output=True)
-    else:
-        source = rows[0]
+        if args.lesson == "greeting":
+            finish_registration(destination)
+        elif git(destination, "status", "--porcelain", "--untracked-files=all"):
+            raise ValueError("practice repository has unfinished source changes; preserve them before submitting the next lesson")
+        print("[3/4] Recording your task", flush=True)
+        dependency = ("--deps", predecessor["id"]) if predecessor else ()
+        source = gc("gc", "--rig", "practice", "bd", "create", title,
+                    "--description", description, "--metadata", json.dumps({"gc.tutorial": lesson_marker(args.lesson)}),
+                    *dependency, "--json", json_output=True)
     source_id = source["id"]
-    status = source["status"]
-    print(f"Source task: {source_id}; status: {status}", flush=True)
+    print(f"Source task: {source_id}; status: {source['status']}", flush=True)
     if source["status"] == "closed":
-        sha = source.get("metadata", {}).get("gc.delivery.integrated_sha")
-        if not sha:
-            raise ValueError("task was closed without verified integration evidence")
-        git(destination, "merge-base", "--is-ancestor", sha, "HEAD")
-        workflow_id = source.get("metadata", {}).get("gc.delivery.workflow_root")
-        if not workflow_id:
-            raise ValueError("integration is recorded but workflow finalization evidence is missing")
-        workflow = gc("gc", "bd", "show", workflow_id, "--json", json_output=True)
-        if workflow["status"] != "closed":
-            print(f"Code integrated at {sha}; workflow {workflow_id} is finishing cleanup.")
-            return
-        if workflow.get("metadata", {}).get("gc.outcome") != "pass":
-            raise ValueError(f"code integrated, but workflow {workflow_id} finalization did not pass")
-        record = json.loads(workflow.get("metadata", {}).get("gc.delivery.record", "{}"))
-        if not record.get("cleanup_complete") or Path(record["worktree"]).exists():
-            raise ValueError("workflow finalization lacks verified cleanup evidence")
-        print(f"Verified local integration: {sha}\nRepository: {destination}")
-        print("Continue with hands-on tutorial 1 using this same city.")
+        sha = verified_delivery(source, destination, gc)
+        if sha:
+            print(f"Verified local integration: {sha}\nRepository: {destination}")
+            print("Continue the hands-on tutorials using this same city and repository.")
         return
     if args.action == "start":
         print("[4/4] Starting implementation and independent review", flush=True)
         print(gc("gc", "--rig", "practice", "sling", "practice/gc.run-operator", source_id, "--on", "quick-start",
                  "--var", "verify_command=" + VERIFY_COMMAND), end="")
-    print("Watch: gc status\nInspect: gc gc tutorial status\nPause: gc stop\nResume: gc start")
+    print(f"Watch: gc status\nInspect: gc gc tutorial status --lesson {args.lesson}\nPause: gc stop\nResume: gc start")
     print("The source task closes only after the reviewed and tested commit is integrated locally.")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, RuntimeError, subprocess.SubprocessError) as exc:
-        import sys
-        print(f"tutorial: {exc}", file=sys.stderr)
-        sys.exit(1)
+    except (ValueError, subprocess.SubprocessError) as error:
+        raise SystemExit(str(error)) from error

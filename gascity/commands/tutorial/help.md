@@ -1,12 +1,20 @@
 Run `gc gc tutorial start` after initializing and starting your beginner city.
 
-This creates a small local practice repository, registers it, and submits one
-real task through the default pack quick-start workflow. It requires Python 3
-and your selected authenticated coding provider. No GitHub account is needed.
-Implementation, independent review, bounded repair and local integration run
-through the controller. Source work closes after verified integration, cleanup and native finalization.
+This creates a local practice repository and submits a greeting fix through the
+default Gas City pack. It requires Python 3 and your selected authenticated
+coding provider. Implementation, independent review, bounded repair, tests,
+local integration and cleanup precede native source closure. No GitHub account
+is needed.
 
-Run `gc gc tutorial status` to inspect the source task and integrated commit.
-Use `gc stop` to pause the city and `gc start` to resume its persistent work.
-Retries preserve the owned repository and existing task; unrelated existing
-paths are refused. Your normal repositories and history are left alone.
+Continue in that same repository:
+
+- `gc gc tutorial start --lesson api` adds a reusable greeting API.
+- `gc gc tutorial start --lesson client` adds a JSON command-line client of the accepted API.
+- `gc gc tutorial status --lesson api` (or `client`) checks that lesson's delivery evidence.
+
+Each continuation requires the previous lesson's verified integration and
+completed cleanup. The new source task records its dependency and accepted
+predecessor commit. Existing source tasks and unfinished work are preserved.
+
+Use `gc stop` to pause the city and `gc start` to resume persistent work.
+Retries preserve the owned repository and task; unrelated paths are refused.
