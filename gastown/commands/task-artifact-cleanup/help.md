@@ -19,17 +19,31 @@ Before removal it requires a closed work bead, an explicitly merged
 then applies the evidence matrix for that exact result:
 
 - `merged` / `already_merged` requires the exact artifact source SHA at
-  `origin/polecat/<bead>` and independently refreshes the recorded target to
-  prove `merged_sha` is reachable there as terminal-state corroboration; and
+  `origin/polecat/<bead>`. It uses `merged_target`, falling back to `target`
+  only when `merged_target` is absent, null, or empty. An invalid populated
+  `merged_target` blocks cleanup. It fetches the target and pins one commit
+  for both `merged_sha` ancestry and the source-patch check described below.
 - `mr_merged` requires the source ref to equal the validated `pr_head_sha`
   GitHub reported to the refinery, plus refreshed target reachability for
   `merged_sha`. When GitHub deleted the head branch on merge (the branch is
   absent, not moved), GitHub's immutable `refs/pull/<pr_number>/head` at that
   exact SHA stands in as the retained source ref.
 
-The target checks do not prove a source-to-merge relation. In every accepted
-case the exact source ref remains independent recovery evidence after local
-cleanup. Mutable bead metadata alone is never sufficient deletion evidence.
+For a direct handoff, complete history must show that the source is an
+ancestor of the pinned target, or that every source-only non-merge commit has
+an equivalent patch in the target history. The latter requires no source-only
+merge commits and a successful, nonempty `git cherry <target> <source>` result
+containing only negative object-ID records. Shallow or incomplete history,
+failed queries, positive or malformed records, and unexplained empty output
+block cleanup. History queries disable Git replacements and grafts.
+
+This proves historical normalized patch equivalence. It does not prove
+semantic equality, current-tree equality, or the absence of later reverts.
+The integration commit need not itself introduce every source patch. The
+verified-PR path retains its separate validated-head checks. In every accepted
+case the exact remote source ref preserves the original bytes as independent
+recovery evidence after local cleanup. Mutable bead metadata alone is never
+sufficient deletion evidence.
 
 The historical `merge_result=pull_request`, current
 `merge_result=pull_request_pending`, obsolete
