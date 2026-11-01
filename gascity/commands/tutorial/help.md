@@ -18,3 +18,7 @@ predecessor commit. Existing source tasks and unfinished work are preserved.
 
 Use `gc stop` to pause the city and `gc start` to resume persistent work.
 Retries preserve the owned repository and task; unrelated paths are refused.
+
+Repeating start reports the lesson’s existing native workflow, including while
+preparation is still running. It preserves that workflow’s review and repair
+budget. A failed workflow remains available for inspection with its source task.

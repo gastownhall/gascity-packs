@@ -228,3 +228,94 @@ def test_status_rejects_inconsistent_delivery_evidence(tutorial, tmp_path, field
     tutorial.git = lambda *args: ""
     with pytest.raises(ValueError, match="reviewed and tested"):
         tutorial.verified_delivery(source, tmp_path, observations)
+
+
+@pytest.mark.parametrize("status", ["open", "in_progress", "closed"])
+@pytest.mark.parametrize("recorded_root", [False, True])
+def test_start_observes_attached_workflow_instead_of_reslinging(tutorial, tmp_path, monkeypatch, capsys, status, recorded_root):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    destination = tmp_path / "projects/practice"
+    calls = []
+    def observations(*args, **kwargs):
+        args = args[1:]
+        calls.append(args)
+        if args[:2] == ("rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:4] == ("--rig", "practice", "bd", "list"):
+            marker = args[args.index("--metadata-field") + 1]
+            if marker.startswith("gc.tutorial="):
+                return [{"id": "practice-1", "status": "open",
+                         "metadata": {"gc.delivery.workflow_root": "flow-1"} if recorded_root else {}}]
+            assert marker == "gc.source_bead_id=practice-1"
+            return [{"id": "flow-1", "status": status,
+                     "metadata": {"gc.kind": "workflow", "gc.formula_name": "quick-start"}}]
+        raise AssertionError(f"an attached workflow must not be replaced or mutated: {args}")
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "start"])
+    tutorial.main()
+    assert "Existing workflow: flow-1" in capsys.readouterr().out
+    assert not any("sling" in call for call in calls)
+
+
+def test_multiple_live_workflows_require_inspection_without_mutation(tutorial):
+    def observations(*args, **kwargs):
+        return [{"id": name, "status": "open", "metadata": {"gc.kind": "workflow"}}
+                for name in ("flow-1", "flow-2")]
+    with pytest.raises(ValueError, match="multiple live workflows"):
+        tutorial.attached_workflow(observations, {"id": "practice-1"})
+
+
+def test_active_workflow_wins_over_retained_history(tutorial):
+    def observations(*args, **kwargs):
+        return [{"id": "old", "status": "closed", "metadata": {"gc.kind": "workflow"}},
+                {"id": "current", "status": "in_progress", "metadata": {"gc.kind": "workflow"}},
+                {"id": "step", "status": "open", "metadata": {"gc.kind": "scope"}}]
+    assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "current"
+
+
+@pytest.mark.parametrize("attach_during_sling", [False, True])
+def test_start_preserves_native_admission_guard(tutorial, tmp_path, monkeypatch, capsys, attach_during_sling):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    calls = []
+    probes = 0
+    destination = tmp_path / "projects/practice"
+    def observations(*args, **kwargs):
+        nonlocal probes
+        args = args[1:]
+        calls.append(args)
+        if args[:2] == ("rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:4] == ("--rig", "practice", "bd", "list"):
+            marker = args[args.index("--metadata-field") + 1]
+            if marker.startswith("gc.tutorial="):
+                return [{"id": "practice-1", "status": "open"}]
+            probes += 1
+            if probes > 1 and attach_during_sling:
+                return [{"id": "concurrent", "status": "open", "metadata": {"gc.kind": "workflow"}}]
+            return []
+        if args[:3] == ("--rig", "practice", "sling"):
+            raise source_delivery.InfrastructureError("native admission unavailable")
+        raise AssertionError(args)
+    monkeypatch.setattr(source_delivery, "gc", observations)
+    monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "start"])
+    if attach_during_sling:
+        tutorial.main()
+        assert "Existing workflow: concurrent" in capsys.readouterr().out
+    else:
+        with pytest.raises(source_delivery.InfrastructureError, match="native admission unavailable"):
+            tutorial.main()
+    assert len([call for call in calls if call[:3] == ("--rig", "practice", "sling")]) == 1
+    assert all("--force" not in call and "delete-source" not in call for call in calls)
+
+
+def test_attached_workflow_read_failure_never_becomes_an_unbound_launch(tutorial):
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("native binding lookup unavailable")
+    with pytest.raises(RuntimeError, match="native binding lookup unavailable"):
+        tutorial.attached_workflow(unavailable, {"id": "practice-1"})

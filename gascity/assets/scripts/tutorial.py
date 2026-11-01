@@ -133,6 +133,28 @@ def find_lesson_source(gc, lesson):
     return rows[0] if rows else None
 
 
+def attached_workflow(gc, source):
+    """Read native workflow bindings, including attachment before preparation."""
+    rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--metadata-field",
+              "gc.source_bead_id=" + source["id"], "--limit", "0", "--json", json_output=True)
+    if isinstance(rows, dict):
+        rows = [rows]
+    roots = [row for row in rows if row.get("metadata", {}).get("gc.kind") == "workflow"]
+    live = [row for row in roots if row.get("status") != "closed"]
+    if len(live) > 1:
+        raise ValueError("multiple live workflows for this lesson; inspect the preserved source and workflows")
+    if live:
+        return live[0]["id"]
+    if len(roots) == 1:
+        return roots[0]["id"]
+    if roots:
+        hint = source.get("metadata", {}).get("gc.delivery.workflow_root")
+        if any(row["id"] == hint for row in roots):
+            return hint
+        raise ValueError("multiple completed workflows for this lesson; inspect the preserved source and workflows")
+    return None
+
+
 def verified_delivery(source, destination, gc):
     """Verify accepted source, native finalization, local ancestry and cleanup."""
     import json
@@ -162,7 +184,7 @@ def verified_delivery(source, destination, gc):
 def main():
     import argparse
     import json
-    from source_delivery import gc
+    from source_delivery import gc, InfrastructureError
     parser = argparse.ArgumentParser(description="Run or inspect a guided local delivery lesson.")
     parser.add_argument("action", choices=["start", "status"], default="start", nargs="?")
     parser.add_argument("--lesson", choices=list(LESSONS), default="greeting")
@@ -220,15 +242,30 @@ def main():
             print("Continue the hands-on tutorials using this same city and repository.")
         return
     if args.action == "start":
-        print("[4/4] Starting implementation and independent review", flush=True)
-        print(gc("gc", "--rig", "practice", "sling", "practice/gc.run-operator", source_id, "--on", "quick-start",
-                 "--var", "verify_command=" + VERIFY_COMMAND), end="")
+        existing = attached_workflow(gc, source)
+        if existing:
+            print(f"Existing workflow: {existing}", flush=True)
+        else:
+            print("[4/4] Starting implementation and independent review", flush=True)
+            try:
+                routed = gc("gc", "--rig", "practice", "sling", "practice/gc.run-operator", source_id, "--on", "quick-start",
+                            "--var", "verify_command=" + VERIFY_COMMAND)
+            except InfrastructureError:
+                # Another invocation may have attached after the read. The
+                # native sling guard owns admission; observe its existing work.
+                existing = attached_workflow(gc, source)
+                if not existing:
+                    raise
+                print(f"Existing workflow: {existing}", flush=True)
+            else:
+                print(routed, end="")
     print(f"Watch: gc status\nInspect: gc gc tutorial status --lesson {args.lesson}\nPause: gc stop\nResume: gc start")
     print("The source task closes only after the reviewed and tested commit is integrated locally.")
 
 
 if __name__ == "__main__":
+    from source_delivery import InfrastructureError
     try:
         main()
-    except (ValueError, subprocess.SubprocessError) as error:
+    except (ValueError, subprocess.SubprocessError, InfrastructureError) as error:
         raise SystemExit(str(error)) from error
