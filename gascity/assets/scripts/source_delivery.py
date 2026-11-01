@@ -224,6 +224,12 @@ def verify_output(root):
                             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             timeout=600)
     print(result.stdout, end="")
+    # Validator configuration/availability failures and shell launch failures
+    # provide no artifact verdict. Preserve the workflow input and repair budget.
+    if result.returncode in (75, 78, 126, 127):
+        raise InfrastructureError(
+            f"verification command could not provide an artifact verdict (exit {result.returncode}); "
+            "restore its prerequisites or executable/PATH and retry the same workflow; source remains open")
     if result.returncode:
         raise ValueError(f"verification failed with exit {result.returncode}; source remains open")
     clean(tree)

@@ -264,3 +264,69 @@ def test_remote_input_refuses_checkout_changes_during_fetch(delivery, tmp_path, 
         assert (repo / "user.txt").read_text() == "preserve concurrent user work"
     else:
         assert git(repo, "symbolic-ref", "--short", "HEAD") == "user-work"
+
+
+@pytest.mark.parametrize("failure", ["missing", "not-executable", "configuration", "temporary"])
+def test_verifier_launch_failure_does_not_spend_content_repair_budget(delivery, tmp_path, monkeypatch, failure):
+    mod, repo, tree, base, output = delivery
+    validator = tmp_path / "validator"
+    if failure == "not-executable":
+        validator.write_text("#!/bin/sh\nexit 0\n")
+        validator.chmod(0o644)
+    if failure in ("configuration", "temporary"):
+        validator.write_text("#!/bin/sh\nexit " + ("78" if failure == "configuration" else "75") + "\n")
+        validator.chmod(0o755)
+    record = dict(root="flow-1", source="task-1", repo=str(repo), worktree=str(tree),
+                  worktree_root=str(tree.parent), branch="task", base_ref="refs/heads/main",
+                  base_sha=base, reviewed_sha=output, review_status="approved",
+                  verify_command=str(validator), attempt_id="owned-attempt")
+    monkeypatch.setattr(mod, "load", lambda root: dict(record))
+    def observe(*args, **kwargs):
+        assert args[:3] == ("gc", "worktree", "verify"), args
+        return {"ok": True}
+    monkeypatch.setattr(mod, "gc", observe)
+    monkeypatch.setattr(mod, "save", lambda *args: pytest.fail("unexecuted validator cannot record tested output"))
+    with pytest.raises(mod.InfrastructureError, match="verification command.*(75|78|126|127)"):
+        mod.verify_output("flow-1")
+    assert git(tree, "rev-parse", "HEAD") == output
+    assert git(repo, "rev-parse", "HEAD") == base
+    assert "tested_sha" not in record
+
+
+def test_failed_repository_verification_remains_a_content_verdict(delivery, monkeypatch):
+    mod, repo, tree, base, output = delivery
+    record = dict(root="flow-1", source="task-1", repo=str(repo), worktree=str(tree),
+                  worktree_root=str(tree.parent), branch="task", base_ref="refs/heads/main",
+                  base_sha=base, reviewed_sha=output, review_status="approved",
+                  verify_command="false", attempt_id="owned-attempt")
+    monkeypatch.setattr(mod, "load", lambda root: dict(record))
+    monkeypatch.setattr(mod, "gc", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr(mod, "save", lambda *args: pytest.fail("failed verification cannot record tested output"))
+    with pytest.raises(ValueError, match="verification failed with exit 1"):
+        mod.verify_output("flow-1")
+    assert git(repo, "rev-parse", "HEAD") == base
+
+
+def test_actual_validator_dependency_failure_uses_its_selected_interpreter(delivery, tmp_path, monkeypatch, capsys):
+    import shlex
+    import sys
+    mod, repo, tree, base, output = delivery
+    report = tmp_path / "review.md"
+    report.write_text('---\nkind: review\nverdict: pass\nseverity: none\nsummary: Reviewed the change\nfindings: []\n---\n')
+    validator = SCRIPT.parent / "validate_verdict_report.py"
+    # -S exercises the actual validator with this exact interpreter while its
+    # third-party site packages are unavailable. No validator exit is stubbed.
+    command = shlex.join([sys.executable, "-S", str(validator), str(report), "--kind", "review"])
+    record = dict(root="flow-1", source="task-1", repo=str(repo), worktree=str(tree),
+                  worktree_root=str(tree.parent), branch="task", base_ref="refs/heads/main",
+                  base_sha=base, reviewed_sha=output, review_status="approved",
+                  verify_command=command, attempt_id="owned-attempt")
+    monkeypatch.setattr(mod, "load", lambda root: dict(record))
+    monkeypatch.setattr(mod, "gc", lambda *args, **kwargs: {"ok": True})
+    monkeypatch.setattr(mod, "save", lambda *args: pytest.fail("unavailable validator cannot record a verdict"))
+    with pytest.raises(mod.InfrastructureError, match="verification command.*78"):
+        mod.verify_output("flow-1")
+    diagnostic = capsys.readouterr().out
+    assert "PyYAML not importable" in diagnostic
+    assert sys.executable in diagnostic
+    assert git(repo, "rev-parse", "HEAD") == base
