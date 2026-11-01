@@ -134,12 +134,39 @@ def find_lesson_source(gc, lesson):
 
 
 def attached_workflow(gc, source):
-    """Read native workflow bindings, including attachment before preparation."""
-    rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--metadata-field",
-              "gc.source_bead_id=" + source["id"], "--limit", "0", "--json", json_output=True)
-    if isinstance(rows, dict):
-        rows = [rows]
-    roots = [row for row in rows if row.get("metadata", {}).get("gc.kind") == "workflow"]
+    """Follow native direct and convoy-first bindings without relaunching work."""
+    def rows(*args):
+        result = gc("gc", "--rig", "practice", "bd", *args, json_output=True)
+        return [result] if isinstance(result, dict) else result
+
+    def keyed_roots(key, value):
+        matches = rows("list", "--all", "--include-ephemeral", "--metadata-field",
+                       key + "=" + value, "--limit", "0", "--json")
+        roots = []
+        for row in matches:
+            metadata = row.get("metadata", {})
+            kind = metadata.get("gc.kind", "").strip().lower()
+            contract = metadata.get("gc.formula_contract", "").strip().lower()
+            controller = row.get("issue_type", "").strip().lower() in {
+                "session", "startup-health-episode", "convergence", "op"}
+            controller |= any(label.strip().lower() == "gc:session" for label in row.get("labels", []))
+            if not controller and (kind == "workflow" or contract == "graph.v2"):
+                roots.append(row)
+        return roots
+
+    roots_by_id = {row["id"]: row for row in keyed_roots("gc.source_bead_id", source["id"])}
+    # A bare-source --on launch initially binds through its synthetic input
+    # convoy. prepare adds the delivery back-link later; it is not admission.
+    excluded = {"gc:session", "gc:order-tracking", "order-tracking", "gc:op", "gc:fact", "gc:rt"}
+    for convoy in rows("dep", "list", source["id"], "--direction", "up", "--type", "tracks", "--json"):
+        if (convoy.get("issue_type") != "convoy" or
+                convoy.get("metadata", {}).get("gc.synthetic", "").strip() != "true" or
+                excluded.intersection(convoy.get("labels", []))):
+            continue
+        for row in keyed_roots("gc.input_convoy_id", convoy["id"]):
+            if row.get("metadata", {}).get("gc.formula_name", "").strip() == "quick-start":
+                roots_by_id[row["id"]] = row
+    roots = list(roots_by_id.values())
     live = [row for row in roots if row.get("status") != "closed"]
     if len(live) > 1:
         raise ValueError("multiple live workflows for this lesson; inspect the preserved source and workflows")

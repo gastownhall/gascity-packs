@@ -48,6 +48,8 @@ def test_status_reads_existing_task_without_restarting_it(tutorial, tmp_path, mo
     def observations(*args, **kwargs):
         assert args[0] == "gc"
         args = args[1:]
+        if args[:4] == ("--rig", "practice", "bd", "dep"):
+            return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -69,6 +71,8 @@ def test_start_routes_existing_task_without_manual_rig_defaults(tutorial, tmp_pa
         assert args[0] == "gc"
         args = args[1:]
         calls.append(args)
+        if args[:4] == ("--rig", "practice", "bd", "dep"):
+            return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -161,6 +165,8 @@ def test_client_lesson_records_dependency_before_submitting(tutorial, tmp_path, 
         "gc.delivery.integrated_sha": api_sha, "gc.delivery.workflow_root": "flow-api"}}
     def observations(*args, **kwargs):
         calls.append(args)
+        if args[:5] == ("gc", "--rig", "practice", "bd", "dep"):
+            return []
         if args[:3] == ("gc", "rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
@@ -240,6 +246,8 @@ def test_start_observes_attached_workflow_instead_of_reslinging(tutorial, tmp_pa
     def observations(*args, **kwargs):
         args = args[1:]
         calls.append(args)
+        if args[:4] == ("--rig", "practice", "bd", "dep"):
+            return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -262,6 +270,8 @@ def test_start_observes_attached_workflow_instead_of_reslinging(tutorial, tmp_pa
 
 def test_multiple_live_workflows_require_inspection_without_mutation(tutorial):
     def observations(*args, **kwargs):
+        if args[4:6] == ("dep", "list"):
+            return []
         return [{"id": name, "status": "open", "metadata": {"gc.kind": "workflow"}}
                 for name in ("flow-1", "flow-2")]
     with pytest.raises(ValueError, match="multiple live workflows"):
@@ -270,6 +280,8 @@ def test_multiple_live_workflows_require_inspection_without_mutation(tutorial):
 
 def test_active_workflow_wins_over_retained_history(tutorial):
     def observations(*args, **kwargs):
+        if args[4:6] == ("dep", "list"):
+            return []
         return [{"id": "old", "status": "closed", "metadata": {"gc.kind": "workflow"}},
                 {"id": "current", "status": "in_progress", "metadata": {"gc.kind": "workflow"}},
                 {"id": "step", "status": "open", "metadata": {"gc.kind": "scope"}}]
@@ -287,6 +299,8 @@ def test_start_preserves_native_admission_guard(tutorial, tmp_path, monkeypatch,
         nonlocal probes
         args = args[1:]
         calls.append(args)
+        if args[:4] == ("--rig", "practice", "bd", "dep"):
+            return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -319,3 +333,81 @@ def test_attached_workflow_read_failure_never_becomes_an_unbound_launch(tutorial
         raise RuntimeError("native binding lookup unavailable")
     with pytest.raises(RuntimeError, match="native binding lookup unavailable"):
         tutorial.attached_workflow(unavailable, {"id": "practice-1"})
+
+
+@pytest.mark.parametrize("root_status", ["open", "in_progress", "closed"])
+@pytest.mark.parametrize("root_kind", ["workflow", "graph.v2"])
+def test_retry_follows_native_input_convoy_before_prepare(tutorial, root_status, root_kind):
+    """Sling stamps the convoy binding before prepare adds a source back-link."""
+    calls = []
+    def observations(*args, **kwargs):
+        calls.append(args)
+        if args[4:6] == ("dep", "list"):
+            assert args[6:] == ("practice-1", "--direction", "up", "--type", "tracks", "--json")
+            return [{"id": "input-1", "issue_type": "convoy", "status": "closed",
+                     "dependency_type": "tracks", "metadata": {"gc.synthetic": "true"}}]
+        assert args[4] == "list"
+        marker = args[args.index("--metadata-field") + 1]
+        if marker == "gc.source_bead_id=practice-1":
+            return []
+        assert marker == "gc.input_convoy_id=input-1"
+        # Model the native visibility contract rather than always returning rows.
+        if "--include-ephemeral" not in args:
+            return []
+        metadata = {"gc.formula_name": "quick-start"}
+        metadata["gc.kind" if root_kind == "workflow" else "gc.formula_contract"] = root_kind
+        return [{"id": "flow-1", "status": root_status, "metadata": metadata}]
+    assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "flow-1"
+    assert all("sling" not in args and "update" not in args for args in calls)
+
+
+def test_retry_excludes_unrelated_convoy_formulas_and_controller_rows(tutorial):
+    def observations(*args, **kwargs):
+        if args[4:6] == ("dep", "list"):
+            return [
+                {"id": "sprint", "issue_type": "convoy", "metadata": {}},
+                {"id": "input", "issue_type": "convoy", "metadata": {"gc.synthetic": "true"}},
+            ]
+        marker = args[args.index("--metadata-field") + 1]
+        if marker == "gc.source_bead_id=practice-1":
+            return []
+        assert marker == "gc.input_convoy_id=input"
+        return [
+            {"id": "other", "status": "open", "metadata": {
+                "gc.kind": "workflow", "gc.formula_name": "review"}},
+            {"id": "session", "issue_type": "session", "status": "open", "metadata": {
+                "gc.formula_contract": "graph.v2", "gc.formula_name": "quick-start"}},
+            {"id": "expected", "status": "open", "metadata": {
+                "gc.formula_contract": "graph.v2", "gc.formula_name": "quick-start"}},
+        ]
+    assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "expected"
+
+
+def test_retry_checks_convoy_bindings_even_with_a_direct_root(tutorial):
+    def observations(*args, **kwargs):
+        if args[4:6] == ("dep", "list"):
+            return [{"id": "input", "issue_type": "convoy", "metadata": {"gc.synthetic": "true"}}]
+        marker = args[args.index("--metadata-field") + 1]
+        root = "direct" if marker.startswith("gc.source_bead_id=") else "convoy"
+        return [{"id": root, "status": "open", "metadata": {
+            "gc.kind": "workflow", "gc.formula_name": "quick-start"}}]
+    with pytest.raises(ValueError, match="multiple live workflows"):
+        tutorial.attached_workflow(observations, {"id": "practice-1"})
+
+
+def test_retry_deduplicates_direct_and_convoy_binding(tutorial):
+    def observations(*args, **kwargs):
+        if args[4:6] == ("dep", "list"):
+            return [{"id": "input", "issue_type": "convoy", "metadata": {"gc.synthetic": "true"}}]
+        return [{"id": "same", "status": "open", "metadata": {
+            "gc.kind": "workflow", "gc.formula_name": "quick-start"}}]
+    assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "same"
+
+
+def test_retry_never_relaunches_after_a_convoy_read_failure(tutorial):
+    def observations(*args, **kwargs):
+        if args[4:6] == ("dep", "list"):
+            raise RuntimeError("tracking edge lookup unavailable")
+        return []
+    with pytest.raises(RuntimeError, match="tracking edge lookup unavailable"):
+        tutorial.attached_workflow(observations, {"id": "practice-1"})
