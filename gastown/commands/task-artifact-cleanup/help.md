@@ -37,6 +37,15 @@ containing only negative object-ID records. Shallow or incomplete history,
 failed queries, positive or malformed records, and unexplained empty output
 block cleanup. History queries disable Git replacements and grafts.
 
+The source-patch proof also tightens existing direct refinery landings with a
+populated `merged_target`; it is not limited to the `target` fallback. A
+conflict-free rebase with changed diff context, or a differently resolved
+patch, can fail normalized patch equivalence even when the resulting change
+is present in target history. Such proof failures record
+`artifact_cleanup_state=blocked`. The current pending-only retry selector
+does not automatically retry that blocked record; operator resolution is
+needed.
+
 This proves historical normalized patch equivalence. It does not prove
 semantic equality, current-tree equality, or the absence of later reverts.
 The integration commit need not itself introduce every source patch. The
