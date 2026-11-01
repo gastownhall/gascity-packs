@@ -330,3 +330,46 @@ def test_actual_validator_dependency_failure_uses_its_selected_interpreter(deliv
     assert "PyYAML not importable" in diagnostic
     assert sys.executable in diagnostic
     assert git(repo, "rev-parse", "HEAD") == base
+
+
+@pytest.mark.parametrize("failure,expected", [("missing", 78), ("module", 78), ("temporary", 75)])
+def test_cli_preserves_dispatcher_configuration_hold_protocol(delivery, tmp_path, monkeypatch, capsys, failure, expected):
+    import json
+    import runpy
+    import shlex
+    import sys
+    mod, repo, tree, base, output = delivery
+    validator = tmp_path / "validator"
+    if failure == "module":
+        report = tmp_path / "review.md"
+        report.write_text("---\nkind: review\nverdict: pass\nfindings: []\n---\n")
+        command = shlex.join([sys.executable, "-S", str(SCRIPT.parent / "validate_verdict_report.py"), str(report)])
+    else:
+        if failure == "temporary":
+            validator.write_text("#!/bin/sh\nexit 75\n")
+            validator.chmod(0o755)
+        command = str(validator)
+    record = dict(root="flow-1", source="task-1", repo=str(repo), worktree=str(tree),
+                  worktree_root=str(tree.parent), branch="task", base_ref="refs/heads/main",
+                  base_sha=base, reviewed_sha=output, review_status="approved",
+                  verify_command=command, attempt_id="owned-attempt")
+    original = subprocess.check_output
+    def gc_boundary(argv, **kwargs):
+        if argv[0] != "gc-contract-probe":
+            return original(argv, **kwargs)
+        if argv[:4] == ["gc-contract-probe", "bd", "show", "flow-1"]:
+            return json.dumps({"id":"flow-1", "metadata":{"gc.delivery.record":json.dumps(record)}})
+        if argv[1:3] == ["worktree", "verify"]:
+            return "{}"
+        pytest.fail("a failed validator must not write progress: " + repr(argv))
+    monkeypatch.setattr(subprocess, "check_output", gc_boundary)
+    monkeypatch.setenv("GC_BIN", "gc-contract-probe")
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "check", "--root", "flow-1"])
+    with pytest.raises(SystemExit) as ended:
+        runpy.run_path(str(SCRIPT), run_name="__main__")
+    assert ended.value.code == expected
+    if failure == "module":
+        diagnostic = capsys.readouterr().err
+        assert "PyYAML not importable" in diagnostic
+        assert sys.executable in diagnostic
+    assert git(repo, "rev-parse", "HEAD") == base

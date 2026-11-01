@@ -111,7 +111,11 @@ def integrate(repo, worktree, base, output, reviewed, tested):
 
 
 class InfrastructureError(RuntimeError):
-    """A store/runtime observation failed before a content verdict existed."""
+    """A temporary store/runtime failure provided no content verdict."""
+
+
+class ValidatorEnvironmentError(InfrastructureError):
+    """The configured validator cannot run until its environment is repaired."""
 
 
 def gc(*args, json_output=False):
@@ -224,12 +228,18 @@ def verify_output(root):
                             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             timeout=600)
     print(result.stdout, end="")
-    # Validator configuration/availability failures and shell launch failures
-    # provide no artifact verdict. Preserve the workflow input and repair budget.
-    if result.returncode in (75, 78, 126, 127):
-        raise InfrastructureError(
-            f"verification command could not provide an artifact verdict (exit {result.returncode}); "
+    # Configuration failures must stay on the dispatcher's EX_CONFIG hold,
+    # not its bounded temporary-infrastructure retry lane. Keep the actual
+    # validator/interpreter diagnostic on stderr where the hold reason reads it.
+    diagnostic = next((line.strip() for line in result.stdout.splitlines() if line.strip()),
+                      "validator supplied no diagnostic")
+    if result.returncode in (78, 126, 127):
+        raise ValidatorEnvironmentError(
+            f"verification command unavailable (exit {result.returncode}): {diagnostic}; "
             "restore its prerequisites or executable/PATH and retry the same workflow; source remains open")
+    if result.returncode == 75:
+        raise InfrastructureError(
+            f"verification command temporarily unavailable (exit 75): {diagnostic}; source remains open")
     if result.returncode:
         raise ValueError(f"verification failed with exit {result.returncode}; source remains open")
     clean(tree)
@@ -313,6 +323,10 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except ValidatorEnvironmentError as exc:
+        import sys
+        print(f"source delivery environment: {exc}", file=sys.stderr)
+        sys.exit(78)
     except InfrastructureError as exc:
         import sys
         print(f"source delivery infrastructure: {exc}", file=sys.stderr)
