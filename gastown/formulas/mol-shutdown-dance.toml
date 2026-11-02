@@ -281,7 +281,10 @@ if sessions_json="$(gc session list --state=all --json)" &&
      jq -c --arg target "${target%/}" '
        def identities: [.id, .name, .session_name, .alias, .agent_name]
          | map(select((. // "") | length > 0));
-       [.sessions[] | select((identities | index($target)) != null)] as $matches
+       # --state=all lists closed sessions too, and a closed row keeps its
+       # alias, agent_name and name: match the target among open rows only.
+       [.sessions[] | select(((.closed // false) or .state == "closed") | not)
+                    | select((identities | index($target)) != null)] as $matches
        | if ($matches | length) == 1 then $matches[0] else empty end')"; then
   :
 else
