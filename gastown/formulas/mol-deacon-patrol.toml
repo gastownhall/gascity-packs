@@ -276,32 +276,41 @@ The deacon's wisp-freshness check catches "no patrol activity" but not
 "active polling, wrong filter, queue silently piling up." This step
 closes that gap.
 
-**Step 1: For each active coordination/merge session, compute the pair:**
+**Step 1: For each active coordination/merge session, compute the pair
+in the store its beads actually live in:**
 - `A` = count of open beads assigned to the session's agent identity
 - `B` = the most recent bead.updated_at across those beads (work signal)
 
 ```bash
 gc session list --json --state active \\
-  | jq -r '.sessions[] | select(.agent_name != null and .agent_name != "") | [(.rig // "-"), .agent_name] | @tsv' \\
+  | jq -r '.sessions[] | select(((.alias // .id) | length) > 0) | [(.rig // "-"), (.alias // .id)] | @tsv' \\
   | sort -u \\
   | while read -r RIG AGENT; do
       if [ "$RIG" = "-" ]; then STORE=""; else STORE="--rig $RIG"; fi
       ASSIGNED=$(gc bd list $STORE --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
       LATEST=$(gc bd list $STORE --status=open --assignee="$AGENT" --json --limit=0 \\
           | jq -r '[.[].updated_at] | max // ""')
-      printf '%s\\t%s\\t%s\\n' "$AGENT" "$ASSIGNED" "$LATEST"
+      printf '%s\\t%s\\t%s\\t%s\\n' "$RIG" "$AGENT" "$ASSIGNED" "$LATEST"
     done
 ```
 
 `gc session list` is the runtime roster (there is no `gc agents` command in
 gc, and `--active` is not a flag; `gc agent list` is city.toml config only).
-Its JSON is `{sessions: [...]}`: identity is `.agent_name`, and `.rig` names
-the rig whose bead store the agent's beads live in (absent for city-level
-agents, mapped to `-` above). `gc bd list` answers from ONE store — the
-city store by default, a named rig's store under `--rig <name>` — so the
-roster's rig MUST be passed through to bd. Querying the city store alone
-reports `0` assigned for every rig agent and hides queue starvation
-entirely.
+Its JSON is `{sessions: [...]}`; `.rig` names the rig whose bead store the
+session's beads live in (absent for city-level agents, mapped to `-` above).
+`gc bd list` answers from ONE store — the city store by default, a named
+rig's store under `--rig <name>` — so the roster's rig MUST be passed
+through to bd. Querying the city store alone reports `0` assigned for
+every rig agent and hides queue starvation entirely.
+
+The identity must be the exact assignee string in that store, and that is
+`(.alias // .id)`, not `agent_name`: named agents (deacon, refinery,
+witness) are assigned by alias, while pooled wisp sessions (the dog pool)
+are assigned by wisp id — `city-wisp-…` — and their `agent_name`
+(`gastown.dog-N`) is a display name that matches no assignee. An identity
+that matches nothing silently reports `A=0`, manufacturing the starvation
+this step exists to catch. Do NOT simplify the identity back to
+`agent_name` or `session_name`.
 
 The latest bead.updated_at is the cheapest proxy for "did this session
 move work recently?" — every claim, status transition, metadata update,
