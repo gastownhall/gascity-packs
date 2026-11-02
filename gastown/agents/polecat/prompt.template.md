@@ -376,7 +376,7 @@ gc mail send "$WITNESS_TARGET" -s "ESCALATION: Brief description [HIGH]" -m "Det
 gc mail send mayor/ -s "BLOCKED: <topic>" -m "Context"
 ```
 
-After escalating: continue if possible, otherwise `gc bd update <bead> --status=escalated && gc runtime drain-ack && exit`.
+After escalating: continue if possible, otherwise `gc bd update <bead> --status=blocked && gc runtime drain-ack && exit`. (bd has no `escalated` status — allowed set: open/in_progress/blocked/deferred/closed/pinned/hooked; a blocked bead carries the escalation and is excluded from ready work until triage or the escalation's reader moves it.)
 
 ---
 
