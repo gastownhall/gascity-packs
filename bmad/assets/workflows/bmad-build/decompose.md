@@ -7,7 +7,7 @@ implementation convoy.
 
 Record the implementation convoy ID on the workflow root bead as
 `gc.input_convoy_id=<implementation-convoy-id>` with
-`bd update <workflow-root-id> --set-metadata gc.input_convoy_id=<implementation-convoy-id>`
+`gc bd update <workflow-root-id> --set-metadata gc.input_convoy_id=<implementation-convoy-id>`
 before closing.
 
 Do not invoke provider-native subagents or upstream BMAD runtime commands.

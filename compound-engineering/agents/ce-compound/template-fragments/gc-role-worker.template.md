@@ -1,1 +1,0 @@
-../../../template-fragments/gc-role-worker.template.md

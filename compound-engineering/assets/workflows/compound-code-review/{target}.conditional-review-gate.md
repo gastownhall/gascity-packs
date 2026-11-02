@@ -10,7 +10,7 @@ If the manifest selects `ce.review_key`, close only this gate bead with
 ready after this gate closes.
 
 If the manifest skips `ce.review_key`, find the paired reviewer bead with
-`bd list --all --metadata-field "gc.root_bead_id=$CLAIMED_ROOT_BEAD_ID"
+`gc bd list --all --metadata-field "gc.root_bead_id=$CLAIMED_ROOT_BEAD_ID"
 --metadata-field "gc.step_ref=<paired step ref>" --json --limit 0`, where the
 paired step ref is this gate's `gc.step_ref` without the trailing `-gate`. If
 the current bead does not expose `gc.step_ref`, derive the paired step ref from
@@ -26,7 +26,7 @@ reviewer bead. After that, close this gate bead with `gc.outcome=pass`,
 `code_review.gate_decision=skipped`, `code_review.review_key=<ce.review_key>`,
 and `code_review.skip_reason=<manifest reason>`.
 
-Use exact bead ids from filtered `bd list --json` results. Do not update a
+Use exact bead ids from filtered `gc bd list --json` results. Do not update a
 template name, do not fuzzy-match, and do not close a bead without reading it
 back afterward.
 

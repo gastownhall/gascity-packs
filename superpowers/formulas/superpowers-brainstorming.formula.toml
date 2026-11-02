@@ -19,14 +19,14 @@ default = "autonomous"
 [[template]]
 id = "{target}.setup-superpowers-brainstorming"
 title = "Prepare Superpowers brainstorming"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-brainstorming/{target}.setup-superpowers-brainstorming.md"
 
 [[template]]
 id = "{target}.superpowers-design-approval-loop"
 title = "Brainstorm Superpowers design until approved"
 needs = ["{target}.setup-superpowers-brainstorming"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-brainstorming/{target}.superpowers-design-approval-loop.md"
 
 [template.check]
@@ -54,7 +54,7 @@ description_file = "../assets/workflows/superpowers-brainstorming/{target}.confi
 id = "{target}.superpowers-written-spec-loop"
 title = "Write and review Superpowers spec until approved"
 needs = ["{target}.superpowers-design-approval-loop"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-brainstorming/{target}.superpowers-written-spec-loop.md"
 
 [template.check]
@@ -96,7 +96,7 @@ description_file = "../assets/workflows/superpowers-brainstorming/{target}.confi
 id = "{target}"
 title = "Finalize approved Superpowers requirements"
 needs = ["{target}.superpowers-written-spec-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-brainstorming/{target}.md"
 
 [template.check]
@@ -106,3 +106,7 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""

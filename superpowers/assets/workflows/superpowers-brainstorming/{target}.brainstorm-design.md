@@ -33,13 +33,13 @@ run instructions make that safe.
 Before closing, update the exact claimed bead id with the lane metadata:
 
 ```bash
-bd update "$CLAIMED_BEAD_ID" \
+gc bd update "$CLAIMED_BEAD_ID" \
   --set-metadata 'gc.outcome=pass' \
   --set-metadata 'design_review.output_path=<design-candidate path>'
-bd close "$CLAIMED_BEAD_ID" --reason 'Superpowers design candidate written.'
+gc bd close "$CLAIMED_BEAD_ID" --reason 'Superpowers design candidate written.'
 ```
 
-Do not pass `--metadata` or `--set-metadata` to `bd close`. Do not set
+Do not pass `--metadata` or `--set-metadata` to `gc bd close`. Do not set
 `design_review.verdict`; the approval lane owns the loop verdict.
 
 Do not invoke provider-native subagents or upstream plugin runtime commands.

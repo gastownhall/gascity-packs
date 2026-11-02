@@ -12,6 +12,14 @@ for every derived pack.
 
 ## Compatibility Claims
 
+- Required-stage failure policy: the build inherits or overrides the native
+  `build-body` scope and includes every required stage in its `needs`. Whole-step
+  overrides preserve `gc.scope_ref`, `gc.scope_role`, and `gc.on_fail`; review
+  expansions propagate optional `failure_scope` through setup, logical checks,
+  and finalizers. Existing repair children and attempt limits remain unchanged,
+  and standalone expansions use an empty scope default. The owning checks are
+  `gascity/tests/test_build_failure_policy.py` and
+  `tests/test_build_failure_policy_live_gc.py`.
 - Import contract: `compound-engineering/pack.toml` imports the Gas City pack
   as `gc` from `../gascity`, so the pack inherits the shared `gc.*` surface
   (base formulas, role agents, template fragments) instead of re-defining it.
@@ -53,7 +61,7 @@ for every derived pack.
 - Persona review lanes: plan review and code review fan out through the
   Gas City expansion formulas `compound-plan-review` and
   `compound-code-review` (finalization through `compound-resolution`). Every
-  expansion child routes via `gc.run_target` to a providerless pack-local
+  runnable expansion child routes via `gc.run_target` to a providerless pack-local
   agent (`compound-engineering.ce-*`, declared in `agents/*/agent.toml` with
   no provider pin), to a `gc.*` role (`gc.run-operator`,
   `gc.task-decomposer`), or to the caller-selected `{implementation_target}`
@@ -83,9 +91,9 @@ for every derived pack.
   adapter-consumable report to `{{report_path}}` without posting comments,
   pushing branches, or finalizing external state.
 - Prompt hygiene: all agent prompt templates under `agents/*/prompt.template.md`
-  include the shared `gc-role-worker` fragment, which carries the Gas City
-  claim protocol; the pack-level fragment and the
-  `ce-code-review-selector` nested copy are identical. Lane assets and the
+  include the public `gc-role-worker` fragment supplied by the `gc` import;
+  Compound Engineering does not override that shared claim protocol. Lane
+  assets and the
   skill-adopting agent prompts state "Do not invoke provider-native
   subagents, slash commands, task tools, or the upstream plugin runtime" and
   translate upstream subagent requests into Gas City lanes. The vendored
@@ -107,7 +115,7 @@ grep -n -A 2 -E '^\[vars\.(interaction_mode|review_mode)\]' gascity/formulas/bui
 grep -n -E '^extends' compound-engineering/formulas/compound-planning.formula.toml compound-engineering/formulas/compound-decomposition.formula.toml compound-engineering/formulas/compound-review.formula.toml compound-engineering/formulas/compound-fix-loop.formula.toml
 grep -n 'gc.run_target' compound-engineering/formulas/compound-plan-review.formula.toml compound-engineering/formulas/compound-code-review.formula.toml compound-engineering/formulas/compound-resolution.formula.toml
 grep -rL 'gc-role-worker' compound-engineering/agents/*/prompt.template.md  # expect no output
-diff compound-engineering/template-fragments/gc-role-worker.template.md compound-engineering/agents/ce-code-review-selector/template-fragments/gc-role-worker.template.md  # expect identical
+gc lint compound-engineering
 grep -rn 'Do not invoke provider-native subagents' compound-engineering/agents compound-engineering/assets | wc -l  # expect > 30
 grep -rho 'gc\.build\.[a-z_.]*' compound-engineering/assets compound-engineering/formulas | sort -u
 ls gascity/schemas/build

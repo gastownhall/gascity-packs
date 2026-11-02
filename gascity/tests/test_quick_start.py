@@ -1,0 +1,52 @@
+"""The beginner route cannot close source work before review and integration."""
+from pathlib import Path
+import tomllib
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def test_local_delivery_graph_is_bounded_and_reviewed_independently():
+    formula = tomllib.loads((ROOT / "formulas/quick-start.formula.toml").read_text())
+    steps = {step["id"]: step for step in formula["steps"]}
+    assert formula["contract"] == "graph.v2"
+    # Initial implementation belongs to the bounded review loop: no no-op
+    # repair worker or separate implementation may precede its first attempt.
+    assert "implement" not in steps
+    assert steps["review"]["needs"] == ["prepare"]
+    assert steps["review"]["check"]["max_attempts"] == 3  # initial + two repair rounds
+    children = {step["id"]: step for step in steps["review"]["children"]}
+    assert children["inspect"]["needs"] == ["implement"]
+    assert children["implement"]["metadata"]["gc.run_target"] != children["inspect"]["metadata"]["gc.run_target"]
+    assert steps["integrate"]["needs"] == ["review"]
+    assert steps["cleanup"]["needs"] == ["integrate"]
+    assert "push" not in formula["vars"] and "open_pr" not in formula["vars"]
+    for step in steps.values():
+        assert step["metadata"]["gc.scope_ref"] == "delivery-body" if step["id"] != "delivery-body" else True
+    assert steps["delivery-body"]["metadata"]["gc.scope_role"] == "body"
+    assert set(steps["delivery-body"]["needs"]) == set(steps) - {"delivery-body"}
+
+
+def test_embedded_script_modes_match_git_release_content():
+    # Core restores these suffixes as executable from the Go module embed.
+    # Native Git and the installed binary must therefore hash identical modes.
+    for path in ROOT.rglob("*"):
+        if path.is_file() and path.suffix in {".py", ".sh", ".bash"} and "__pycache__" not in path.parts:
+            assert path.stat().st_mode & 0o111, f"embedded/native mode mismatch: {path.relative_to(ROOT)}"
+
+
+def test_missing_interpreter_is_configuration_failure_before_work(tmp_path):
+    import subprocess
+    paths = [ROOT / "commands/tutorial/run.sh", ROOT / "commands/source-delivery/run.sh",
+             ROOT / "assets/scripts/checks/source-delivery-approved.sh"]
+    for path in paths:
+        result = subprocess.run(["/bin/bash", str(path)], text=True, capture_output=True,
+                                env={"PATH": str(tmp_path), "GC_PACK_DIR": str(ROOT)})
+        assert result.returncode == 78, (path, result.returncode, result.stderr)
+        assert "python3" in result.stderr and "Install" in result.stderr
+
+
+def test_first_review_attempt_implements_and_later_attempts_repair():
+    prompt = (ROOT / "assets/workflows/quick-start/implement.md").read_text()
+    assert "On the initial iteration" in prompt
+    assert "On later iterations" in prompt
+    assert "findings" in prompt and "verification failed" in prompt
+    assert "Never approve your own changes" in prompt

@@ -15,7 +15,52 @@ publish. It ships three things:
   methodology packs in this repository (bmad, compound-engineering,
   superpowers, gstack) extend and override.
 
-## Quick Start: your first build
+## Quick Start: deliver a local change
+
+The beginner experience is built into Gas City and uses this pack. With one
+coding provider already configured, start a city and its practice task:
+
+```sh
+gc init --experience beginner --default-provider claude ~/bright-lights
+cd ~/bright-lights
+gc gc tutorial start
+gc gc tutorial status
+```
+
+The task runs in an owned worktree, receives independent review and tests,
+integrates locally, and closes only after cleanup and workflow finalization.
+It allows two repair rounds. GitHub and `gh` are optional; no additional starter
+pack or manual pack edits are needed. Model sessions start on demand and the
+experience preserves normal provider and capacity choices.
+
+If a lesson exhausts its repairs, correct the reported problem and run
+`gc gc tutorial retry --lesson greeting` (or `api`/`client`). This starts a new
+bounded attempt from the recorded input while retaining failed work. Repeating
+it while an attempt is active observes that work. Environment blockers wait for
+the prerequisite to be repaired; `gc start` resumes a paused city.
+
+For an existing project, add the rig and create a bead with acceptance criteria.
+Submit its ID with the project's real verification command:
+
+```sh
+gc sling <task-id> --var verify_command="your project's verification command"
+```
+
+The roles import declares its default sling target as a pack-local agent name.
+Gas City qualifies that name with the actual rig and import binding, so renamed
+imports work. The run operator selects `quick-start` unless you explicitly
+choose another formula. Explicit rig targets override the inherited target;
+conflicting defaults from multiple imports require an explicit selection.
+
+The delivery input is the configured default branch. Fetching `origin` includes
+new remote commits by fast-forwarding a clean local default branch before
+provisioning the task, while retaining previously integrated local commits. A
+dirty or diverged branch or unavailable remote blocks setup visibly. Repositories with
+no `origin` use the local default branch. Source closure proves exact reviewed,
+tested and integrated commit identity, with durable evidence on workflow beads.
+
+## Configure an existing custom city for larger builds
+
 
 Prerequisites: Gas City installed and a city running (`gc init`, `gc start`),
 and your project added as a rig (`gc rig add .` inside the repo). See the
@@ -37,10 +82,12 @@ and your project added as a rig (`gc rig add .` inside the repo). See the
    source = "https://github.com/gastownhall/gascity-packs.git//gascity/roles"
    ```
 
-   Both imports are required. The rig-scoped roles pack supplies agents but,
-   by design, rig imports do not register city commands; importing roles alone
-   renders prompts that reference `gc gc claim` without installing that
-   command. Keep the top-level Gas City pack imported at city scope.
+   Both imports are required for the full workflow. The rig-scoped roles pack
+   supplies agents but, by design, rig imports do not register city commands.
+   Worker prompts use the built-in `gc hook --claim --drain-ack --json`, which
+   works with any import alias. Keep the top-level Gas City pack imported at
+   city scope for formulas, the mayor skill, and the optional claim wrapper
+   (`gc <alias> claim`, here `gc gc claim`).
 
    (Contributors hacking on packs can point this source at a local clone.)
 
@@ -167,6 +214,31 @@ Each continuation validates the artifacts you hand it before doing any work,
 records the entrypoint it started from, and refuses to finalize as a pass when
 review or repair is still blocked — see "Choosing an entrypoint" above for
 which one matches the artifacts you have.
+
+### Required stage failure policy
+
+Use Gas City **v1.5.0 or newer** for this contract. It uses upstream
+[graph-v2 scopes and failure policy](https://github.com/gastownhall/gascity/blob/v1.5.0/docs/reference/specs/formula-spec-v2.md#35-scopes-and-failure-policy),
+including [scope close-ownership](https://github.com/gastownhall/gascity/pull/5202),
+[logical retry finalization](https://github.com/gastownhall/gascity/pull/4263), and
+[post-settlement teardown](https://github.com/gastownhall/gascity/pull/5271).
+
+Full builds and `build-from-*` continuations place every required stage in a
+native `build-body` scope. A terminal stage failure aborts the remaining stages,
+so a failed requirements, plan, review, or implementation gate cannot be followed
+by a successful finalize or publish no-op. A stage keeps its existing bounded
+repair loop: an unsuccessful attempt can be repaired before logical exhaustion
+fails the enclosing build.
+
+`finalize` and `publish` are required stages, not failure cleanup. Native workflow
+settlement and explicitly declared teardown remain responsible for cleanup.
+
+Formula inheritance replaces a whole step, including metadata. Child overrides
+must preserve `gc.scope_ref = "build-body"`, `gc.on_fail = "abort_scope"`, and the
+scope role (`setup` for prerequisite preparation, `member` for other stages).
+Added stages must also appear in `build-body.needs`. Review expansions accept an
+optional `failure_scope` input; build callers pass `build-body`, while standalone
+callers retain the empty default and do not require an enclosing build scope.
 
 Every formula in this pack uses `contract = "graph.v2"`. Targeted formulas take
 the core-injected reserved convoy target; they do not declare `issue`,
@@ -662,7 +734,8 @@ id = "review"
 title = "Run company review quorum"
 needs = ["implement"]
 expand = "company-review-n-wide"
-metadata = { "gc.run_target" = "gc.review-synthesizer" }
+expand_vars = { failure_scope = "build-body" }
+metadata = { "gc.run_target" = "gc.review-synthesizer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 ```
 
 The expansion can run several independent reviewers, synthesize required
@@ -984,6 +1057,18 @@ Each item has only `name`, `path`, and `description`. Validate with:
 ```sh
 python3 <pack-root>/assets/scripts/validate_context_bundle.py context.yaml --allow-root <artifact-root>
 ```
+
+The validators need PyYAML importable by the `python3` that runs them. When it
+is not, they exit 78 and print which interpreter, `HOME`, and `PYTHONUSERBASE`
+they saw, rather than reporting the content as invalid. Gas City versions that
+include gastownhall/gascity#8378 read 78 inside a check gate as "fix the
+environment" and hold the step instead of spending an attempt; earlier versions
+grade it like any other failure. The orchestrator runs check scripts with
+`HOME` set to the city directory and a short `PATH`, so a PyYAML installed only
+in your user site (`pip install --user`) is not visible to them. Install it for
+the `python3` that check `PATH` resolves: the orchestrator builds that `PATH`
+from the directories holding `gc`, `bd`, `dolt` and `jq`, then
+`/usr/local/bin:/usr/bin:/bin`.
 
 Gap-analysis and review reports use `schema: gc.verdict-report.v1` front matter
 with `verdict: pass|fail`. Validate with:

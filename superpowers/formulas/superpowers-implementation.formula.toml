@@ -18,7 +18,7 @@ id = "drain-separate"
 title = "Drain Superpowers development in separate sessions"
 needs = ["prepare"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/superpowers-implementation/drain-separate.md"
 
 [steps.drain]
@@ -31,7 +31,7 @@ id = "drain-same-session"
 title = "Drain Superpowers development in one shared session"
 needs = ["prepare"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/superpowers-implementation/drain-same-session.md"
 
 [steps.drain]

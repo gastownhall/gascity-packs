@@ -128,11 +128,11 @@ concise reason.
 If `ce.review_key` is selected, update and close only the gate bead:
 
 ```bash
-bd update "$CLAIMED_BEAD_ID" \
+gc bd update "$CLAIMED_BEAD_ID" \
   --set-metadata 'gc.outcome=pass' \
   --set-metadata 'code_review.gate_decision=selected' \
   --set-metadata 'code_review.review_key=<ce.review_key>'
-bd close "$CLAIMED_BEAD_ID" --reason 'conditional reviewer selected'
+gc bd close "$CLAIMED_BEAD_ID" --reason 'conditional reviewer selected'
 ```
 
 Do not touch the paired reviewer bead when the lane is selected; closing the
@@ -141,7 +141,7 @@ gate lets that real review bead become ready.
 If `ce.review_key` is skipped:
 
 1. Find the paired reviewer bead under the same workflow root with
-   `bd list --all --metadata-field "gc.root_bead_id=$CLAIMED_ROOT_BEAD_ID"
+   `gc bd list --all --metadata-field "gc.root_bead_id=$CLAIMED_ROOT_BEAD_ID"
    --metadata-field "gc.step_ref=<paired step ref>" --json --limit 0`. The
    paired step ref is the current gate `gc.step_ref` with the trailing `-gate`
    removed. If the current bead does not expose `gc.step_ref`, derive the paired

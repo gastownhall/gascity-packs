@@ -31,7 +31,7 @@ member and record the skipped lifecycle sections in the decomposition artifact.
 Create or update the implementation convoy with those beads and dependency
 edges. Record the implementation convoy ID on the workflow root bead as
 `gc.input_convoy_id=<implementation-convoy-id>` with
-`bd update <workflow-root-id> --set-metadata gc.input_convoy_id=<implementation-convoy-id>`.
+`gc bd update <workflow-root-id> --set-metadata gc.input_convoy_id=<implementation-convoy-id>`.
 
 Write a decomposition artifact that maps every plan task to its bead ID and
 dependency edges. Close this step only after the decomposition artifact exists,

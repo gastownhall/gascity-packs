@@ -12,6 +12,14 @@ for every derived pack.
 
 ## Compatibility Claims
 
+- Required-stage failure policy: the build inherits or overrides the native
+  `build-body` scope and includes every required stage in its `needs`. Whole-step
+  overrides preserve `gc.scope_ref`, `gc.scope_role`, and `gc.on_fail`; review
+  expansions propagate optional `failure_scope` through setup, logical checks,
+  and finalizers. Existing repair children and attempt limits remain unchanged,
+  and standalone expansions use an empty scope default. The owning checks are
+  `gascity/tests/test_build_failure_policy.py` and
+  `tests/test_build_failure_policy_live_gc.py`.
 - Import contract: `superpowers/pack.toml` imports the Gas City pack as `gc`
   from `../gascity`, so the pack inherits the shared `gc.*` surface (base
   formulas, role agents, template fragments) instead of re-defining it.
@@ -91,7 +99,7 @@ for every derived pack.
   approval cycles are check-gated graph loops in `superpowers-brainstorming`
   and `superpowers-plan-review`. No lane dispatches provider-native
   subagents; the graph owns all fanout.
-- Providerless routes: every step in the pack's formulas routes via
+- Providerless routes: every runnable step in the pack's formulas routes via
   `gc.run_target` to a providerless pack-local agent (`superpowers.*`,
   declared in `agents/*/agent.toml` with no provider pin), to the
   `gc.run-operator` or `gc.task-decomposer` role, or to the caller-selected
@@ -130,10 +138,9 @@ for every derived pack.
   `{{report_path}}` without posting comments, pushing branches, or
   finalizing external state.
 - Prompt hygiene: all agent prompt templates under
-  `agents/*/prompt.template.md` include the shared `gc-role-worker` fragment,
-  which carries the Gas City claim protocol; every per-agent nested fragment
-  copy is identical to the pack-level
-  `superpowers/template-fragments/gc-role-worker.template.md`. Agent prompts
+  `agents/*/prompt.template.md` include the public `gc-role-worker` fragment
+  supplied by the `gc` import; Superpowers does not override that shared claim
+  protocol. Agent prompts
   and skill-adopting lane assets carry explicit "Do not invoke
   provider-native subagents, slash commands, task tools, or the upstream
   plugin runtime" guards. The skill texts under `skills/` are methodology
@@ -158,7 +165,7 @@ grep -n -E '^extends' superpowers/formulas/superpowers-planning.formula.toml sup
 grep -n -E '^id = |^needs = ' superpowers/formulas/superpowers-development.formula.toml superpowers/formulas/superpowers-development-item.formula.toml  # TDD sequence as durable steps
 grep -rn 'gc.run_target' superpowers/formulas/*.toml  # expect only superpowers.* agents, gc.run-operator, gc.task-decomposer, or {implementation_target}
 grep -rL 'gc-role-worker' superpowers/agents/*/prompt.template.md  # expect no output
-for f in superpowers/agents/*/template-fragments/gc-role-worker.template.md; do diff superpowers/template-fragments/gc-role-worker.template.md "$f"; done  # expect no output
+gc lint superpowers
 grep -rn 'provider-native' superpowers/agents superpowers/assets | wc -l  # expect >= 40
 grep -rho 'gc\.build\.[a-z_.]*' superpowers/assets superpowers/formulas | sort -u
 ls gascity/schemas/build

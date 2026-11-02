@@ -5,3 +5,6 @@ schema = 2
 
 [imports.gc]
 source = ".."
+
+[defaults.rig]
+default_sling_target = "run-operator"
