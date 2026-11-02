@@ -208,6 +208,59 @@ def verified_delivery(source, destination, gc):
     return sha
 
 
+def show_delivery_progress(source, workflow):
+    """Report native delivery milestones; never infer success from elapsed time."""
+    import json
+    import re
+    root = workflow["id"]
+    metadata = workflow.get("metadata", {})
+    try:
+        record = json.loads(metadata.get("gc.delivery.record", "{}"))
+    except (ValueError, TypeError) as error:
+        raise ValueError(f"workflow {root} has unreadable delivery evidence") from error
+    if not isinstance(record, dict):
+        raise ValueError(f"workflow {root} delivery evidence must be an object")
+    if record and record.get("source") != source["id"]:
+        raise ValueError(f"workflow {root} delivery evidence belongs to a different source")
+
+    print(f"Workflow: {root}", flush=True)
+    if workflow["status"] == "closed" and metadata.get("gc.outcome") != "pass":
+        reason = metadata.get("gc.failure_reason") or workflow.get("close_reason") or metadata.get("close_reason") or metadata.get("gc.outcome", "unknown result")
+        worktree = record.get("worktree")
+        retained = f" Recorded worktree: {worktree}." if worktree else ""
+        raise ValueError(f"workflow {root} stopped: {reason}; source task remains open.{retained} Inspect gc status before retrying; preserve unfinished work.")
+
+    reviewed = record.get("reviewed_sha", "")
+    verified = bool(record.get("review_status") == "approved" and
+                    isinstance(reviewed, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", reviewed) and
+                    all(record.get(key) == reviewed for key in ("output_sha", "tested_sha")))
+    integrated = record.get("integrated_sha")
+    if integrated and (not verified or integrated != reviewed):
+        raise ValueError(f"workflow {root} has inconsistent integration evidence")
+    if workflow["status"] == "closed" and not (integrated and record.get("cleanup_complete") is True):
+        raise ValueError(f"workflow {root} ended without verified integration and cleanup")
+
+    if integrated and record.get("cleanup_complete") is True:
+        message = ("Local change integrated and cleaned up; source-task closure pending"
+                   if workflow["status"] == "closed" else
+                   "Local change integrated and cleaned up; workflow finalization pending")
+    elif integrated:
+        message = "Local change integrated; cleanup pending"
+    elif verified:
+        message = "Review and verification passed; local integration pending"
+    elif record.get("review_status") == "approved":
+        message = "Independent review approved; verification pending"
+    elif record.get("review_status") == "changes_required":
+        message = "Independent review requested changes; bounded repair is owned by the workflow"
+    elif record.get("review_status") == "blocked":
+        message = "Independent review reports a blocker; inspect the workflow"
+    elif record.get("worktree"):
+        message = "Implementation and independent review pending"
+    else:
+        message = "Input and worktree preparation pending"
+    print(message, flush=True)
+
+
 def main():
     import argparse
     import json
@@ -268,6 +321,12 @@ def main():
             print(f"Verified local integration: {sha}\nRepository: {destination}")
             print("Continue the hands-on tutorials using this same city and repository.")
         return
+    if args.action == "status":
+        existing = source.get("metadata", {}).get("gc.delivery.workflow_root") or attached_workflow(gc, source)
+        if existing:
+            show_delivery_progress(source, gc("gc", "bd", "show", existing, "--json", json_output=True))
+        else:
+            print("Workflow attachment pending; no delivery is recorded yet.", flush=True)
     if args.action == "start":
         existing = attached_workflow(gc, source)
         if existing:

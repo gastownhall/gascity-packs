@@ -411,3 +411,63 @@ def test_retry_never_relaunches_after_a_convoy_read_failure(tutorial):
         return []
     with pytest.raises(RuntimeError, match="tracking edge lookup unavailable"):
         tutorial.attached_workflow(observations, {"id": "practice-1"})
+
+@pytest.mark.parametrize("record,message", [
+    ({}, "Input and worktree preparation pending"),
+    ({"review_status": "blocked"}, "Independent review reports a blocker"),
+    ({"worktree": "/owned/worktree", "attempt_id": "attempt"}, "Implementation and independent review pending"),
+    ({"review_status": "changes_required", "findings": "Add the missing edge case"}, "Independent review requested changes"),
+    ({"review_status": "approved", "reviewed_sha": "a" * 40}, "Independent review approved; verification pending"),
+    ({"review_status": "approved", "reviewed_sha": "a" * 40, "output_sha": "a" * 40, "tested_sha": "a" * 40}, "Review and verification passed; local integration pending"),
+    ({"review_status": "approved", "reviewed_sha": "a" * 40, "output_sha": "a" * 40, "tested_sha": "a" * 40, "integrated_sha": "a" * 40}, "Local change integrated; cleanup pending"),
+    ({"review_status": "approved", "reviewed_sha": "a" * 40, "output_sha": "a" * 40, "tested_sha": "a" * 40, "integrated_sha": "a" * 40, "cleanup_complete": True}, "Local change integrated and cleaned up; workflow finalization pending"),
+])
+def test_open_lesson_status_reports_recorded_progress_without_launching_work(tutorial, tmp_path, monkeypatch, capsys, record, message):
+    import json
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    import source_delivery
+    source = {"id": "practice-1", "status": "open", "metadata": {"gc.delivery.workflow_root": "flow-1"}}
+    workflow = {"id": "flow-1", "status": "in_progress", "metadata": {"gc.delivery.record": json.dumps({"source": source["id"], **record})}}
+    def read_only(*args, **kwargs):
+        if args[:3] == ("gc", "rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(tmp_path / "projects/practice")}]}
+        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+            return [source]
+        if args == ("gc", "bd", "show", "flow-1", "--json"):
+            return workflow
+        raise AssertionError(f"status must only read native evidence: {args}")
+    monkeypatch.setattr(source_delivery, "gc", read_only)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr("sys.argv", ["tutorial", "status"])
+    tutorial.main()
+    output = capsys.readouterr().out
+    assert "Workflow: flow-1" in output and message in output
+    assert "Verified local integration:" not in output
+
+
+def test_progress_never_calls_stale_test_evidence_verified(tutorial, capsys):
+    import json
+    tutorial.show_delivery_progress(
+        {"id": "practice-1", "status": "open"},
+        {"id": "flow-1", "status": "in_progress", "metadata": {"gc.delivery.record": json.dumps({
+            "source": "practice-1", "review_status": "approved", "reviewed_sha": "a" * 40,
+            "output_sha": "a" * 40, "tested_sha": "b" * 40})}})
+    output = capsys.readouterr().out
+    assert "verification pending" in output and "verification passed" not in output
+
+
+def test_progress_reports_failed_workflow_and_retained_work(tutorial):
+    import json
+    with pytest.raises(ValueError, match="stopped: review attempts exhausted.*source task remains open.*owned/worktree"):
+        tutorial.show_delivery_progress(
+            {"id": "practice-1", "status": "open"},
+            {"id": "flow-1", "status": "closed", "close_reason": "review attempts exhausted", "metadata": {"gc.outcome": "fail", "gc.delivery.record": json.dumps({
+                 "source": "practice-1", "worktree": "/owned/worktree"})}})
+
+
+def test_progress_refuses_another_sources_evidence(tutorial):
+    import json
+    with pytest.raises(ValueError, match="different source"):
+        tutorial.show_delivery_progress(
+            {"id": "practice-1", "status": "open"},
+            {"id": "flow-1", "status": "in_progress", "metadata": {"gc.delivery.record": json.dumps({"source": "other-task"})}})
