@@ -44,8 +44,8 @@ schema = 1
   [[pack.release]]
     version = "0.0.8191"
     ref = "feat/rfc-8191-gascity-only"
-    commit = "78764b7ae1cb98960d4a4cfcb75468d06f86d7ed"
-    hash = "sha256:cb762d851e1c6c26739347df08264da89ba8520f710f8977454b058f056af06e"
+    commit = "dd2cff200f18a64e8a010fe1d5b975b1f0493e14"
+    hash = "sha256:856faef129953bac7c544f42342c7d699713db419591be5a8c60666d06b752de"
     description = "RFC8191 qualification candidate on the original compatible module baseline; stable catalog selection is unchanged."
 
 [[pack]]
