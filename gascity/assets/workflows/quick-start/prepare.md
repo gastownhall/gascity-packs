@@ -17,3 +17,8 @@ Close only this step with gc.outcome=pass after the command succeeds. On a
 failure retain the source task and worktree and report the exact error. Do not
 close source work from setup, implementation or review. Drain the worker after
 closing the claimed step using the normal claim protocol.
+
+The request's optional fixed input is `{{input_sha}}` (empty means normal
+configured-mainline selection). The helper reads and enforces this native
+workflow variable directly. Do not fetch a different input or change the
+recorded source/verification contract to clear a retry error.

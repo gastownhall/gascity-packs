@@ -7,7 +7,8 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "assets/scripts/tutorial.py"
 
 @pytest.fixture
-def tutorial():
+def tutorial(monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
     spec = importlib.util.spec_from_file_location("tutorial", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

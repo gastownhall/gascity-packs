@@ -23,8 +23,8 @@ def clean(repo):
 
 
 
-def task_input(repo, default_branch):
-    """Pin the configured mainline, fetching origin when the repository has one."""
+def task_input(repo, default_branch, input_sha=""):
+    """Pin the mainline; a fixed retry input never fetches or advances it."""
     if not default_branch:
         raise ValueError("rig has no default branch; configure it before submitting work")
     git(repo, "check-ref-format", "refs/heads/" + default_branch)
@@ -33,6 +33,12 @@ def task_input(repo, default_branch):
         raise ValueError(f"checkout must be on the configured default branch {default_branch}; preserve and switch branches explicitly")
     clean(repo)
     predecessor = git(repo, "rev-parse", "HEAD")
+    if input_sha:
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", input_sha):
+            raise ValueError("fixed input must be a full immutable commit SHA")
+        if predecessor != input_sha:
+            raise ValueError("retry input changed; preserve current work before choosing a different input")
+        return expected, input_sha, input_sha
     if "origin" not in git(repo, "remote").splitlines():
         return expected, predecessor, predecessor
     remote_ref = "refs/remotes/origin/" + default_branch
@@ -64,12 +70,16 @@ def task_input(repo, default_branch):
     return expected, base, base
 
 
-def configured_default_branch(repo):
+def registered_rig(repo):
     rigs = gc("gc", "rig", "list", "--json", json_output=True)["rigs"]
     matches = [rig for rig in rigs if Path(rig["path"]).resolve() == Path(repo).resolve()]
     if len(matches) != 1:
         raise ValueError("repository must identify exactly one registered rig")
-    return matches[0].get("default_branch", "")
+    return matches[0]
+
+
+def configured_default_branch(repo):
+    return registered_rig(repo).get("default_branch", "")
 
 
 def integrate(repo, worktree, base, output, reviewed, tested):
@@ -171,15 +181,18 @@ def prepare(root, source, repo, workspace_root, verify_command):
     import json
     repo = str(Path(repo).resolve())
     root_row = bead(root)
+    input_sha = root_row.get("metadata", {}).get("gc.var.input_sha", "")
     existing = root_row.get("metadata", {}).get("gc.delivery.record")
     if existing:
         record = json.loads(existing)
         if (record["source"], record["repo"], record["verify_command"]) != (source, repo, verify_command):
             raise ValueError("retry changed source, repository or verification contract")
+        if input_sha and record["base_sha"] != input_sha:
+            raise ValueError("retry changed the fixed input contract")
     else:
         if bead(source).get("status") == "closed":
             raise ValueError("source task is already closed")
-        base_ref, base, predecessor = task_input(repo, configured_default_branch(repo))
+        base_ref, base, predecessor = task_input(repo, configured_default_branch(repo), input_sha)
         if not verify_command.strip():
             raise ValueError("a verification command is required")
         workspace_root = str(Path(workspace_root).resolve())
@@ -252,12 +265,160 @@ def verify_output(root):
     return record
 
 
+def attached_workflow(gc, source, rig):
+    """Follow native direct and convoy-first bindings without relaunching work."""
+    def rows(*args):
+        result = gc("gc", "--rig", rig, "bd", *args, json_output=True)
+        return [result] if isinstance(result, dict) else result
+
+    def keyed_roots(key, value):
+        matches = rows("list", "--all", "--include-ephemeral", "--metadata-field",
+                       key + "=" + value, "--limit", "0", "--json")
+        roots = []
+        for row in matches:
+            metadata = row.get("metadata", {})
+            kind = metadata.get("gc.kind", "").strip().lower()
+            contract = metadata.get("gc.formula_contract", "").strip().lower()
+            controller = row.get("issue_type", "").strip().lower() in {
+                "session", "startup-health-episode", "convergence", "op"}
+            controller |= any(label.strip().lower() == "gc:session" for label in row.get("labels", []))
+            if not controller and (kind == "workflow" or contract == "graph.v2"):
+                roots.append(row)
+        return roots
+
+    roots_by_id = {row["id"]: row for row in keyed_roots("gc.source_bead_id", source["id"])}
+    # A bare-source --on launch initially binds through its synthetic input
+    # convoy. prepare adds the delivery back-link later; it is not admission.
+    excluded = {"gc:session", "gc:order-tracking", "order-tracking", "gc:op", "gc:fact", "gc:rt"}
+    for convoy in rows("dep", "list", source["id"], "--direction", "up", "--type", "tracks", "--json"):
+        if (convoy.get("issue_type") != "convoy" or
+                convoy.get("metadata", {}).get("gc.synthetic", "").strip() != "true" or
+                excluded.intersection(convoy.get("labels", []))):
+            continue
+        for row in keyed_roots("gc.input_convoy_id", convoy["id"]):
+            if row.get("metadata", {}).get("gc.formula_name", "").strip() == "quick-start":
+                roots_by_id[row["id"]] = row
+    roots = list(roots_by_id.values())
+    live = [row for row in roots if row.get("status") != "closed"]
+    if len(live) > 1:
+        raise ValueError("multiple live workflows for this lesson; inspect the preserved source and workflows")
+    if live:
+        return live[0]["id"]
+    if len(roots) == 1:
+        return roots[0]["id"]
+    if roots:
+        hint = source.get("metadata", {}).get("gc.delivery.workflow_root")
+        if any(row["id"] == hint for row in roots):
+            return hint
+        raise ValueError("multiple completed workflows for this lesson; inspect the preserved source and workflows")
+    return None
+
+
+
+def retry_delivery(root, source=None):
+    """Admit one explicit bounded attempt through native sling; retain the old one."""
+    workflow = bead(root)
+    metadata = workflow.get("metadata", {})
+    import json
+    raw = metadata.get("gc.delivery.record")
+    if raw:
+        record = json.loads(raw)
+        required = ("source", "repo", "store_ref", "base_sha", "integration_ref", "verify_command")
+        if not isinstance(record, dict) or any(not isinstance(record.get(k), str) or not record[k].strip() for k in required):
+            raise ValueError("retry has an incomplete prepared delivery record")
+        if record.get("root") != root or not Path(record["repo"]).is_absolute():
+            raise ValueError("retry record differs from its native workflow ownership")
+        source_id = record["source"]
+        if source and source != source_id:
+            raise ValueError("retry source differs from the recorded workflow source")
+        if metadata.get("gc.source_bead_id") != source_id:
+            raise ValueError("retry source differs from the native workflow binding")
+    else:
+        if not source:
+            raise ValueError("retry before preparation requires --source with the original task ID")
+        convoy = metadata.get("gc.input_convoy_id")
+        if not convoy:
+            raise ValueError("unprepared retry has no native input convoy binding")
+        inputs = gc("gc", "convoy", "status", convoy, "--json", json_output=True).get("children", [])
+        if len(inputs) != 1 or inputs[0].get("id") != source:
+            raise ValueError("retry must match exactly one original native input source")
+        scope = metadata.get("gc.root_store_ref", "")
+        if not scope.startswith("rig:"):
+            raise ValueError("unprepared retry must identify its native rig store")
+        matches = [r for r in gc("gc", "rig", "list", "--json", json_output=True)["rigs"] if r["name"] == scope[4:]]
+        if len(matches) != 1:
+            raise ValueError("unprepared retry must identify one registered rig")
+        repo = str(Path(matches[0]["path"]).resolve())
+        branch = matches[0].get("default_branch", "")
+        source_id = source
+        record = {"root": root, "source": source_id, "repo": repo, "store_ref": scope,
+                  "base_sha": metadata.get("gc.var.input_sha") or git(repo, "rev-parse", "HEAD"),
+                  "integration_ref": "refs/heads/" + branch,
+                  "verify_command": metadata.get("gc.var.verify_command", "")}
+
+    source_row = bead(source_id)
+    if source_row["status"] == "closed":
+        raise ValueError("source task already completed; inspect its delivery instead")
+    rig = registered_rig(record["repo"])
+    if record.get("store_ref") != "rig:" + rig["name"]:
+        raise ValueError("retry store differs from the registered repository")
+    if metadata.get("gc.formula_name") != "quick-start":
+        raise ValueError("retry requires the native quick-start delivery workflow")
+
+    def active_receipt():
+        current = attached_workflow(gc, source_row, rig["name"])
+        if current and bead(current)["status"] != "closed":
+            return {"status": "existing", "source": source_id, "workflow": current}
+        return None
+
+    current = attached_workflow(gc, source_row, rig["name"])
+    current_row = workflow if current == root else bead(current) if current else None
+    if current_row and current_row["status"] != "closed":
+        return {"status": "existing", "source": source_id, "workflow": current}
+    if current != root:
+        raise ValueError("source has a different current workflow; inspect it before retrying")
+    if workflow["status"] != "closed" or metadata.get("gc.outcome") not in {"fail", "failed", "skipped", "canceled", "cancelled"}:
+        raise ValueError("only a stopped unsuccessful workflow can start a new attempt")
+    if record.get("integrated_sha") or source_row.get("metadata", {}).get("gc.delivery.integrated_sha"):
+        raise ValueError("code is already integrated; preserve and inspect its existing finalization")
+    verify = record.get("verify_command", "")
+    if not verify.strip() or metadata.get("gc.var.verify_command") != verify:
+        raise ValueError("retry verification differs from the native fixed contract")
+    repo = record["repo"]
+    clean(repo)
+    expected_ref = "refs/heads/" + rig.get("default_branch", "")
+    if record.get("integration_ref") != expected_ref or git(repo, "symbolic-ref", "--quiet", "HEAD") != expected_ref:
+        raise ValueError("retry default branch changed; preserve the recorded input")
+    base = record["base_sha"]
+    fixed = metadata.get("gc.var.input_sha", "")
+    if fixed and fixed != base:
+        raise ValueError("retry input differs from the native fixed input contract")
+    task_input(repo, rig["default_branch"], input_sha=base)
+    try:
+        admitted = gc("gc", "--rig", rig["name"], "sling", source_id, "--on", "quick-start",
+                      "--var", "verify_command=" + verify, "--var", "input_sha=" + base)
+    except InfrastructureError:
+        observed = active_receipt()
+        if observed and observed["workflow"] != root:
+            return observed
+        raise
+    match = re.search(r"Attached workflow ([\w-]+)", admitted)
+    if not match:
+        observed = active_receipt()
+        if observed:
+            return observed
+        raise ValueError("native GC did not admit a new attempt; inspect gc status: " + admitted)
+    return {"status": "started", "source": source_id, "workflow": match.group(1),
+            "previous_workflow": root, "input_sha": base,
+            "retained_worktree": record.get("worktree")}
+
+
 def main():
     import argparse
     import json
     import os
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["prepare", "show", "review", "check", "integrate", "cleanup"])
+    parser.add_argument("action", choices=["prepare", "show", "review", "check", "integrate", "cleanup", "retry"])
     parser.add_argument("--root")
     parser.add_argument("--source")
     parser.add_argument("--repo")
@@ -280,6 +441,8 @@ def main():
         if not all((args.source, args.repo, args.workspace_root, args.verify_command)):
             raise ValueError("prepare requires source, repo, workspace-root and verify-command")
         record = prepare(root, args.source, args.repo, args.workspace_root, args.verify_command)
+    elif args.action == "retry":
+        record = retry_delivery(root, args.source)
     elif args.action == "check":
         record = verify_output(root)
     else:

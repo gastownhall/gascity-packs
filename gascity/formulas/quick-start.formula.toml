@@ -9,6 +9,10 @@ description = "Implement one local task in an owned worktree, independently revi
 name = "quick-start"
 description = "Complete one local task with independent review and at most two repair rounds."
 
+[vars.input_sha]
+description = "Optional immutable local input for an explicit retry; empty selects the configured mainline normally."
+default = ""
+
 [vars.verify_command]
 description = "Required repository verification command, run in the owned implementation worktree."
 required = true

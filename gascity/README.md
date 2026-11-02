@@ -33,6 +33,12 @@ It allows two repair rounds. GitHub and `gh` are optional; no additional starter
 pack or manual pack edits are needed. Model sessions start on demand and the
 experience preserves normal provider and capacity choices.
 
+If a lesson exhausts its repairs, correct the reported problem and run
+`gc gc tutorial retry --lesson greeting` (or `api`/`client`). This starts a new
+bounded attempt from the recorded input while retaining failed work. Repeating
+it while an attempt is active observes that work. Environment blockers wait for
+the prerequisite to be repaired; `gc start` resumes a paused city.
+
 For an existing project, add the rig and create a bead with acceptance criteria.
 Submit its ID with the project's real verification command:
 

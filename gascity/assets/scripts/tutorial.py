@@ -134,52 +134,8 @@ def find_lesson_source(gc, lesson):
 
 
 def attached_workflow(gc, source):
-    """Follow native direct and convoy-first bindings without relaunching work."""
-    def rows(*args):
-        result = gc("gc", "--rig", "practice", "bd", *args, json_output=True)
-        return [result] if isinstance(result, dict) else result
-
-    def keyed_roots(key, value):
-        matches = rows("list", "--all", "--include-ephemeral", "--metadata-field",
-                       key + "=" + value, "--limit", "0", "--json")
-        roots = []
-        for row in matches:
-            metadata = row.get("metadata", {})
-            kind = metadata.get("gc.kind", "").strip().lower()
-            contract = metadata.get("gc.formula_contract", "").strip().lower()
-            controller = row.get("issue_type", "").strip().lower() in {
-                "session", "startup-health-episode", "convergence", "op"}
-            controller |= any(label.strip().lower() == "gc:session" for label in row.get("labels", []))
-            if not controller and (kind == "workflow" or contract == "graph.v2"):
-                roots.append(row)
-        return roots
-
-    roots_by_id = {row["id"]: row for row in keyed_roots("gc.source_bead_id", source["id"])}
-    # A bare-source --on launch initially binds through its synthetic input
-    # convoy. prepare adds the delivery back-link later; it is not admission.
-    excluded = {"gc:session", "gc:order-tracking", "order-tracking", "gc:op", "gc:fact", "gc:rt"}
-    for convoy in rows("dep", "list", source["id"], "--direction", "up", "--type", "tracks", "--json"):
-        if (convoy.get("issue_type") != "convoy" or
-                convoy.get("metadata", {}).get("gc.synthetic", "").strip() != "true" or
-                excluded.intersection(convoy.get("labels", []))):
-            continue
-        for row in keyed_roots("gc.input_convoy_id", convoy["id"]):
-            if row.get("metadata", {}).get("gc.formula_name", "").strip() == "quick-start":
-                roots_by_id[row["id"]] = row
-    roots = list(roots_by_id.values())
-    live = [row for row in roots if row.get("status") != "closed"]
-    if len(live) > 1:
-        raise ValueError("multiple live workflows for this lesson; inspect the preserved source and workflows")
-    if live:
-        return live[0]["id"]
-    if len(roots) == 1:
-        return roots[0]["id"]
-    if roots:
-        hint = source.get("metadata", {}).get("gc.delivery.workflow_root")
-        if any(row["id"] == hint for row in roots):
-            return hint
-        raise ValueError("multiple completed workflows for this lesson; inspect the preserved source and workflows")
-    return None
+    from source_delivery import attached_workflow as lookup
+    return lookup(gc, source, "practice")
 
 
 def verified_delivery(source, destination, gc):
@@ -208,7 +164,7 @@ def verified_delivery(source, destination, gc):
     return sha
 
 
-def show_delivery_progress(source, workflow):
+def show_delivery_progress(source, workflow, lesson=None):
     """Report native delivery milestones; never infer success from elapsed time."""
     import json
     import re
@@ -228,7 +184,13 @@ def show_delivery_progress(source, workflow):
         reason = metadata.get("gc.failure_reason") or workflow.get("close_reason") or metadata.get("close_reason") or metadata.get("gc.outcome", "unknown result")
         worktree = record.get("worktree")
         retained = f" Recorded worktree: {worktree}." if worktree else ""
-        raise ValueError(f"workflow {root} stopped: {reason}; source task remains open.{retained} Inspect gc status before retrying; preserve unfinished work.")
+        if record.get("integrated_sha") or source.get("metadata", {}).get("gc.delivery.integrated_sha"):
+            recovery = "Code is already integrated; inspect existing finalization with gc status and preserve unfinished work."
+        else:
+            command = (f"gc gc tutorial retry --lesson {lesson}" if lesson else
+                       f"gc gc source-delivery retry --root {root} --source {source['id']}")
+            recovery = f"Inspect gc status and correct the reported problem, then run {command}; preserve unfinished work."
+        raise ValueError(f"workflow {root} stopped: {reason}; source task remains open.{retained} {recovery}")
 
     reviewed = record.get("reviewed_sha", "")
     verified = bool(record.get("review_status") == "approved" and
@@ -266,7 +228,7 @@ def main():
     import json
     from source_delivery import gc, InfrastructureError
     parser = argparse.ArgumentParser(description="Run or inspect a guided local delivery lesson.")
-    parser.add_argument("action", choices=["start", "status"], default="start", nargs="?")
+    parser.add_argument("action", choices=["start", "status", "retry"], default="start", nargs="?")
     parser.add_argument("--lesson", choices=list(LESSONS), default="greeting")
     args = parser.parse_args()
     city = os.environ.get("GC_CITY_PATH")
@@ -279,7 +241,7 @@ def main():
         raise ValueError("an existing practice rig points elsewhere; no changes made to it")
     title, description, previous = LESSONS[args.lesson]
     predecessor = None
-    if args.action == "start" and previous:
+    if args.action in ("start", "retry") and previous:
         if not practice:
             raise ValueError("complete the guided quickstart first; its practice rig is required")
         predecessor = find_lesson_source(gc, previous)
@@ -294,6 +256,8 @@ def main():
         print("[1/4] Preparing your local practice repository", flush=True)
         scaffold(destination)
     if not practice:
+        if args.action == "retry":
+            raise ValueError("the practice lesson has not started; run gc gc tutorial start first")
         if args.action == "status":
             print("The guided task has not started. Run gc gc tutorial start.")
             return
@@ -301,6 +265,8 @@ def main():
         gc("gc", "rig", "add", str(destination), "--name", "practice")
     source = find_lesson_source(gc, args.lesson)
     if source is None:
+        if args.action == "retry":
+            raise ValueError(f"the {args.lesson} lesson has not started; run gc gc tutorial start --lesson {args.lesson} first")
         if args.action == "status":
             print(f"The {args.lesson} lesson has not started. Run gc gc tutorial start --lesson {args.lesson}.")
             return
@@ -324,9 +290,30 @@ def main():
     if args.action == "status":
         existing = source.get("metadata", {}).get("gc.delivery.workflow_root") or attached_workflow(gc, source)
         if existing:
-            show_delivery_progress(source, gc("gc", "bd", "show", existing, "--json", json_output=True))
+            workflow = gc("gc", "bd", "show", existing, "--json", json_output=True)
+            if workflow["status"] == "closed" and workflow.get("metadata", {}).get("gc.outcome") != "pass":
+                current = attached_workflow(gc, source)
+                if current and current != existing:
+                    workflow = gc("gc", "bd", "show", current, "--json", json_output=True)
+            show_delivery_progress(source, workflow, args.lesson)
         else:
             print("Workflow attachment pending; no delivery is recorded yet.", flush=True)
+    if args.action == "retry":
+        existing = attached_workflow(gc, source)
+        if not existing:
+            raise ValueError("no previous workflow is recorded; use gc gc tutorial start")
+        workflow = gc("gc", "bd", "show", existing, "--json", json_output=True)
+        if workflow["status"] != "closed":
+            print(f"Existing workflow: {existing}", flush=True)
+        else:
+            receipt = gc("gc", "gc", "source-delivery", "retry", "--root", existing,
+                         "--source", source_id, json_output=True)
+            if receipt["status"] == "existing":
+                print(f"Existing workflow: {receipt['workflow']}", flush=True)
+            else:
+                print(f"Attached workflow {receipt['workflow']}; same source task and input {receipt['input_sha']}", flush=True)
+                if receipt.get("retained_worktree"):
+                    print(f"Previous unfinished work retained: {receipt['retained_worktree']}", flush=True)
     if args.action == "start":
         existing = attached_workflow(gc, source)
         if existing:
