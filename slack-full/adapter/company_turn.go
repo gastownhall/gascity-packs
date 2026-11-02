@@ -42,8 +42,13 @@ type companyCurrentTurn struct {
 	OwnerAppID string `json:"owner_app_id,omitempty"`
 	// City is the target session's gc city when a city-qualified binding
 	// delivered this turn cross-city; empty = the adapter's own city.
-	City        string `json:"city,omitempty"`
-	DeliveredAt string `json:"delivered_at"`
+	City string `json:"city,omitempty"`
+	// RosterDriftOverlay marks a targeted turn delivered to the agent's
+	// dm_bindings session because the live-membership overlay admitted it
+	// without a room binding. reply-current accepts that session for this turn
+	// only; omitted on every other pointer, keeping their bytes unchanged.
+	RosterDriftOverlay bool   `json:"roster_drift_overlay,omitempty"`
+	DeliveredAt        string `json:"delivered_at"`
 }
 
 // companyTurnReference derives one stable opaque reference for a frozen
@@ -301,20 +306,21 @@ func companyPointerFromTarget(r *IngressReceipt, room *CompanyRoom, td TargetDel
 		roomName = room.Name
 	}
 	return companyCurrentTurn{
-		SchemaVersion: companyCurrentTurnSchemaV,
-		TurnRef:       companyTurnReference(r.ID, td),
-		Session:       td.Session,
-		City:          td.City,
-		ReceiptID:     r.ID,
-		TeamID:        r.Origin.TeamID,
-		ChannelID:     r.Origin.ChannelID,
-		TS:            r.Origin.TS,
-		Room:          roomName,
-		Kind:          td.Kind,
-		ThreadRootTS:  threadRootTS,
-		Agent:         td.Agent,
-		DelegationKey: td.DelegationKey,
-		OwnerAppID:    r.OwnerAppID,
-		DeliveredAt:   now.UTC().Format(time.RFC3339),
+		SchemaVersion:      companyCurrentTurnSchemaV,
+		TurnRef:            companyTurnReference(r.ID, td),
+		Session:            td.Session,
+		City:               td.City,
+		ReceiptID:          r.ID,
+		TeamID:             r.Origin.TeamID,
+		ChannelID:          r.Origin.ChannelID,
+		TS:                 r.Origin.TS,
+		Room:               roomName,
+		Kind:               td.Kind,
+		ThreadRootTS:       threadRootTS,
+		Agent:              td.Agent,
+		DelegationKey:      td.DelegationKey,
+		OwnerAppID:         r.OwnerAppID,
+		RosterDriftOverlay: td.RosterDriftOverlay,
+		DeliveredAt:        now.UTC().Format(time.RFC3339),
 	}
 }

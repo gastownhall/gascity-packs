@@ -227,6 +227,12 @@ type TargetDelivery struct {
 	// correlates to (set for peer_delegation / peer_result legs only; empty
 	// for peer_input and the human ambient/targeted legs).
 	DelegationKey string `json:"delegation_key,omitempty"`
+	// RosterDriftOverlay marks a targeted leg the live-membership eligibility
+	// overlay admitted and ensureTargets resolved through dm_bindings because
+	// the agent has no room binding. The current-turn pointer carries it so the
+	// reply verb accepts that same session instead of refusing the reply the
+	// overlay woke the agent to give.
+	RosterDriftOverlay bool `json:"roster_drift_overlay,omitempty"`
 }
 
 // IngressReceipt is the durable ingress record. It retains the complete

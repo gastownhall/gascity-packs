@@ -1068,6 +1068,130 @@ def test_company_turn_ref_requires_bound_session_env(
 
 
 # --------------------------------------------------------------------------
+# Roster-drift overlay turns: the adapter woke a live channel member the room
+# roster does not list yet, delivering to its dm_bindings session. Only a plain
+# reply from exactly that session may answer it.
+# --------------------------------------------------------------------------
+
+def _setup_overlay_room(outbound, tmp_path: pathlib.Path, *,
+                        dm_session: str = "riley-dm",
+                        room_bound: bool = False) -> None:
+    """orchestrator-team rosters only ollie; riley is a live member via overlay."""
+    _setup_company(outbound, tmp_path)
+    slackdir = tmp_path / ".gc" / "slack"
+    directory = json.loads(json.dumps(_DIRECTORY))
+    room = directory["rooms"][0]
+    room["members"] = ["ollie"]
+    room["mention_wake"] = ["ollie"]
+    (slackdir / "company_directory.json").write_text(json.dumps(directory))
+    bindings = [{"room": "orchestrator-team", "agent": "ollie", "session": "ollie-main"}]
+    if room_bound:
+        bindings.append(
+            {"room": "orchestrator-team", "agent": "riley", "session": "riley-main"})
+    (slackdir / "company_bindings.json").write_text(
+        json.dumps({"schema_version": 1, "bindings": bindings}))
+    _write_dm_bindings(outbound, session=dm_session, agent="riley")
+
+
+def _capture_posts(monkeypatch: pytest.MonkeyPatch, outbound) -> list:
+    captured: list = []
+
+    def fake_post(method, token, payload, *, api_base, timeout):
+        captured.append({"token": token, "payload": payload})
+        return 200, {}, {"ok": True, "ts": "1700000000.000800"}
+    monkeypatch.setattr(outbound, "_slack_web_post", fake_post)
+    return captured
+
+
+def test_company_roster_drift_overlay_reply_posts_from_dm_bound_session(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    rc, _common = _import_modules()
+    outbound = _import_outbound()
+    _setup_overlay_room(outbound, tmp_path)
+    _write_turn(outbound, session="riley-dm", kind="targeted", agent="riley",
+                ts="1700000000.000500", roster_drift_overlay=True)
+    monkeypatch.setenv("GC_SESSION_NAME", "riley-dm")
+    captured = _capture_posts(monkeypatch, outbound)
+
+    assert rc.main(["--body", "answering the mention"]) == 0
+    assert len(captured) == 1
+    assert captured[0]["token"] == "xoxb-riley"
+    assert captured[0]["payload"]["channel"] == "C0AAAAAAA"
+    assert captured[0]["payload"]["thread_ts"] == "1700000000.000100"
+
+
+def test_company_unmarked_turn_without_room_binding_is_still_refused(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """Without the adapter's overlay mark, a dm binding authorizes nothing."""
+    rc, _common = _import_modules()
+    outbound = _import_outbound()
+    _setup_overlay_room(outbound, tmp_path)
+    _write_turn(outbound, session="riley-dm", kind="targeted", agent="riley",
+                ts="1700000000.000500")
+    monkeypatch.setenv("GC_SESSION_NAME", "riley-dm")
+    captured = _capture_posts(monkeypatch, outbound)
+
+    with pytest.raises(SystemExit) as exc:
+        rc.main(["--body", "no overlay mark"])
+    assert "spoof guard" in str(exc.value)
+    assert captured == []
+
+
+@pytest.mark.parametrize("room_bound", [False, True])
+def test_company_roster_drift_overlay_reply_refuses_other_sessions(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+        room_bound: bool) -> None:
+    """The overlay admits only the agent's dm-bound session, and a room
+    binding, when one exists, still wins over it."""
+    rc, _common = _import_modules()
+    outbound = _import_outbound()
+    _setup_overlay_room(
+        outbound, tmp_path,
+        dm_session="riley-dm" if room_bound else "riley-elsewhere",
+        room_bound=room_bound)
+    _write_turn(outbound, session="riley-dm", kind="targeted", agent="riley",
+                ts="1700000000.000500", roster_drift_overlay=True)
+    monkeypatch.setenv("GC_SESSION_NAME", "riley-dm")
+    captured = _capture_posts(monkeypatch, outbound)
+
+    with pytest.raises(SystemExit) as exc:
+        rc.main(["--body", "wrong session"])
+    assert "spoof guard" in str(exc.value)
+    assert captured == []
+
+
+def test_company_roster_drift_overlay_turn_cannot_delegate(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    outbound = _import_outbound()
+    _setup_overlay_room(outbound, tmp_path)
+    _write_turn(outbound, session="riley-dm", kind="targeted", agent="riley",
+                ts="1700000000.000500", roster_drift_overlay=True)
+    captured = _capture_posts(monkeypatch, outbound)
+
+    with pytest.raises(outbound.OutboundError) as exc:
+        outbound.run_delegate(
+            to="ollie", body="take this", origin_ts="1700000000.000500",
+            session_name="riley-dm")
+    assert "spoof guard" in str(exc.value)
+    assert captured == []
+
+
+@pytest.mark.parametrize("kind, value", [("ambient", True), ("targeted", "yes")])
+def test_company_roster_drift_overlay_mark_is_validated(kind: str, value) -> None:
+    outbound = _import_outbound()
+    turn = {
+        "schema_version": 1, "session": "riley-dm", "receipt_id": "in-x",
+        "team_id": "T0AAAAAAA", "channel_id": "C0AAAAAAA",
+        "ts": "1700000000.000500", "room": "orchestrator-team", "kind": kind,
+        "thread_root_ts": "1700000000.000100", "agent": "riley",
+        "delivered_at": "2026-07-17T12:00:00Z", "roster_drift_overlay": value,
+    }
+    with pytest.raises(outbound.OutboundError) as exc:
+        outbound.parse_current_turn(turn)
+    assert "roster_drift_overlay" in str(exc.value)
+
+
+# --------------------------------------------------------------------------
 # Per-agent DM reply path (Phase 4) — reply-current diverts to the DM pointer.
 # --------------------------------------------------------------------------
 

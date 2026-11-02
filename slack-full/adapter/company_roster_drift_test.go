@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -62,6 +64,9 @@ func TestRosterDriftOverlayWakesViaRoomBinding(t *testing.T) {
 	if len(sc) != 1 || !strings.Contains(sc[0].path, "/session/riley-main/") {
 		t.Fatalf("session calls = %+v, want one to riley-main (existing room binding wins)", sc)
 	}
+	if ptr := readPointer(t, h, "riley-main"); ptr.RosterDriftOverlay {
+		t.Error("pointer roster_drift_overlay = true, want false (room binding, ordinary turn)")
+	}
 	if got := h.gw.rosterDriftWakes.Load(); got != 1 {
 		t.Errorf("company_roster_drift_wakes = %d, want 1", got)
 	}
@@ -101,6 +106,24 @@ func TestRosterDriftOverlayWakesViaDMBindingFallback(t *testing.T) {
 	sc := gc.sessionCalls()
 	if len(sc) != 1 || !strings.Contains(sc[0].path, "/session/quinn-dm/") {
 		t.Fatalf("session calls = %+v, want one to quinn-dm (dm_bindings fallback)", sc)
+	}
+	// The pointer and the immutable record both carry the overlay mark, so the
+	// reply verb accepts quinn-dm for this turn instead of refusing it.
+	ptr := readPointer(t, h, "quinn-dm")
+	if !ptr.RosterDriftOverlay || ptr.Kind != wakeKindTargeted || ptr.Agent != "quinn" {
+		t.Fatalf("pointer = %+v, want a targeted quinn turn with roster_drift_overlay", ptr)
+	}
+	rec, err := os.ReadFile(filepath.Join(h.turnsDir, "by-ref", ptr.TurnRef+".json"))
+	if err != nil {
+		t.Fatalf("immutable turn record: %v", err)
+	}
+	if !strings.Contains(string(rec), `"roster_drift_overlay": true`) {
+		t.Errorf("immutable turn record lacks roster_drift_overlay:\n%s", rec)
+	}
+	for _, td := range r.Targets {
+		if td.Session == "quinn-dm" && !td.RosterDriftOverlay {
+			t.Errorf("receipt target %+v lacks roster_drift_overlay", td)
+		}
 	}
 	if got := h.gw.rosterDriftWakes.Load(); got != 1 {
 		t.Errorf("company_roster_drift_wakes = %d, want 1", got)
