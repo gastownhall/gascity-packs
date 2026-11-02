@@ -31,14 +31,16 @@ Artifact validation: this step is gated by the pack-owned `build-artifact-valid.
 
 ## Required artifact location
 
-`{{report_path}}` is relative to the durable rig root, not the current
-per-bead worktree. Read the rig root from `$GC_RIG_ROOT` and write the report
-to `$GC_RIG_ROOT/{{report_path}}`; do not write it under the current directory
-or `$GC_WORK_DIR`. The inference gate reads the artifact from that durable
-location after this disposable worktree is removed.
+Resolve `{{report_path}}` exactly as the artifact gate does. An absolute
+path is the complete destination: write there unchanged, without prefixing
+`$GC_RIG_ROOT`. A relative path is relative to the durable rig root: read
+`$GC_RIG_ROOT` and write to `$GC_RIG_ROOT/{{report_path}}`. Neither form is
+relative to the current per-bead worktree or `$GC_WORK_DIR`. The inference
+gate must read the same artifact after this disposable worktree is removed.
 
 Before closing, resolve the workflow-root id from the claimed bead's
-`gc.root_bead_id`, then record the rig-relative path on that root:
+`gc.root_bead_id`, then record the supplied path (absolute or rig-relative)
+on that root:
 
 ```bash
 gc bd update "<workflow-root-id>" \
