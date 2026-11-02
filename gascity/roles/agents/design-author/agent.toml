@@ -1,3 +1,5 @@
 description = "Design author for repo-grounded engineering design documents"
 scope = "rig"
 fallback = true
+# The provider CLI lists the skills in its sink itself; the appendix repeats it.
+inject_assigned_skills = false
