@@ -496,6 +496,104 @@ test_shutdown_probe_scopes_rig_and_fails_closed() {
     fi
 }
 
+test_shutdown_probe_ignores_closed_namesakes() {
+    # `gc session list --state=all` lists closed sessions too (the city API
+    # since gastownhall/gascity#8209, every route in Gas City 1.6), and a
+    # closed row keeps the alias, agent_name and name of its session. The
+    # probe matches the warrant target among open sessions only: a closed
+    # namesake must not make a live target ambiguous, and a target held only
+    # by closed sessions must not resolve to one of them.
+    local tmp probe calls output bd_subcommand live closed older
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    probe="$tmp/probe.sh"
+    calls="$tmp/calls"
+    output="$tmp/output"
+    bd_subcommand=$(printf '%s%s' b d)
+    extract_shutdown_probe "$probe"
+    live='{"id":"session-2","name":"demo/gastown.worker","template":"gastown.polecat","rig":"demo","state":"active","alias":"demo/gastown.worker","agent_name":"demo/gastown.worker","session_name":"demo--worker-2","work_dir":"/missing/provider","last_active":"","closed":false}'
+    closed='{"id":"session-1","name":"demo/gastown.worker","template":"gastown.polecat","rig":"demo","state":"closed","alias":"demo/gastown.worker","agent_name":"demo/gastown.worker","session_name":"demo--worker-1","work_dir":"/missing/provider","last_active":"","closed":true}'
+    older='{"id":"session-0","name":"demo/gastown.worker","template":"gastown.polecat","rig":"demo","state":"closed","alias":"demo/gastown.worker","agent_name":"demo/gastown.worker","session_name":"demo--worker-0","work_dir":"/missing/provider"}'
+
+    SHUTDOWN_PROBE_ROSTER="{\"sessions\":[$live,$closed]}"
+    (
+        gc() {
+            printf '%s\n' "$*" >> "$calls"
+            case "$*" in
+                "session list --state=all --json")
+                    printf '%s\n' "$SHUTDOWN_PROBE_ROSTER"
+                    ;;
+                "$bd_subcommand --rig demo list --status=in_progress --json --limit=0")
+                    printf '%s\n' '[]'
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+        }
+        target="demo/gastown.worker"
+        # shellcheck source=/dev/null
+        source "$probe"
+    ) > "$output"
+
+    rg -q "^${bd_subcommand} --rig demo list --status=in_progress --json --limit=0$" "$calls" ||
+        fail "a closed namesake kept the shutdown probe from routing the live target's work query"
+    rg -q '^progress_signal=none$' "$output" ||
+        fail "a live target with a closed namesake did not produce progress=none"
+
+    : > "$calls"
+    # The second closed row carries only state "closed", the city API's
+    # rendering before Gas City 1.6.
+    SHUTDOWN_PROBE_ROSTER="{\"sessions\":[$closed,$older]}"
+    (
+        gc() {
+            printf '%s\n' "$*" >> "$calls"
+            case "$*" in
+                "session list --state=all --json")
+                    printf '%s\n' "$SHUTDOWN_PROBE_ROSTER"
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+        }
+        target="demo/gastown.worker"
+        # shellcheck source=/dev/null
+        source "$probe"
+    ) > "$output"
+
+    rg -q '^progress_signal=unknown$' "$output" ||
+        fail "a target held only by closed sessions did not fail closed"
+    if rg -q "^${bd_subcommand} " "$calls"; then
+        fail "a target held only by closed sessions queried a bead store"
+    fi
+
+    : > "$calls"
+    SHUTDOWN_PROBE_ROSTER="{\"sessions\":[$closed]}"
+    (
+        gc() {
+            printf '%s\n' "$*" >> "$calls"
+            case "$*" in
+                "session list --state=all --json")
+                    printf '%s\n' "$SHUTDOWN_PROBE_ROSTER"
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+        }
+        target="demo/gastown.worker"
+        # shellcheck source=/dev/null
+        source "$probe"
+    ) > "$output"
+
+    rg -q '^progress_signal=unknown$' "$output" ||
+        fail "a target whose only session is closed resolved to that closed session"
+    if rg -q "^${bd_subcommand} " "$calls"; then
+        fail "a target whose only session is closed queried a bead store"
+    fi
+}
+
 test_validator_rejects_provider_and_unrelated_paths() {
     local tmp validator rig city_a city_b provider bead valid got plain
     local alias_root foreign foreign_wt cross_city other_rig wrong_namespace
@@ -1708,6 +1806,7 @@ test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores
 test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch
 test_shutdown_probe_scopes_rig_and_fails_closed
+test_shutdown_probe_ignores_closed_namesakes
 test_cleanup_command_is_idempotent_and_mr_retryable
 test_cleanup_command_rejects_cross_city_and_dirty_artifacts
 test_cleanup_requires_live_remote_evidence_and_stable_state

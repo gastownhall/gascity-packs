@@ -248,6 +248,55 @@ test_reassigned_bead_skips() {
     assert_verdict false "a bead reassigned since the snapshot"
 }
 
+# `gc session list --state=all` also lists closed sessions, newest first
+# (the city API since gastownhall/gascity#8209, every route in Gas City 1.6),
+# and a closed row keeps the alias, agent_name and name its session had.  An
+# older closed namesake must never displace the live owner it shares them with.
+LIVE_POLECAT='{"id":"pool-20","name":"rig/polecat-a","alias":"rig/polecat-a","agent_name":"rig/polecat-a","session_name":"s-pool-20","state":"active","last_active":"","closed":false}'
+CLOSED_POLECAT='{"id":"pool-10","name":"rig/polecat-a","alias":"rig/polecat-a","agent_name":"rig/polecat-a","session_name":"s-pool-10","state":"closed","last_active":"","closed":true}'
+OLDER_CLOSED_POLECAT='{"id":"pool-5","name":"rig/polecat-a","alias":"rig/polecat-a","agent_name":"rig/polecat-a","session_name":"s-pool-5","state":"closed","last_active":"","closed":true}'
+
+test_live_assignee_with_older_closed_namesake_is_not_orphaned() {
+    set_roster "{\"sessions\":[$LIVE_POLECAT,$CLOSED_POLECAT]}"
+    run_verdict "rig/polecat-a" "rig/polecat-a" OLD
+    assert_verdict false "a live assignee listed before its older closed session"
+}
+
+test_live_assignee_listed_after_its_closed_namesake_is_not_orphaned() {
+    # Row order is not a contract (the bead leg and older API builds list
+    # closed rows first), so a closed row must lose to a live one in either
+    # order: a guard that let the first write win would fail here.
+    set_roster "{\"sessions\":[$CLOSED_POLECAT,$OLDER_CLOSED_POLECAT,$LIVE_POLECAT]}"
+    run_verdict "rig/polecat-a" "rig/polecat-a" OLD
+    assert_verdict false "a live assignee listed after its closed sessions"
+}
+
+test_live_assignee_with_closed_namesake_without_closed_flag_is_not_orphaned() {
+    # The city API's rendering before Gas City 1.6: state "closed", no
+    # `closed` or `agent_name` field.
+    set_roster '{"sessions":[{"id":"pool-20","name":"rig/polecat-a","alias":"rig/polecat-a","state":"active"},{"id":"pool-10","name":"rig/polecat-a","alias":"rig/polecat-a","state":"closed"}]}'
+    run_verdict "rig/polecat-a" "rig/polecat-a" OLD
+    assert_verdict false "a closed namesake that carries only state \"closed\""
+}
+
+test_closed_session_bead_does_not_orphan_a_live_named_identity() {
+    # A closed session bead keeps its configured_named_identity, and
+    # `gc bd list --all` lists it after the open one.
+    set_roster '{"sessions":[{"id":"crew-30","name":"rig/alice","alias":"rig/alice","state":"active","closed":false}]}'
+    printf '%s' '[{"id":"crew-30","status":"open","metadata":{"configured_named_identity":"rig/alice","state":"active"}},{"id":"crew-29","status":"closed","metadata":{"configured_named_identity":"rig/alice","state":"drained"}}]' >"$GC_SESSION_BEADS_JSON"
+    run_verdict "rig/alice" "rig/alice" OLD
+    printf '[]' >"$GC_SESSION_BEADS_JSON"
+    assert_verdict false "a closed session bead listed after the live one"
+}
+
+test_assignee_held_only_by_closed_sessions_is_still_orphaned() {
+    # Positive control: an owner whose every session is closed is gone, and
+    # its work must still be recovered.
+    set_roster "{\"sessions\":[$CLOSED_POLECAT,$OLDER_CLOSED_POLECAT]}"
+    run_verdict "rig/polecat-a" "rig/polecat-a" OLD
+    assert_verdict true "an assignee whose every session is closed"
+}
+
 # --- Step 3: the "did this branch land?" test -----------------------------
 
 new_repo() {
@@ -472,6 +521,11 @@ test_bead_touched_mid_cycle_skips
 test_boundary_second_fraction_skips
 test_touch_before_the_recheck_rebuild_still_skips
 test_reassigned_bead_skips
+test_live_assignee_with_older_closed_namesake_is_not_orphaned
+test_live_assignee_listed_after_its_closed_namesake_is_not_orphaned
+test_live_assignee_with_closed_namesake_without_closed_flag_is_not_orphaned
+test_closed_session_bead_does_not_orphan_a_live_named_identity
+test_assignee_held_only_by_closed_sessions_is_still_orphaned
 test_merge_commit_landing_reads_as_on_main
 test_rebased_landing_reads_as_on_main
 test_squashed_landing_reads_as_on_main
