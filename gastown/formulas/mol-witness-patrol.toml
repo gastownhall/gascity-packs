@@ -200,13 +200,20 @@ a NEW session with a different ID — the old one never comes back.
      `session_name`, `alias`, and `agent_name` — the exact identifier forms
      an assignee may take.
 
+   `--state=all` also lists closed sessions, newest first, and a closed row
+   (`closed: true`, or `state: "closed"` alone) keeps the alias, agent_name
+   and name its session had; a closed session bead keeps its
+   configured_named_identity. So `add` sets a key only while it is absent or
+   `"closed"`: a closed row never displaces a live owner, and an identifier
+   held only by closed sessions still resolves to `closed`.
+
    Stream both JSON blobs through temp files, never `--argjson` on argv: on a
    busy city the session `command` fields are large and overflow ARG_MAX
    (`argument list too long: jq`). Build the map through this function rather
    than inline — Step 2a re-runs it per orphan candidate, and a single
    definition is what stops the pre-destruction re-check from drifting away
    from this classification: same two legs, same identifier forms, same
-   last-write-wins tie-break on duplicate identifiers.
+   rule for duplicate identifiers.
    ```bash
    build_liveness_map() {
      # Stamp the watermark BEFORE the snapshot. Everything touched from this
@@ -226,6 +233,7 @@ a NEW session with a different ID — the old one never comes back.
        LIVENESS_MAP=$(jq -n --slurpfile sessions "$SESSIONS_FILE" --slurpfile session_beads "$SESSION_BEADS_FILE" '
          def add($m; $key; $state; $closed):
            if (($key // "") | length) == 0 then $m
+           elif ($m | has($key)) and $m[$key] != "closed" then $m
            else $m + {($key): (if $closed then "closed" else ($state // "") end)}
            end;
          (reduce ($sessions[0].sessions // [])[] as $s ({};

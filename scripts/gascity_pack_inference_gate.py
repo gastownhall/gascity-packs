@@ -179,6 +179,11 @@ GASTOWN_BUILD_WORKFLOW_CONTRACTS = {
         # pre-destruction re-check cannot drift apart, and a build failure
         # returns non-zero rather than an empty map that reads as "all absent".
         "build_liveness_map() {",
+        # `gc session list --state=all` lists closed sessions newest first, and
+        # a closed row keeps its live namesake's alias, agent_name and name. A
+        # key is set only while absent or "closed", so closed history never
+        # displaces a live owner (gastownhall/gascity#8453).
+        'elif ($m | has($key)) and $m[$key] != "closed" then $m',
         "MAP_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
         'CYCLE_MAP_BUILT_AT="$MAP_BUILT_AT"',
         # The pre-destruction verdict: starts false, is only promoted by a check
