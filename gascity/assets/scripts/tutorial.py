@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 MARKER = "rfc8191-first-local-change-v1"
-MANAGED_HOOK_FILES = (".codex/hooks.json",)
+MANAGED_HOOK_FILES = (".codex/hooks.json", ".codex/.hooks.json.gascity.lock")
 VERIFY_COMMAND = "python3 -m unittest discover -s tests -v"
 TASK = """Fix the greeting function in hello.py. greet(\"Ada\") must return
 \"Hello, Ada!\"; greet(\"\") must return \"Hello, world!\". Preserve the public greet

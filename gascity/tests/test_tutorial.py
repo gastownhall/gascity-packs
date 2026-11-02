@@ -540,9 +540,10 @@ def test_concurrent_lesson_starts_reuse_one_source_and_workflow(tutorial, tmp_pa
                 worker.join(timeout=5)
 
 
-def test_practice_reserves_only_managed_codex_hook(tutorial, tmp_path):
+@pytest.mark.parametrize("managed", [".codex/hooks.json", ".codex/.hooks.json.gascity.lock"])
+def test_practice_reserves_only_managed_codex_hook(tutorial, tmp_path, managed):
     repo = tutorial.scaffold(tmp_path / "practice")
-    hook = repo / ".codex/hooks.json"
+    hook = repo / managed
     hook.parent.mkdir()
     hook.write_text('{"hooks": {}}')
     assert tutorial.git(repo, "status", "--porcelain", "--untracked-files=all") == ""
@@ -550,7 +551,7 @@ def test_practice_reserves_only_managed_codex_hook(tutorial, tmp_path):
     assert hook.read_text() == '{"hooks": {}}'
 
 
-@pytest.mark.parametrize("filename", ["config.toml", "hooks.json.bak"])
+@pytest.mark.parametrize("filename", ["config.toml", "hooks.json.bak", ".hooks.json.gascity.lock.bak"])
 def test_registration_preserves_unmanaged_codex_files(tutorial, tmp_path, filename):
     repo = tutorial.scaffold(tmp_path / "practice")
     other = repo / ".codex" / filename
@@ -564,16 +565,17 @@ def test_registration_preserves_unmanaged_codex_files(tutorial, tmp_path, filena
     assert filename in tutorial.git(repo, "status", "--porcelain", "--untracked-files=all")
 
 
-def test_registration_reserves_managed_hook_for_older_owned_practice(tutorial, tmp_path):
+@pytest.mark.parametrize("managed", [".codex/hooks.json", ".codex/.hooks.json.gascity.lock"])
+def test_registration_reserves_managed_hook_for_older_owned_practice(tutorial, tmp_path, managed):
     repo = tutorial.scaffold(tmp_path / "practice")
     ignore = repo / ".gitignore"
-    ignore.write_text(ignore.read_text().replace("/.codex/hooks.json\n", ""))
+    ignore.write_text(ignore.read_text().replace("/" + managed + "\n", ""))
     tutorial.git(repo, "add", ".gitignore")
     tutorial.git(repo, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "older tutorial baseline")
-    hook = repo / ".codex/hooks.json"
+    hook = repo / managed
     hook.parent.mkdir()
     hook.write_text('{"hooks": {}}')
     tutorial.finish_registration(repo)
     assert tutorial.git(repo, "status", "--porcelain", "--untracked-files=all") == ""
     assert hook.read_text() == '{"hooks": {}}'
-    assert tutorial.git(repo, "ls-files", ".codex/hooks.json") == ""
+    assert tutorial.git(repo, "ls-files", managed) == ""
