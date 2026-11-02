@@ -235,9 +235,16 @@ warrant spawns a second shutdown dance racing the first (duplicate kills,
 wasted dog cycles). Skip filing if one is already open or in progress:
 ```bash
 TARGET_SESSION="<session>"
-EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
-  | jq -r --arg t "$TARGET_SESSION" \
-      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+# Warrants can live in ANY store — rig agents file into their rig's store.
+# Scan the city store (the empty line) plus every non-HQ rig store, or a
+# cross-store twin of an open warrant gets a second shutdown dance.
+EXISTING_WARRANT=$({ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+  | while read -r RIG; do
+      if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+      gc bd list $STORE --label=warrant --json --limit=0 \\
+        | jq -r --arg t "$TARGET_SESSION" \\
+            '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length'
+    done | awk '{s += $1} END {print s + 0}')
 if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
   echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
 else
@@ -274,13 +281,27 @@ closes that gap.
 - `B` = the most recent bead.updated_at across those beads (work signal)
 
 ```bash
-gc agents list --json --active | jq -r '.[] | .agent_id' | while read -r AGENT; do
-    ASSIGNED=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
-    LATEST=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 \\
-        | jq -r '[.[].updated_at] | max // ""')
-    printf '%s\\t%s\\t%s\\n' "$AGENT" "$ASSIGNED" "$LATEST"
-done
+gc session list --json --state active \\
+  | jq -r '.sessions[] | select(.agent_name != null and .agent_name != "") | [(.rig // "-"), .agent_name] | @tsv' \\
+  | sort -u \\
+  | while read -r RIG AGENT; do
+      if [ "$RIG" = "-" ]; then STORE=""; else STORE="--rig $RIG"; fi
+      ASSIGNED=$(gc bd list $STORE --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
+      LATEST=$(gc bd list $STORE --status=open --assignee="$AGENT" --json --limit=0 \\
+          | jq -r '[.[].updated_at] | max // ""')
+      printf '%s\\t%s\\t%s\\n' "$AGENT" "$ASSIGNED" "$LATEST"
+    done
 ```
+
+`gc session list` is the runtime roster (there is no `gc agents` command in
+gc, and `--active` is not a flag; `gc agent list` is city.toml config only).
+Its JSON is `{sessions: [...]}`: identity is `.agent_name`, and `.rig` names
+the rig whose bead store the agent's beads live in (absent for city-level
+agents, mapped to `-` above). `gc bd list` answers from ONE store — the
+city store by default, a named rig's store under `--rig <name>` — so the
+roster's rig MUST be passed through to bd. Querying the city store alone
+reports `0` assigned for every rig agent and hides queue starvation
+entirely.
 
 The latest bead.updated_at is the cheapest proxy for "did this session
 move work recently?" — every claim, status transition, metadata update,
@@ -313,9 +334,16 @@ dance racing the first:
 
 ```bash
 TARGET_SESSION="<session>"
-EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
-    | jq -r --arg t "$TARGET_SESSION" \
-        '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+# Warrants can live in ANY store — rig agents file into their rig's store.
+# Scan the city store (the empty line) plus every non-HQ rig store, or a
+# cross-store twin of an open warrant gets a second shutdown dance.
+EXISTING_WARRANT=$({ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+    | while read -r RIG; do
+        if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+        gc bd list $STORE --label=warrant --json --limit=0 \\
+          | jq -r --arg t "$TARGET_SESSION" \\
+              '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length'
+      done | awk '{s += $1} END {print s + 0}')
 if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
     echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
 else
@@ -346,9 +374,15 @@ work-layer judgment: is this task genuinely slow, or is the agent stuck?
 The controller can't know this. The deacon can, by checking bead and
 wisp timestamps.
 
-**Step 1: Find active utility agent work:**
+**Step 1: Find active utility agent work (scan EVERY store — dog-routed
+work can live in a rig's store, which the default city-store query never
+sees):**
 ```bash
-gc bd list --status=in_progress --metadata-field gc.routed_to={{binding_prefix}}dog --json --limit=0
+{ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+  | while read -r RIG; do
+      if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+      gc bd list $STORE --status=in_progress --metadata-field 'gc.routed_to={{binding_prefix}}dog' --json --limit=0
+    done
 ```
 
 **Step 2: For each, assess progress:**
@@ -365,9 +399,16 @@ Check for an existing open warrant against the same target first — a duplicate
 warrant spawns a second shutdown dance racing the first:
 ```bash
 TARGET_SESSION="<session>"
-EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
-  | jq -r --arg t "$TARGET_SESSION" \
-      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+# Warrants can live in ANY store — rig agents file into their rig's store.
+# Scan the city store (the empty line) plus every non-HQ rig store, or a
+# cross-store twin of an open warrant gets a second shutdown dance.
+EXISTING_WARRANT=$({ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+  | while read -r RIG; do
+      if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+      gc bd list $STORE --label=warrant --json --limit=0 \\
+        | jq -r --arg t "$TARGET_SESSION" \\
+            '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length'
+    done | awk '{s += $1} END {print s + 0}')
 if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
   echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
 else
