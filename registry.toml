@@ -41,6 +41,13 @@ schema = 1
     hash = "sha256:149772065f9f2862965146e74d853d17e432628f57d25a4386bbef0fb6744e33"
     description = "Release graph.v2 review/build prompt fixes validated by gascity RC gates."
 
+  [[pack.release]]
+    version = "0.0.8191"
+    ref = "feat/rfc-8191-gascity-only"
+    commit = "c5aaa9fae54af7a13be6e4f5a594d7d49a58e2cb"
+    hash = "sha256:16e9f3506a21918130dcb562038dabf943d66e0520a110f3204dff8c8814a97f"
+    description = "RFC8191 qualification candidate on the original compatible module baseline; stable catalog selection is unchanged."
+
 [[pack]]
   name = "gastown"
   description = "Default Gas Town coding workflow pack."
