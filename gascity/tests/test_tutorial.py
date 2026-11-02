@@ -538,3 +538,42 @@ def test_concurrent_lesson_starts_reuse_one_source_and_workflow(tutorial, tmp_pa
             if worker.pid and worker.is_alive():
                 worker.kill()
                 worker.join(timeout=5)
+
+
+def test_practice_reserves_only_managed_codex_hook(tutorial, tmp_path):
+    repo = tutorial.scaffold(tmp_path / "practice")
+    hook = repo / ".codex/hooks.json"
+    hook.parent.mkdir()
+    hook.write_text('{"hooks": {}}')
+    assert tutorial.git(repo, "status", "--porcelain", "--untracked-files=all") == ""
+    tutorial.finish_registration(repo)
+    assert hook.read_text() == '{"hooks": {}}'
+
+
+@pytest.mark.parametrize("filename", ["config.toml", "hooks.json.bak"])
+def test_registration_preserves_unmanaged_codex_files(tutorial, tmp_path, filename):
+    repo = tutorial.scaffold(tmp_path / "practice")
+    other = repo / ".codex" / filename
+    other.parent.mkdir()
+    other.write_text("user-owned")
+    before = tutorial.git(repo, "rev-parse", "HEAD")
+    with pytest.raises(ValueError, match="untracked source changes"):
+        tutorial.finish_registration(repo)
+    assert tutorial.git(repo, "rev-parse", "HEAD") == before
+    assert other.read_text() == "user-owned"
+    assert filename in tutorial.git(repo, "status", "--porcelain", "--untracked-files=all")
+
+
+def test_registration_reserves_managed_hook_for_older_owned_practice(tutorial, tmp_path):
+    repo = tutorial.scaffold(tmp_path / "practice")
+    ignore = repo / ".gitignore"
+    ignore.write_text(ignore.read_text().replace("/.codex/hooks.json\n", ""))
+    tutorial.git(repo, "add", ".gitignore")
+    tutorial.git(repo, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "older tutorial baseline")
+    hook = repo / ".codex/hooks.json"
+    hook.parent.mkdir()
+    hook.write_text('{"hooks": {}}')
+    tutorial.finish_registration(repo)
+    assert tutorial.git(repo, "status", "--porcelain", "--untracked-files=all") == ""
+    assert hook.read_text() == '{"hooks": {}}'
+    assert tutorial.git(repo, "ls-files", ".codex/hooks.json") == ""

@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 
 MARKER = "rfc8191-first-local-change-v1"
+MANAGED_HOOK_FILES = (".codex/hooks.json",)
 VERIFY_COMMAND = "python3 -m unittest discover -s tests -v"
 TASK = """Fix the greeting function in hello.py. greet(\"Ada\") must return
 \"Hello, Ada!\"; greet(\"\") must return \"Hello, world!\". Preserve the public greet
@@ -50,7 +51,7 @@ def scaffold(destination):
             "the verified commit locally. It has no remote and requires no GitHub account.\n\n"
             "Run `python3 -m unittest discover -s tests -v` to see the bug.\n"
         )
-        (staging / ".gitignore").write_text("__pycache__/\n*.pyc\n.beads/\n.gc/\n")
+        (staging / ".gitignore").write_text("__pycache__/\n*.pyc\n.beads/\n.gc/\n" + "".join("/" + hook + "\n" for hook in MANAGED_HOOK_FILES))
         git(staging, "init", "-b", "main")
         git(staging, "config", "--local", "user.name", "Gas City Tutorial")
         git(staging, "config", "--local", "user.email", "tutorial@example.invalid")
@@ -76,13 +77,13 @@ def finish_registration(repo):
         raise ValueError("source changes exist; preserve unfinished work before registration")
     sinks = (".claude/skills/", ".codex/skills/", ".gemini/skills/", ".agents/skills/", ".opencode/skills/")
     untracked = git(repo, "ls-files", "--others", "--exclude-standard").splitlines()
-    if any(path != ".beads/identity.toml" and not path.startswith(sinks) for path in untracked):
+    if any(path not in (".beads/identity.toml", *MANAGED_HOOK_FILES) and not path.startswith(sinks) for path in untracked):
         raise ValueError("untracked source changes exist; preserve them before registration")
     path = repo / ".gitignore"
     text = path.read_text()
     # Provider initialization legitimately removes the broad .beads/ exclusion and writes
     # narrower runtime exclusions; no task source has run at this boundary.
-    for sink in sinks:
+    for sink in (*sinks, *("/" + hook for hook in MANAGED_HOOK_FILES)):
         if sink not in text.splitlines():
             text += "\n" + sink + "\n"
     path.write_text(text)
