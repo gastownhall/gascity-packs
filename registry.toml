@@ -2,8 +2,6 @@ schema = 1
 
 [[pack]]
   name = "gascity"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Gas City planning and implementation workflow pack."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/gascity"
   source_kind = "git"
@@ -52,8 +50,6 @@ schema = 1
 
 [[pack]]
   name = "gastown"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Default Gas Town coding workflow pack."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/gastown"
   source_kind = "git"
@@ -123,8 +119,6 @@ schema = 1
 
 [[pack]]
   name = "cass"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Coding Agent Session Search prompt fragments and skill overlays for Gas City."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/cass"
   source_kind = "git"
@@ -138,8 +132,6 @@ schema = 1
 
 [[pack]]
   name = "discord"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Discord services, commands, and prompt fragments for Gas City."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/discord"
   source_kind = "git"
@@ -153,8 +145,6 @@ schema = 1
 
 [[pack]]
   name = "github"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "GitHub webhook intake services and commands for Gas City."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/github"
   source_kind = "git"
@@ -168,8 +158,6 @@ schema = 1
 
 [[pack]]
   name = "slack-full"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Slack services, commands, and adapter integration for Gas City."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/slack-full"
   source_kind = "git"
@@ -183,8 +171,6 @@ schema = 1
 
 [[pack]]
   name = "slack-channel"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Shared Slack channel routing and session identity pack for Gas City."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/slack-channel"
   source_kind = "git"
@@ -198,8 +184,6 @@ schema = 1
 
 [[pack]]
   name = "slack-mini"
-  tier = "community"
-  publisher = "Unknown publisher"
   description = "Minimal Slack mention bridge and outbound message pack for Gas City."
   source = "https://github.com/gastownhall/gascity-packs/tree/main/slack-mini"
   source_kind = "git"
