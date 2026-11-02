@@ -472,3 +472,69 @@ def test_progress_refuses_another_sources_evidence(tutorial):
         tutorial.show_delivery_progress(
             {"id": "practice-1", "status": "open"},
             {"id": "flow-1", "status": "in_progress", "metadata": {"gc.delivery.record": json.dumps({"source": "other-task"})}})
+
+
+def test_concurrent_lesson_starts_reuse_one_source_and_workflow(tutorial, tmp_path, monkeypatch):
+    import multiprocessing
+    import sys
+    import source_delivery
+    context = multiprocessing.get_context("fork")
+    count = context.Value("i", 0)
+    dispatched = context.Array("i", 4)
+    lookups = context.Value("i", 0)
+    first_lookup = context.Event()
+    second_lookup = context.Event()
+    destination = tmp_path / "projects/practice"
+    def gc(*args, **kwargs):
+        assert args[0] == "gc"
+        args = args[1:]
+        if args[:2] == ("rig", "list"):
+            return {"rigs": [{"name": "practice", "path": str(destination)}]}
+        if args[:4] == ("--rig", "practice", "bd", "list"):
+            with count.get_lock():
+                observed = count.value
+            with lookups.get_lock():
+                lookups.value += 1
+                index = lookups.value
+            if index == 1:
+                first_lookup.set()
+                second_lookup.wait(timeout=1)
+            elif index == 2:
+                second_lookup.set()
+            return [{"id": f"practice-{i}", "status": "open"}
+                    for i in range(1, observed + 1)]
+        if args[:4] == ("--rig", "practice", "bd", "create"):
+            with count.get_lock():
+                count.value += 1
+                number = count.value
+            return {"id": f"practice-{number}", "status": "open"}
+        if args[:3] == ("--rig", "practice", "sling"):
+            with dispatched.get_lock():
+                dispatched[int(args[4].split("-")[-1])] += 1
+            return "Attached workflow\n"
+        raise AssertionError(args)
+    def workflow(gc, source):
+        number = int(source["id"].split("-")[-1])
+        return f"flow-{number}" if dispatched[number] else None
+    monkeypatch.setattr(source_delivery, "gc", gc)
+    monkeypatch.setattr(tutorial, "scaffold", lambda destination: destination)
+    monkeypatch.setattr(tutorial, "finish_registration", lambda destination: None)
+    monkeypatch.setattr(tutorial, "attached_workflow", workflow)
+    monkeypatch.setenv("GC_CITY_PATH", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["tutorial", "start"])
+    first = context.Process(target=tutorial.main)
+    second = context.Process(target=tutorial.main)
+    try:
+        first.start()
+        assert first_lookup.wait(timeout=5)
+        second.start()
+        for worker in (first, second):
+            worker.join(timeout=10)
+            assert worker.exitcode == 0
+        assert count.value == 1, "one lesson must not create two distinct source tasks"
+        assert sum(dispatched) == 1, "one lesson must have one workflow admission"
+    finally:
+        for worker in (first, second):
+            if worker.pid and worker.is_alive():
+                worker.kill()
+                worker.join(timeout=5)

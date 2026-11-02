@@ -223,9 +223,29 @@ def show_delivery_progress(source, workflow, lesson=None):
     print(message, flush=True)
 
 
+
+def tutorial_admission(city):
+    """Serialize the local tutorial's lookup/create/dispatch across processes."""
+    import contextlib
+    import fcntl
+    import stat
+    @contextlib.contextmanager
+    def acquire():
+        path = Path(city) / ".gc" / "tutorial-admission.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise ValueError("tutorial admission lock must be a regular file")
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(descriptor)
+    return acquire()
+
+
 def main():
     import argparse
-    import json
     from source_delivery import gc, InfrastructureError
     parser = argparse.ArgumentParser(description="Run or inspect a guided local delivery lesson.")
     parser.add_argument("action", choices=["start", "status", "retry"], default="start", nargs="?")
@@ -234,6 +254,15 @@ def main():
     city = os.environ.get("GC_CITY_PATH")
     if not city:
         raise ValueError("run this command inside an initialized city")
+    if args.action == "status":
+        return _run_lesson(args, city, gc)
+    with tutorial_admission(city):
+        return _run_lesson(args, city, gc)
+
+
+def _run_lesson(args, city, gc):
+    import json
+    from source_delivery import InfrastructureError
     destination = Path(city) / "projects" / "practice"
     rigs = gc("gc", "rig", "list", "--json", json_output=True)["rigs"]
     practice = [rig for rig in rigs if rig["name"] == "practice"]

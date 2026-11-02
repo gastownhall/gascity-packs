@@ -410,3 +410,68 @@ def test_cli_retains_child_diagnostics_without_corrupting_json(delivery, monkeyp
     assert captured.err == "native diagnostic retained\n"
     if not unexpected:
         assert json.loads(captured.out) == record
+
+
+def test_verification_timeout_stops_owned_descendants_and_keeps_output(delivery, tmp_path, monkeypatch, capsys):
+    import os
+    import shlex
+    import signal
+    import sys
+    mod, repo, tree, base, output = delivery
+    pid_file = tmp_path / "validator-child.pid"
+    parent_file = tmp_path / "validator-parent.pid"
+    child_code = (
+        "import os,signal,time,pathlib;"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid()));"
+        "time.sleep(30)"
+    )
+    validator = tmp_path / "validator.py"
+    validator.write_text(
+        "import os,pathlib,subprocess,sys,time\n"
+        f"pathlib.Path({str(parent_file)!r}).write_text(str(os.getpid()))\n"
+        f"subprocess.Popen([sys.executable,'-u','-c',{child_code!r}],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,"
+        "process_group=0)\n"
+        "print('validator diagnostic before timeout',flush=True)\n"
+        "time.sleep(1)\n"
+    )
+    command = shlex.join([sys.executable, "-u", str(validator)])
+    record = {"worktree": str(tree), "reviewed_sha": output, "review_status": "approved",
+              "verify_command": command, "store_ref": "rig:practice", "root": "flow-1",
+              "repo": str(repo), "base_sha": base, "worktree_root": str(tree.parent),
+              "branch": "task", "base_ref": "refs/heads/main", "source": "task-1"}
+    monkeypatch.setattr(mod, "load", lambda root: dict(record))
+    monkeypatch.setattr(mod, "gc", lambda *args, **kwargs: {})
+    saved = []
+    monkeypatch.setattr(mod, "save", lambda *args: saved.append(args))
+    monkeypatch.setattr(mod, "VERIFY_TIMEOUT", 0.4, raising=False)
+    real_run = subprocess.run
+    def short_timeout(command, *args, **kwargs):
+        if kwargs.get("shell"):
+            kwargs["timeout"] = 0.4
+        return real_run(command, *args, **kwargs)
+    monkeypatch.setattr(subprocess, "run", short_timeout)
+    sentinel = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(30)"])
+    def running(pid):
+        result = real_run(["ps", "-p", str(pid), "-o", "stat="],
+                          capture_output=True, text=True, timeout=5)
+        return result.returncode == 0 and not result.stdout.lstrip().startswith("Z")
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            mod.verify_output("flow-1")
+        assert pid_file.exists(), "the descendant fixture did not start"
+        pid = int(pid_file.read_text())
+        captured = capsys.readouterr()
+        assert (not running(pid), "validator diagnostic before timeout" in captured.out) == (True, True)
+        assert sentinel.poll() is None, "unrelated process must remain alive"
+        assert saved == [], "a failed verification must not persist accepted evidence"
+    finally:
+        for path in (pid_file, parent_file):
+            if path.exists():
+                try:
+                    os.kill(int(path.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        sentinel.kill()
+        sentinel.wait(timeout=5)

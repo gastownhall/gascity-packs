@@ -229,6 +229,77 @@ def prepare(root, source, repo, workspace_root, verify_command):
     return record
 
 
+
+VERIFY_TIMEOUT = 600
+
+
+def _validator_session_processes(session_id):
+    listing = subprocess.check_output(["/bin/ps", "-axo", "pid=,stat="],
+                                     text=True, timeout=5)
+    found = []
+    for row in listing.splitlines():
+        pid_text, state = row.split()[:2]
+        pid = int(pid_text)
+        try:
+            if os.getsid(pid) == session_id:
+                found.append((pid, state))
+        except ProcessLookupError:
+            pass
+    return found
+
+
+def _stop_validator(child):
+    import signal
+    import time
+    def send(sig):
+        for pid, _ in _validator_session_processes(child.pid):
+            try:
+                if os.getsid(pid) == child.pid:
+                    os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+    # The unreaped leader reserves this session identity throughout cleanup.
+    send(signal.SIGTERM)
+    time.sleep(2)
+    send(signal.SIGKILL)
+    deadline = time.monotonic() + 5
+    while True:
+        active = [pid for pid, state in _validator_session_processes(child.pid)
+                  if not state.startswith("Z")]
+        if not active:
+            child.wait(timeout=5)
+            return
+        if time.monotonic() >= deadline:
+            raise ValidatorEnvironmentError(
+                f"verification session {child.pid} did not stop; preserve the worktree "
+                "and inspect its processes before retrying; source remains open")
+        time.sleep(0.05)
+
+
+def run_validator(command, tree):
+    import tempfile
+    # A file retains diagnostics even when the shell dies before descendants.
+    # Pipes would let an inherited writer keep communicate() waiting forever.
+    with tempfile.TemporaryFile(mode="w+t") as output:
+        child = subprocess.Popen(command, shell=True, cwd=tree, stdout=output,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            status = child.wait(timeout=VERIFY_TIMEOUT)
+        except BaseException:
+            try:
+                _stop_validator(child)
+            except Exception as exc:
+                raise ValidatorEnvironmentError(
+                    f"cannot stop owned verification session {child.pid}: {exc}; "
+                    "preserve its worktree and inspect before retrying") from exc
+            finally:
+                output.seek(0)
+                print(output.read(), end="", flush=True)
+            raise
+        output.seek(0)
+        return subprocess.CompletedProcess(command, status, output.read())
+
+
 def verify_output(root):
     import hashlib
     record = load(root)
@@ -238,9 +309,7 @@ def verify_output(root):
     output = git(tree, "rev-parse", "HEAD")
     if record.get("reviewed_sha") != output or record.get("review_status") != "approved":
         raise ValueError("independent review has not approved the current output")
-    result = subprocess.run(record["verify_command"], shell=True, cwd=tree,
-                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            timeout=600)
+    result = run_validator(record["verify_command"], tree)
     print(result.stdout, end="")
     # Configuration failures must stay on the dispatcher's EX_CONFIG hold,
     # not its bounded temporary-infrastructure retry lane. Keep the actual
