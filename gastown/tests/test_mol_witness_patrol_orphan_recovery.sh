@@ -262,6 +262,15 @@ test_live_assignee_with_older_closed_namesake_is_not_orphaned() {
     assert_verdict false "a live assignee listed before its older closed session"
 }
 
+test_live_assignee_listed_after_its_closed_namesake_is_not_orphaned() {
+    # Row order is not a contract (the bead leg and older API builds list
+    # closed rows first), so a closed row must lose to a live one in either
+    # order: a guard that let the first write win would fail here.
+    set_roster "{\"sessions\":[$CLOSED_POLECAT,$OLDER_CLOSED_POLECAT,$LIVE_POLECAT]}"
+    run_verdict "rig/polecat-a" "rig/polecat-a" OLD
+    assert_verdict false "a live assignee listed after its closed sessions"
+}
+
 test_live_assignee_with_closed_namesake_without_closed_flag_is_not_orphaned() {
     # The city API's rendering before Gas City 1.6: state "closed", no
     # `closed` or `agent_name` field.
@@ -513,6 +522,7 @@ test_boundary_second_fraction_skips
 test_touch_before_the_recheck_rebuild_still_skips
 test_reassigned_bead_skips
 test_live_assignee_with_older_closed_namesake_is_not_orphaned
+test_live_assignee_listed_after_its_closed_namesake_is_not_orphaned
 test_live_assignee_with_closed_namesake_without_closed_flag_is_not_orphaned
 test_closed_session_bead_does_not_orphan_a_live_named_identity
 test_assignee_held_only_by_closed_sessions_is_still_orphaned
