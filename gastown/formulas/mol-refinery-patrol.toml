@@ -1397,6 +1397,32 @@ full validation after clearing stale partial PR evidence. A mail failure does
 not undo the safe blocked state; report the delivery failure and let a later
 patrol retry/escalate.
 
+**4b. Publish-order locks and auto-merge arming:**
+
+When this PR must land after another bead's work, stamp the ordering lock on
+the work bead right after recording the handoff:
+
+```bash
+gc bd update "$WORK" --set-metadata publish_after=<blocker-bead-id>
+```
+
+The reconciler enforces the lock: while the blocker bead is not closed, it
+keeps the handoff pending, stamps `publish_order_hold=true`, and never arms
+auto-merge; when the blocker closes, the next reconciliation releases the
+hold and, if the PR is mergeable, arms auto-merge itself, recording
+`auto_merge_armed=by_reconcile`, `auto_merge_armed_by=<session>`, and
+`auto_merge_armed_at` on the bead. A conflicting PR (e.g. behind main with
+conflicts) cannot arm: reconciliation stamps `pr_state=merge_conflicting`
+and escalates to mayor; re-publish the branch (rebase or force-push), let it
+re-enter validation, and re-record.
+
+Arming auto-merge is the reconciler's job. Do not run `gh pr merge --auto`
+by hand. If exceptional conditions force a manual re-arm, leave a record:
+update the work bead (e.g. `--set-metadata manual_rearm=true` plus a note of
+who re-armed and why) or send mail describing it. Reconciliation also stamps
+`auto_merge_armed=observed_external` when it finds a remote arm that no bead
+record explains, so every arm ends up attributed within one patrol.
+
 **5. Cleanup:**
 ```bash
 git checkout "$TARGET"
