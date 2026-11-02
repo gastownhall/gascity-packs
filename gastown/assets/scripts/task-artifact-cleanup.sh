@@ -54,10 +54,25 @@ if [ -z "$WORK" ]; then
               | select(type == "object")
               | select(((.metadata // {}) | type) == "object")
               | select(.metadata.artifact_cleanup_state == "pending")
+              | ((.metadata.deliverable // "") | tostring | ascii_downcase)
+                as $deliverable
               | select(
                   .metadata.merge_result == "merged" or
                   .metadata.merge_result == "already_merged" or
-                  .metadata.merge_result == "mr_merged"
+                  .metadata.merge_result == "mr_merged" or
+                  (
+                    (.metadata.merge_result // "") == "" and
+                    ($deliverable == "comment" or $deliverable == "verdict" or
+                     $deliverable == "config" or $deliverable == "artifact" or
+                     $deliverable == "none") and
+                    (if $deliverable == "comment" or $deliverable == "verdict"
+                     then (((.comment_count // "") | tostring) |
+                           (test("^[0-9]+$") and tonumber >= 1 and
+                            tonumber < 9223372036854775808))
+                     else ((.metadata.deliverable_evidence // "") |
+                           tostring | test("\\S"))
+                     end)
+                  )
                 )
             ]
             | sort_by(.updated_at // "")
@@ -223,12 +238,33 @@ TASK_ARTIFACT=$(printf '%s' "$META" | jq -r '
     then .artifact_dir
     else (.work_dir // empty)
     end')
+DELIVERABLE=$(printf '%s' "$META" | jq -r '.deliverable // "" | tostring | ascii_downcase')
+DELIVERABLE_EVIDENCE=$(printf '%s' "$META" | jq -r '.deliverable_evidence // "" | tostring')
+COMMENT_COUNT=$(printf '%s' "$WORK_RECORD" | jq -r '.comment_count // ""')
+FORK_SHA=$(printf '%s' "$META" | jq -r '.fork_sha // empty')
+BASE_REF=$(printf '%s' "$META" | jq -r '.base_ref // empty')
+NO_MERGE_HANDOFF=false
 
 TERMINAL=false
 if [ "$STATUS" = closed ]; then
     case "$HANDOFF_RESULT" in
         merged|already_merged|mr_merged)
             TERMINAL=true
+            ;;
+        "")
+            # A closed bead with no merge handoff at all is terminal when it
+            # declares a recognized no-merge deliverable class — the same
+            # vocabulary the polecat submit gate honors before closing. A
+            # merge_result that is present but non-terminal (pull_request,
+            # pull_request_pending, ...) keeps the bead deferred even when a
+            # deliverable is stamped: an open handoff never retires the only
+            # reachable worktree.
+            case "$DELIVERABLE" in
+                comment|verdict|config|artifact|none)
+                    TERMINAL=true
+                    NO_MERGE_HANDOFF=true
+                    ;;
+            esac
             ;;
     esac
 fi
@@ -242,6 +278,42 @@ if [ "$TERMINAL" != true ]; then
     fi
     echo "ARTIFACT_CLEANUP_DEFERRED work=$WORK status=${STATUS:-unknown} result=${HANDOFF_RESULT:-unknown}"
     exit 0
+fi
+
+if [ "$NO_MERGE_HANDOFF" = true ]; then
+    # Same proof table the polecat submit gate enforced before closing. The
+    # proof can still arrive after the close (a comment is posted, evidence is
+    # stamped), so a missing proof defers rather than blocks.
+    DEFER_REASON=
+    case "$DELIVERABLE" in
+        comment|verdict)
+            case "$COMMENT_COUNT" in
+                ''|*[!0-9]*) COMMENT_COUNT=0 ;;
+            esac
+            if [ "$COMMENT_COUNT" -ge 1 ]; then
+                :
+            else
+                DEFER_REASON="deliverable=$DELIVERABLE unproven (no comments)"
+            fi
+            ;;
+        config|artifact|none)
+            if [ -n "$(printf '%s' "$DELIVERABLE_EVIDENCE" | tr -d '[:space:]')" ]; then
+                :
+            else
+                DEFER_REASON="deliverable=$DELIVERABLE unproven (no deliverable_evidence)"
+            fi
+            ;;
+    esac
+    if [ -n "$DEFER_REASON" ]; then
+        if [ "$CLEANUP_STATE" != pending ]; then
+            record_cleanup_state pending || {
+                echo "ARTIFACT_CLEANUP_BLOCKED could not record pending state for $WORK" >&2
+                exit 1
+            }
+        fi
+        echo "ARTIFACT_CLEANUP_DEFERRED work=$WORK status=$STATUS $DEFER_REASON"
+        exit 0
+    fi
 fi
 
 if [ -z "$TASK_ARTIFACT" ]; then
@@ -269,9 +341,19 @@ SAFE_ARTIFACT=$(validate_task_artifact "$TASK_ARTIFACT" "$WORK") || {
     echo "ARTIFACT_CLEANUP_BLOCKED unsafe artifact path for $WORK: $TASK_ARTIFACT" >&2
     exit 1
 }
+if [ "$NO_MERGE_HANDOFF" = true ]; then
+    # The no-merge worktree is the untouched fork checkout: its HEAD must be
+    # the recorded fork SHA, which doubles as the recovery evidence checked
+    # against origin below.
+    EXPECTED_ARTIFACT_SHA=$FORK_SHA
+fi
 if [ -z "$EXPECTED_ARTIFACT_SHA" ]; then
     record_cleanup_state blocked || true
-    echo "ARTIFACT_CLEANUP_BLOCKED missing artifact_source_sha for $WORK" >&2
+    if [ "$NO_MERGE_HANDOFF" = true ]; then
+        echo "ARTIFACT_CLEANUP_BLOCKED missing fork_sha for $WORK" >&2
+    else
+        echo "ARTIFACT_CLEANUP_BLOCKED missing artifact_source_sha for $WORK" >&2
+    fi
     exit 1
 fi
 LOCAL_SHA=$(git -C "$SAFE_ARTIFACT" rev-parse HEAD 2>/dev/null) || {
@@ -382,6 +464,47 @@ merged_target_contains() {
 # expected evidence, but cannot establish it: stale or manually-edited bead
 # fields must never be enough to retire the only reachable task worktree.
 case "$HANDOFF_RESULT" in
+    "")
+        # No-merge deliverable. Everything the deliverable needed is already
+        # recorded off the worktree (bead comments and evidence stamps live in
+        # the ledger), and the retired checkout is the untouched fork point —
+        # so that fork SHA must remain reachable from the recorded base on
+        # origin. If it is not, the checkout is the only copy and cleanup
+        # stays blocked.
+        if [ "$NO_MERGE_HANDOFF" != true ]; then
+            record_cleanup_state blocked || true
+            echo "ARTIFACT_CLEANUP_BLOCKED closed bead has neither a merge result nor a recognized no-merge deliverable for $WORK" >&2
+            exit 1
+        fi
+        case "$BASE_REF" in
+            refs/remotes/origin/*)
+                NO_MERGE_TARGET=${BASE_REF#refs/remotes/origin/}
+                ;;
+            *)
+                record_cleanup_state blocked || true
+                echo "ARTIFACT_CLEANUP_BLOCKED incomplete no-merge base evidence for $WORK" >&2
+                exit 1
+                ;;
+        esac
+        if ! valid_branch "$NO_MERGE_TARGET"; then
+            record_cleanup_state blocked || true
+            echo "ARTIFACT_CLEANUP_BLOCKED unsafe no-merge base ref for $WORK: $BASE_REF" >&2
+            exit 1
+        fi
+        if merged_target_contains "$NO_MERGE_TARGET" "$EXPECTED_ARTIFACT_SHA"; then
+            :
+        else
+            REMOTE_STATUS=$?
+            if [ "$REMOTE_STATUS" -eq 1 ]; then
+                record_cleanup_state pending || true
+                echo "ARTIFACT_CLEANUP_BLOCKED could not refresh origin/$NO_MERGE_TARGET for $WORK; cleanup remains pending" >&2
+            else
+                record_cleanup_state blocked || true
+                echo "ARTIFACT_CLEANUP_BLOCKED fork SHA is not durable on origin/$NO_MERGE_TARGET for $WORK" >&2
+            fi
+            exit 1
+        fi
+        ;;
     pull_request)
         EXPECTED_BRANCH="polecat/$WORK"
         if [ "$BRANCH" != "$EXPECTED_BRANCH" ] ||
