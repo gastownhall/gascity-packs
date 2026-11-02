@@ -475,3 +475,88 @@ def test_verification_timeout_stops_owned_descendants_and_keeps_output(delivery,
                     pass
         sentinel.kill()
         sentinel.wait(timeout=5)
+
+
+@pytest.mark.parametrize("signal_during_start", [False, True])
+@pytest.mark.parametrize("repeat_signal", [False, True])
+def test_validator_sigterm_cleans_its_session_before_exit(delivery, tmp_path, signal_during_start, repeat_signal):
+    import os
+    import shlex
+    import signal
+    import sys
+    import time
+    mod, repo, tree, base, output = delivery
+    child_file = tmp_path / "term-child.pid"
+    leader_file = tmp_path / "term-leader.pid"
+    parent_file = tmp_path / "term-parent.pid"
+    child_code = (
+        "import os,pathlib,signal,time;"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+        f"pathlib.Path({str(child_file)!r}).write_text(str(os.getpid()));"
+        "time.sleep(30)"
+    )
+    validator = tmp_path / "term-validator.py"
+    validator.write_text(
+        "import os,pathlib,subprocess,sys,time\n"
+        f"pathlib.Path({str(parent_file)!r}).write_text(str(os.getpid()))\n"
+        f"subprocess.Popen([sys.executable,'-c',{child_code!r}],process_group=0,"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+        "print('validator diagnostic before termination',flush=True)\n"
+        "time.sleep(30)\n"
+    )
+    command = shlex.join([sys.executable, "-u", str(validator)])
+    wrapper = tmp_path / "term-helper.py"
+    wrapper.write_text(
+        "import importlib.util,pathlib,subprocess,os,signal,time\n"
+        f"spec=importlib.util.spec_from_file_location('delivery',{str(SCRIPT)!r})\n"
+        "mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)\n"
+        "original=subprocess.Popen\n"
+        "def capture(*args,**kwargs):\n"
+        " p=original(*args,**kwargs)\n"
+        f" if kwargs.get('shell'):pathlib.Path({str(leader_file)!r}).write_text(str(p.pid))\n"
+        f" if kwargs.get('shell') and {signal_during_start!r}:\n"
+        "  deadline=time.monotonic()+5\n"
+        f"  while not pathlib.Path({str(child_file)!r}).exists() and time.monotonic()<deadline:time.sleep(.02)\n"
+        f"  assert pathlib.Path({str(child_file)!r}).exists()\n"
+        "  os.kill(os.getpid(),signal.SIGTERM)\n"
+        " return p\n"
+        "subprocess.Popen=capture\n"
+        f"mod.run_validator({command!r},{str(tree)!r})\n"
+    )
+    helper = subprocess.Popen([sys.executable, "-u", str(wrapper)],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    sentinel = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(30)"])
+    try:
+        deadline = time.monotonic() + 5
+        while not child_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert child_file.exists(), "native validator fixture did not start"
+        if not signal_during_start:
+            helper.send_signal(signal.SIGTERM)
+        if repeat_signal:
+            time.sleep(0.1)
+            helper.send_signal(signal.SIGTERM)
+        stdout, stderr = helper.communicate(timeout=12)
+        child_pid = int(child_file.read_text())
+        state = subprocess.run(["ps", "-p", str(child_pid), "-o", "stat="],
+                               text=True, capture_output=True, timeout=5)
+        alive = state.returncode == 0 and not state.stdout.lstrip().startswith("Z")
+        assert (helper.returncode, not alive,
+                "validator diagnostic before termination" in stdout) == (143, True, True)
+        assert sentinel.poll() is None, stderr
+    finally:
+        if helper.poll() is None:
+            helper.kill()
+            helper.wait(timeout=5)
+        for path in (child_file, parent_file, leader_file):
+            if path.exists():
+                pid = int(path.read_text())
+                args = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
+                                      text=True, capture_output=True, timeout=5)
+                if str(tmp_path) in args.stdout:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+        sentinel.kill()
+        sentinel.wait(timeout=5)

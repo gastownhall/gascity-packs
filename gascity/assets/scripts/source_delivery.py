@@ -259,9 +259,11 @@ def _stop_validator(child):
             except ProcessLookupError:
                 pass
     # The unreaped leader reserves this session identity throughout cleanup.
-    send(signal.SIGTERM)
-    time.sleep(2)
-    send(signal.SIGKILL)
+    try:
+        send(signal.SIGTERM)
+        time.sleep(2)
+    finally:
+        send(signal.SIGKILL)
     deadline = time.monotonic() + 5
     while True:
         active = [pid for pid, state in _validator_session_processes(child.pid)
@@ -277,27 +279,62 @@ def _stop_validator(child):
 
 
 def run_validator(command, tree):
+    import signal
     import tempfile
-    # A file retains diagnostics even when the shell dies before descendants.
-    # Pipes would let an inherited writer keep communicate() waiting forever.
-    with tempfile.TemporaryFile(mode="w+t") as output:
-        child = subprocess.Popen(command, shell=True, cwd=tree, stdout=output,
-                                 stderr=subprocess.STDOUT, start_new_session=True)
-        try:
-            status = child.wait(timeout=VERIFY_TIMEOUT)
-        except BaseException:
+    import time
+    pending = 0
+    captured = None
+    def terminate(signum, frame):
+        nonlocal pending
+        # Never raise asynchronously: a signal can arrive inside Popen or while
+        # entering cleanup. The bounded wait below delivers cancellation safely.
+        pending = signum
+    previous = signal.signal(signal.SIGTERM, terminate)
+    try:
+        # A file retains diagnostics even when the shell dies before descendants.
+        # Pipes let an inherited writer keep communicate() waiting indefinitely.
+        with tempfile.TemporaryFile(mode="w+t") as output:
+            child = None
             try:
-                _stop_validator(child)
-            except Exception as exc:
-                raise ValidatorEnvironmentError(
-                    f"cannot stop owned verification session {child.pid}: {exc}; "
-                    "preserve its worktree and inspect before retrying") from exc
-            finally:
+                child = subprocess.Popen(command, shell=True, cwd=tree, stdout=output,
+                                         stderr=subprocess.STDOUT, start_new_session=True)
+                deadline = time.monotonic() + VERIFY_TIMEOUT
+                while True:
+                    if pending:
+                        raise SystemExit(128 + pending)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(command, VERIFY_TIMEOUT)
+                    try:
+                        status = child.wait(timeout=min(0.1, remaining))
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
                 output.seek(0)
-                print(output.read(), end="", flush=True)
-            raise
-        output.seek(0)
-        return subprocess.CompletedProcess(command, status, output.read())
+                captured = output.read()
+                if pending:
+                    raise SystemExit(128 + pending)
+                return subprocess.CompletedProcess(command, status, captured)
+            except BaseException:
+                try:
+                    if child is not None and child.returncode is None:
+                        _stop_validator(child)
+                except Exception as exc:
+                    raise ValidatorEnvironmentError(
+                        f"cannot stop owned verification session {child.pid}: {exc}; "
+                        "preserve its worktree and inspect before retrying") from exc
+                finally:
+                    output.seek(0)
+                    print(output.read(), end="", flush=True)
+                raise
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+        # Cancellation also wins if it arrived after the last wait/read check.
+        # Preserve an existing cleanup error (and its environment hold).
+        if pending and sys.exc_info()[0] is None:
+            if captured is not None:
+                print(captured, end="", flush=True)
+            raise SystemExit(128 + pending)
 
 
 def verify_output(root):
