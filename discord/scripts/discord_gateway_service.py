@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import calendar
+import copy
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ import socket
 import socketserver
 import ssl
 import struct
+import sys
 import threading
 import time
 import traceback
@@ -51,6 +53,9 @@ STALE_PROCESSING_RECEIPT_SECONDS = (
     + PROCESSING_RECEIPT_STALE_MARGIN_SECONDS
 )
 FAILED_RECEIPT_RETRY_SECONDS = 60
+BUFFERED_DELIVERY_REPLAY_START_DELAY_SECONDS = 5
+BUFFERED_DELIVERY_REPLAY_INTERVAL_SECONDS = 60
+BUFFERED_DELIVERY_REPLAY_LIMIT = 500
 INGRESS_DELIVERY_PROTOCOL_VERSION = 2
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -1145,6 +1150,164 @@ def apply_ingress_routing_state(receipt: dict[str, Any]) -> tuple[dict[str, Any]
     return updated_receipt, True
 
 
+def buffered_delivery_payload(message: str, intent: str = "default") -> dict[str, str]:
+    """Return the retained delivery payload a failed target keeps for replay."""
+    return {"message": str(message), "intent": str(intent or "default").strip() or "default"}
+
+
+def buffered_target(
+    session_name: str,
+    *,
+    status: str,
+    idempotency_key: str,
+    message: str,
+    intent: str = "default",
+    error: str = "",
+) -> dict[str, Any]:
+    """Build an ingress target; failed and pending targets retain their message for replay."""
+    target: dict[str, Any] = {
+        "session_name": session_name,
+        "status": status,
+        "idempotency_key": idempotency_key,
+    }
+    if error:
+        target["error"] = error
+    if status in {"failed", "pending"}:
+        target["buffered_delivery"] = buffered_delivery_payload(message, intent)
+    return target
+
+
+def _target_buffered_delivery(target: dict[str, Any]) -> dict[str, str] | None:
+    """Return the retained payload of a failed target, or None when it is not replayable."""
+    if str(target.get("status", "")).strip() != "failed":
+        return None
+    buffered = target.get("buffered_delivery")
+    if not isinstance(buffered, dict):
+        return None
+    message = buffered.get("message")
+    if not isinstance(message, str) or not message:
+        return None
+    if not str(target.get("session_name", "")).strip():
+        return None
+    return buffered_delivery_payload(message, str(buffered.get("intent", "default")))
+
+
+def _receipt_has_buffered_targets(receipt: dict[str, Any]) -> bool:
+    return any(
+        _target_buffered_delivery(target) is not None
+        for target in receipt.get("targets", [])
+        if isinstance(target, dict)
+    )
+
+
+def _receipt_ready_for_buffered_replay(receipt: dict[str, Any]) -> bool:
+    if str(receipt.get("status", "")).strip() not in {"failed", "partial_failed"}:
+        return False
+    if not _receipt_has_buffered_targets(receipt):
+        return False
+    return utc_age_seconds(str(receipt.get("updated_at", "")).strip()) >= FAILED_RECEIPT_RETRY_SECONDS
+
+
+def _log_buffered_delivery_replay(ingress_id: str, session_name: str, error: Exception) -> None:
+    print(
+        f"discord gateway: buffered delivery replay failed for ingress {ingress_id} "
+        f"target {session_name}: {error}",
+        file=sys.stderr,
+    )
+
+
+def replay_buffered_ingress_deliveries(
+    *,
+    app_name: str | None = None,
+    limit: int = BUFFERED_DELIVERY_REPLAY_LIMIT,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, int]:
+    """Redrive failed targets that kept their message, under the original idempotency key.
+
+    A plain GC API error keeps the target failed with its buffer so a later pass retries.
+    An unknown outcome or a terminal failure drops the buffer: main's protocol owns those.
+    """
+    stats = {"attempted": 0, "delivered": 0, "failed": 0, "skipped": 0}
+    normalized_app_name = None if app_name is None else common.validate_app_name(app_name)
+    for listed in common.list_recent_chat_ingress(limit=limit):
+        if cancel_event is not None and cancel_event.is_set():
+            break
+        if normalized_app_name is not None and str(listed.get("app", "")).strip() != normalized_app_name:
+            continue
+        if not _receipt_ready_for_buffered_replay(listed):
+            continue
+        ingress_id = str(listed.get("ingress_id", "")).strip()
+        if not ingress_id:
+            continue
+        process_lock = ingress_process_lock(ingress_id)
+        if not process_lock.acquire(blocking=False):
+            stats["skipped"] += 1
+            continue
+        try:
+            current = common.load_chat_ingress(ingress_id) or listed
+            if not _receipt_ready_for_buffered_replay(current):
+                stats["skipped"] += 1
+                continue
+            targets = [dict(target) for target in current.get("targets", []) if isinstance(target, dict)]
+            for index, target in enumerate(targets):
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+                buffered = _target_buffered_delivery(target)
+                if buffered is None:
+                    continue
+                session_name = str(target.get("session_name", "")).strip()
+                stats["attempted"] += 1
+                patch: dict[str, Any]
+                try:
+                    response = common.deliver_session_message(
+                        session_name,
+                        buffered["message"],
+                        idempotency_key=str(target.get("idempotency_key", "")).strip(),
+                        intent=buffered["intent"],
+                        cancel_event=cancel_event,
+                    )
+                except common.GCAPIRequestCancelled:
+                    stats["attempted"] -= 1
+                    break
+                except common.GCAPIResultUnknown as exc:
+                    stats["failed"] += 1
+                    _log_buffered_delivery_replay(ingress_id, session_name, exc)
+                    patch = {"status": "delivery_unknown", "last_wait_error": str(exc), "buffered_delivery": None}
+                except common.GCAPIRequestFailed as exc:
+                    stats["failed"] += 1
+                    _log_buffered_delivery_replay(ingress_id, session_name, exc)
+                    patch = {
+                        "status": "failed",
+                        "error": str(exc),
+                        "terminal_evidence": {"status": "failed", "payload": exc.payload},
+                        "buffered_delivery": None,
+                    }
+                except common.GCAPIError as exc:
+                    stats["failed"] += 1
+                    _log_buffered_delivery_replay(ingress_id, session_name, exc)
+                    patch = {"status": "failed", "error": str(exc), "last_replay_attempt_at": common.utcnow()}
+                else:
+                    stats["delivered"] += 1
+                    patch = {
+                        "status": "delivered",
+                        "response": response,
+                        "terminal_evidence": {"status": "succeeded", "source": "http", "payload": response},
+                        "buffered_delivery": None,
+                    }
+                updated = copy.deepcopy(current)
+                updated_targets = [dict(item) for item in updated.get("targets", []) if isinstance(item, dict)]
+                updated_targets[index].update(patch)
+                if updated_targets[index].get("buffered_delivery") is None:
+                    updated_targets[index].pop("buffered_delivery", None)
+                updated["targets"] = updated_targets
+                updated["status"] = ingress_delivery_status(updated_targets, str(current.get("status", "failed")))
+                current = persist_ingress_receipt(updated)
+            current, _ = apply_ingress_routing_state(current)
+        finally:
+            process_lock.release()
+    return stats
+
+
 def resume_ingress_delivery(
     receipt: dict[str, Any],
     *,
@@ -1244,7 +1407,11 @@ def resume_ingress_delivery(
                 current = persist_ingress_target_patch(
                     current,
                     target_index,
-                    {"status": "failed", "error": str(exc)},
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "buffered_delivery": buffered_delivery_payload(envelope, intent),
+                    },
                 )
             else:
                 if str(current["targets"][target_index].get("status", "")).strip() != "delivered":
@@ -2505,6 +2672,7 @@ class GatewayWorker:
         self.worker_threads: list[threading.Thread] = []
         self._recovery_lock = threading.Lock()
         self.recovery_thread: threading.Thread | None = None
+        self.replay_thread: threading.Thread | None = None
         self._current_ws_lock = threading.Lock()
         self._current_ws: GatewayWebSocket | None = None
         consumer_count = GATEWAY_NAMED_WORKER_THREADS if self.app_name else GATEWAY_WORKER_THREADS
@@ -2558,6 +2726,30 @@ class GatewayWorker:
             self.recovery_thread = threading.Thread(target=recovery_loop, name=thread_name, daemon=True)
             self.recovery_thread.start()
 
+            def replay_loop() -> None:
+                if self.stop_event.wait(BUFFERED_DELIVERY_REPLAY_START_DELAY_SECONDS):
+                    return
+                while not self.stop_event.is_set():
+                    try:
+                        replay_buffered_ingress_deliveries(
+                            app_name=self.app_name,
+                            cancel_event=self.stop_event,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        self.runtime_state.patch(
+                            last_replay_error=str(exc),
+                            last_replay_exception=traceback.format_exc(limit=20),
+                            last_replay_at=common.utcnow(),
+                        )
+                    if self.stop_event.wait(BUFFERED_DELIVERY_REPLAY_INTERVAL_SECONDS):
+                        return
+
+            replay_name = "discord-gateway-buffered-replay"
+            if self.app_name:
+                replay_name = f"{replay_name}-{self.app_name}"
+            self.replay_thread = threading.Thread(target=replay_loop, name=replay_name, daemon=True)
+            self.replay_thread.start()
+
     def stop(self) -> None:
         with self._stop_lock:
             if self._stopped:
@@ -2583,9 +2775,13 @@ class GatewayWorker:
             thread.join(timeout=max(deadline - time.monotonic(), 0.0))
         if self.recovery_thread is not None:
             self.recovery_thread.join(timeout=max(deadline - time.monotonic(), 0.0))
+        if self.replay_thread is not None:
+            self.replay_thread.join(timeout=max(deadline - time.monotonic(), 0.0))
         alive_threads = [thread.name for thread in self.worker_threads if thread.is_alive()]
         if self.recovery_thread is not None and self.recovery_thread.is_alive():
             alive_threads.append(self.recovery_thread.name)
+        if self.replay_thread is not None and self.replay_thread.is_alive():
+            alive_threads.append(self.replay_thread.name)
         state = "stop_timeout" if alive_threads else "stopped"
         patch: dict[str, Any] = {
             "state": state,
