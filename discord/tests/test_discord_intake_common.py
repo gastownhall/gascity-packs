@@ -17,12 +17,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 import discord_intake_common as common
 
-# GC_BIN and GC_API_BASE_URL: the assertions here expect the defaults the
-# scripts fall back to (`gc`, and the supervisor's own base URL). A Gas City
-# seat exports both, so nine of these tests fail for anyone running the suite
-# from inside a city, and pass in CI only because CI sets neither. Each setUp
-# pins the fallback rather than depending on the variables' absence.
-SEAT_ENV_OVERRIDES = ("GC_BIN", "GC_API_BASE_URL")
+# GC_BIN, GC_API_BASE_URL and GC_SUPERVISOR_API_BASE_URL: the assertions here
+# expect the defaults the scripts fall back to (`gc`, and the supervisor's own
+# base URL). A Gas City seat can export any of them, so these tests fail for
+# anyone running the suite from inside a city, and pass in CI only because CI
+# sets none. Each setUp pins the fallback rather than depending on the
+# variables' absence.
+SEAT_ENV_OVERRIDES = ("GC_BIN", "GC_API_BASE_URL", "GC_SUPERVISOR_API_BASE_URL")
 
 
 class DiscordIntakeCommonTests(unittest.TestCase):
@@ -1008,6 +1009,54 @@ class DiscordIntakeCommonTests(unittest.TestCase):
             self.assertEqual(common.gc_api_base_url(), "http://127.0.0.1:8372")
 
         self.assertEqual(urlopen.call_count, 1)
+
+    def _supervisor_cities_response(self, name: str = "gc") -> mock.Mock:
+        body = ('{"items":[{"name":"%s","running":true}]}' % name).encode("utf-8")
+        response = mock.Mock()
+        response.__enter__ = mock.Mock(return_value=mock.Mock(read=mock.Mock(return_value=body)))
+        response.__exit__ = mock.Mock(return_value=False)
+        return response
+
+    def test_gc_api_base_url_uses_supervisor_base_from_environment(self) -> None:
+        pathlib.Path(self.tempdir.name, "city.toml").write_text('[workspace]\nname = "gc"\n', encoding="utf-8")
+        os.environ["GC_SUPERVISOR_API_BASE_URL"] = "http://127.0.0.1:37763/"
+        common._supervisor_scope_cache.clear()
+
+        with mock.patch.object(
+            common.urllib.request, "urlopen", return_value=self._supervisor_cities_response()
+        ) as urlopen:
+            self.assertEqual(common.gc_api_base_url(), "http://127.0.0.1:37763")
+
+        self.assertEqual(urlopen.call_args.args[0].full_url, "http://127.0.0.1:37763/v0/cities")
+
+    def test_gc_api_url_scopes_requests_under_environment_supervisor_base(self) -> None:
+        pathlib.Path(self.tempdir.name, "city.toml").write_text('[workspace]\nname = "gc"\n', encoding="utf-8")
+        os.environ["GC_SUPERVISOR_API_BASE_URL"] = "http://127.0.0.1:37763"
+        common._supervisor_scope_cache.clear()
+
+        with mock.patch.object(common.urllib.request, "urlopen", return_value=self._supervisor_cities_response()):
+            self.assertEqual(common.gc_api_url("/v0/sessions"), "http://127.0.0.1:37763/v0/city/gc/sessions")
+
+    def test_gc_api_base_url_blank_supervisor_base_keeps_default(self) -> None:
+        pathlib.Path(self.tempdir.name, "city.toml").write_text('[workspace]\nname = "gc"\n', encoding="utf-8")
+        os.environ["GC_SUPERVISOR_API_BASE_URL"] = "   "
+        common._supervisor_scope_cache.clear()
+
+        with mock.patch.object(
+            common.urllib.request, "urlopen", return_value=self._supervisor_cities_response()
+        ) as urlopen:
+            self.assertEqual(common.gc_api_base_url(), "http://127.0.0.1:8372")
+
+        self.assertEqual(urlopen.call_args.args[0].full_url, "http://127.0.0.1:8372/v0/cities")
+
+    def test_gc_api_base_url_city_scoped_override_beats_supervisor_base(self) -> None:
+        os.environ["GC_SUPERVISOR_API_BASE_URL"] = "http://127.0.0.1:37763"
+        os.environ["GC_API_BASE_URL"] = "http://override.test:1234/"
+
+        with mock.patch.object(common.urllib.request, "urlopen") as urlopen:
+            self.assertEqual(common.gc_api_base_url(), "http://override.test:1234")
+
+        urlopen.assert_not_called()
 
     def test_gc_api_base_url_uses_site_workspace_name_when_city_toml_omits_name(self) -> None:
         pathlib.Path(self.tempdir.name, "city.toml").write_text(
