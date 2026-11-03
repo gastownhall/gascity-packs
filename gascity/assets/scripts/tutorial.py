@@ -225,6 +225,48 @@ def show_delivery_progress(source, workflow, lesson=None):
 
 
 
+def show_runtime_progress(gc, workflow):
+    """Read the active native assignment; stored state is not provider readiness."""
+    if workflow.get("status") == "closed":
+        return
+    root = workflow["id"]
+    try:
+        rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--include-ephemeral",
+                  "--metadata-field", "gc.root_bead_id=" + root, "--limit", "0", "--json", json_output=True)
+        if isinstance(rows, dict):
+            rows = [rows]
+        for step in rows:
+            if step.get("metadata", {}).get("gc.root_bead_id") != root or step.get("status") != "in_progress":
+                continue
+            print(f"Active step {step['id']}: {step.get('title', 'untitled')}", flush=True)
+            assignee = step.get("assignee")
+            if not assignee:
+                continue
+            session = gc("gc", "bd", "show", assignee, "--json", json_output=True)
+            if isinstance(session, list):
+                if len(session) != 1:
+                    raise ValueError("session identity unavailable")
+                session = session[0]
+            if session.get("id") != assignee or not (session.get("issue_type") == "session" or
+                                                     "gc:session" in session.get("labels", [])):
+                raise ValueError("assignment is not a native session")
+            metadata = session.get("metadata", {})
+            state = metadata.get("state", "unknown")
+            reason = metadata.get("sleep_reason") or metadata.get("state_reason", "")
+            until = metadata.get("quarantined_until")
+            if until:
+                detail = f"recorded state {state}; quarantine until {until}"
+            elif reason == "runtime-missing":
+                detail = "runtime is missing (recorded by GC)"
+            else:
+                detail = f"recorded state {state}" + (f"; {reason}" if reason else "")
+            print(f"Native session {assignee}: {detail}", flush=True)
+            if until or reason == "runtime-missing":
+                print(f"Inspect: gc session logs {assignee}; gc doctor. Preserve this source and unfinished work; do not close it to clear the blocker.", flush=True)
+    except (RuntimeError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print(f"Runtime observation unavailable: {error}. Inspect with gc status. No work was restarted.", flush=True)
+
+
 def tutorial_admission(city):
     """Serialize the local tutorial's lookup/create/dispatch across processes."""
     import contextlib
@@ -326,6 +368,7 @@ def _run_lesson(args, city, gc):
                 if current and current != existing:
                     workflow = gc("gc", "bd", "show", current, "--json", json_output=True)
             show_delivery_progress(source, workflow, args.lesson)
+            show_runtime_progress(gc, workflow)
         else:
             print("Workflow attachment pending; no delivery is recorded yet.", flush=True)
     if args.action == "retry":

@@ -579,3 +579,47 @@ def test_registration_reserves_managed_hook_for_older_owned_practice(tutorial, t
     assert tutorial.git(repo, "status", "--porcelain", "--untracked-files=all") == ""
     assert hook.read_text() == '{"hooks": {}}'
     assert tutorial.git(repo, "ls-files", managed) == ""
+
+
+@pytest.mark.parametrize("state,reason,until,expected", [
+    ("asleep", "quarantine", "2026-11-03T01:11:00Z", "quarantine until 2026-11-03T01:11:00Z"),
+    ("asleep", "runtime-missing", "", "runtime is missing"),
+    ("active", "", "", "state active"),
+])
+def test_runtime_progress_uses_exact_native_assignment(tutorial, capsys, state, reason, until, expected):
+    seen = []
+    def read_only(*args, **kwargs):
+        seen.append(args)
+        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+            return [{"id": "pr-step", "status": "in_progress", "title": "Integrate reviewed output", "assignee": "bl-session", "metadata": {"gc.root_bead_id": "pr-root"}},
+                    {"id": "pr-other", "status": "in_progress", "assignee": "unrelated", "metadata": {"gc.root_bead_id": "other-root"}}]
+        if args == ("gc", "bd", "show", "bl-session", "--json"):
+            return {"id": "bl-session", "issue_type": "session", "metadata": {"state": state, "sleep_reason": reason, "quarantined_until": until}}
+        raise AssertionError("runtime diagnostics must only read exact native assignment: " + repr(args))
+    tutorial.show_runtime_progress(read_only, {"id": "pr-root", "status": "in_progress"})
+    text = capsys.readouterr().out
+    assert "pr-step: Integrate reviewed output" in text
+    assert "bl-session" in text and expected in text
+    assert "unrelated" not in text
+    assert all("retry" not in args and "close" not in args for args in seen)
+
+
+def test_runtime_progress_does_not_turn_failed_observation_into_idle(tutorial, capsys):
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("bounded native read unavailable")
+    tutorial.show_runtime_progress(unavailable, {"id": "pr-root", "status": "in_progress"})
+    text = capsys.readouterr().out
+    assert "Runtime observation unavailable" in text
+    assert "bounded native read unavailable" in text
+    assert "idle" not in text and "completed" not in text
+
+
+def test_runtime_progress_refuses_non_session_assignee(tutorial, capsys):
+    def read_only(*args, **kwargs):
+        if "list" in args:
+            return {"id": "pr-step", "status": "in_progress", "assignee": "not-session", "metadata": {"gc.root_bead_id": "pr-root"}}
+        return {"id": "not-session", "issue_type": "task", "metadata": {"state": "active"}}
+    tutorial.show_runtime_progress(read_only, {"id": "pr-root", "status": "in_progress"})
+    text = capsys.readouterr().out
+    assert "Runtime observation unavailable" in text
+    assert "state active" not in text
