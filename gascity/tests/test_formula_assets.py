@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -1030,6 +1031,9 @@ class FormulaAssetTests(unittest.TestCase):
             tmp_path = pathlib.Path(tmp)
             bin_dir = tmp_path / "bin"
             bin_dir.mkdir()
+            # Keep JSON parsing on the same qualified interpreter as this
+            # test; the isolated PATH must not select Apple's system Python.
+            (bin_dir / "python3").symlink_to(sys.executable)
             calls = tmp_path / "calls"
             fake_gc = bin_dir / "gc"
             fake_gc.write_text(
@@ -1276,6 +1280,9 @@ class FormulaAssetTests(unittest.TestCase):
             tmp_path = pathlib.Path(tmp)
             bin_dir = tmp_path / "bin"
             bin_dir.mkdir()
+            # Keep JSON parsing on the same qualified interpreter as this
+            # test; the isolated PATH must not select Apple's system Python.
+            (bin_dir / "python3").symlink_to(sys.executable)
             calls = tmp_path / "calls"
             fake_gc = bin_dir / "gc"
             fake_gc.write_text(

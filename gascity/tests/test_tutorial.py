@@ -51,6 +51,8 @@ def test_status_reads_existing_task_without_restarting_it(tutorial, tmp_path, mo
         args = args[1:]
         if args[:4] == ("--rig", "practice", "bd", "dep"):
             return []
+        if args[:2] == ("beads", "list"):
+            return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -73,6 +75,8 @@ def test_start_routes_existing_task_without_manual_rig_defaults(tutorial, tmp_pa
         args = args[1:]
         calls.append(args)
         if args[:4] == ("--rig", "practice", "bd", "dep"):
+            return []
+        if args[:2] == ("beads", "list"):
             return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
@@ -168,6 +172,8 @@ def test_client_lesson_records_dependency_before_submitting(tutorial, tmp_path, 
         calls.append(args)
         if args[:5] == ("gc", "--rig", "practice", "bd", "dep"):
             return []
+        if args[1:3] == ("beads", "list"):
+            return []
         if args[:3] == ("gc", "rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
@@ -249,6 +255,10 @@ def test_start_observes_attached_workflow_instead_of_reslinging(tutorial, tmp_pa
         calls.append(args)
         if args[:4] == ("--rig", "practice", "bd", "dep"):
             return []
+        if args[:2] == ("beads", "list"):
+            assert args == ("beads", "list", "--all", "--fresh", "--strict", "--format=json")
+            return [{"id": "flow-1", "status": status, "metadata": {
+                "gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.formula_name": "quick-start", "gc.source_bead_id": "practice-1"}}]
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
@@ -258,7 +268,7 @@ def test_start_observes_attached_workflow_instead_of_reslinging(tutorial, tmp_pa
                          "metadata": {"gc.delivery.workflow_root": "flow-1"} if recorded_root else {}}]
             assert marker == "gc.source_bead_id=practice-1"
             return [{"id": "flow-1", "status": status,
-                     "metadata": {"gc.kind": "workflow", "gc.formula_name": "quick-start"}}]
+                     "metadata": {"gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.formula_name": "quick-start"}}]
         raise AssertionError(f"an attached workflow must not be replaced or mutated: {args}")
     monkeypatch.setattr(source_delivery, "gc", observations)
     monkeypatch.setattr(tutorial, "scaffold", lambda path: path)
@@ -273,7 +283,7 @@ def test_multiple_live_workflows_require_inspection_without_mutation(tutorial):
     def observations(*args, **kwargs):
         if args[4:6] == ("dep", "list"):
             return []
-        return [{"id": name, "status": "open", "metadata": {"gc.kind": "workflow"}}
+        return [{"id": name, "status": "open", "metadata": {"gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.source_bead_id": "practice-1"}}
                 for name in ("flow-1", "flow-2")]
     with pytest.raises(ValueError, match="multiple live workflows"):
         tutorial.attached_workflow(observations, {"id": "practice-1"})
@@ -283,8 +293,8 @@ def test_active_workflow_wins_over_retained_history(tutorial):
     def observations(*args, **kwargs):
         if args[4:6] == ("dep", "list"):
             return []
-        return [{"id": "old", "status": "closed", "metadata": {"gc.kind": "workflow"}},
-                {"id": "current", "status": "in_progress", "metadata": {"gc.kind": "workflow"}},
+        return [{"id": "old", "status": "closed", "metadata": {"gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.source_bead_id": "practice-1"}},
+                {"id": "current", "status": "in_progress", "metadata": {"gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.source_bead_id": "practice-1"}},
                 {"id": "step", "status": "open", "metadata": {"gc.kind": "scope"}}]
     assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "current"
 
@@ -302,16 +312,19 @@ def test_start_preserves_native_admission_guard(tutorial, tmp_path, monkeypatch,
         calls.append(args)
         if args[:4] == ("--rig", "practice", "bd", "dep"):
             return []
+        if args[:2] == ("beads", "list"):
+            probes += 1
+            if probes > 1 and attach_during_sling:
+                return [{"id": "concurrent", "status": "open", "metadata": {
+                    "gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.source_bead_id": "practice-1"}}]
+            return []
         if args[:2] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(destination)}]}
         if args[:4] == ("--rig", "practice", "bd", "list"):
             marker = args[args.index("--metadata-field") + 1]
             if marker.startswith("gc.tutorial="):
                 return [{"id": "practice-1", "status": "open"}]
-            probes += 1
-            if probes > 1 and attach_during_sling:
-                return [{"id": "concurrent", "status": "open", "metadata": {"gc.kind": "workflow"}}]
-            return []
+            raise AssertionError("only lesson source reads belong in the rig work store")
         if args[:3] == ("--rig", "practice", "sling"):
             raise source_delivery.InfrastructureError("native admission unavailable")
         raise AssertionError(args)
@@ -347,15 +360,8 @@ def test_retry_follows_native_input_convoy_before_prepare(tutorial, root_status,
             assert args[6:] == ("practice-1", "--direction", "up", "--type", "tracks", "--json")
             return [{"id": "input-1", "issue_type": "convoy", "status": "closed",
                      "dependency_type": "tracks", "metadata": {"gc.synthetic": "true"}}]
-        assert args[4] == "list"
-        marker = args[args.index("--metadata-field") + 1]
-        if marker == "gc.source_bead_id=practice-1":
-            return []
-        assert marker == "gc.input_convoy_id=input-1"
-        # Model the native visibility contract rather than always returning rows.
-        if "--include-ephemeral" not in args:
-            return []
-        metadata = {"gc.formula_name": "quick-start"}
+        assert args[1:] == ("beads", "list", "--all", "--fresh", "--strict", "--format=json")
+        metadata = {"gc.formula_name": "quick-start", "gc.input_convoy_id": "input-1", "gc.root_store_ref": "rig:practice"}
         metadata["gc.kind" if root_kind == "workflow" else "gc.formula_contract"] = root_kind
         return [{"id": "flow-1", "status": root_status, "metadata": metadata}]
     assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "flow-1"
@@ -369,17 +375,14 @@ def test_retry_excludes_unrelated_convoy_formulas_and_controller_rows(tutorial):
                 {"id": "sprint", "issue_type": "convoy", "metadata": {}},
                 {"id": "input", "issue_type": "convoy", "metadata": {"gc.synthetic": "true"}},
             ]
-        marker = args[args.index("--metadata-field") + 1]
-        if marker == "gc.source_bead_id=practice-1":
-            return []
-        assert marker == "gc.input_convoy_id=input"
+        assert args[1:3] == ("beads", "list")
         return [
             {"id": "other", "status": "open", "metadata": {
-                "gc.kind": "workflow", "gc.formula_name": "review"}},
+                "gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.formula_name": "review", "gc.input_convoy_id": "input"}},
             {"id": "session", "issue_type": "session", "status": "open", "metadata": {
-                "gc.formula_contract": "graph.v2", "gc.formula_name": "quick-start"}},
+                "gc.formula_contract": "graph.v2", "gc.root_store_ref": "rig:practice", "gc.formula_name": "quick-start", "gc.input_convoy_id": "input"}},
             {"id": "expected", "status": "open", "metadata": {
-                "gc.formula_contract": "graph.v2", "gc.formula_name": "quick-start"}},
+                "gc.formula_contract": "graph.v2", "gc.root_store_ref": "rig:practice", "gc.formula_name": "quick-start", "gc.input_convoy_id": "input"}},
         ]
     assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "expected"
 
@@ -388,10 +391,10 @@ def test_retry_checks_convoy_bindings_even_with_a_direct_root(tutorial):
     def observations(*args, **kwargs):
         if args[4:6] == ("dep", "list"):
             return [{"id": "input", "issue_type": "convoy", "metadata": {"gc.synthetic": "true"}}]
-        marker = args[args.index("--metadata-field") + 1]
-        root = "direct" if marker.startswith("gc.source_bead_id=") else "convoy"
-        return [{"id": root, "status": "open", "metadata": {
-            "gc.kind": "workflow", "gc.formula_name": "quick-start"}}]
+        return [{"id": "direct", "status": "open", "metadata": {
+                    "gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.source_bead_id": "practice-1"}},
+                {"id": "convoy", "status": "open", "metadata": {
+                    "gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.formula_name": "quick-start", "gc.input_convoy_id": "input"}}]
     with pytest.raises(ValueError, match="multiple live workflows"):
         tutorial.attached_workflow(observations, {"id": "practice-1"})
 
@@ -401,7 +404,8 @@ def test_retry_deduplicates_direct_and_convoy_binding(tutorial):
         if args[4:6] == ("dep", "list"):
             return [{"id": "input", "issue_type": "convoy", "metadata": {"gc.synthetic": "true"}}]
         return [{"id": "same", "status": "open", "metadata": {
-            "gc.kind": "workflow", "gc.formula_name": "quick-start"}}]
+            "gc.kind": "workflow", "gc.root_store_ref": "rig:practice", "gc.formula_name": "quick-start",
+            "gc.source_bead_id": "practice-1", "gc.input_convoy_id": "input"}}]
     assert tutorial.attached_workflow(observations, {"id": "practice-1"}) == "same"
 
 
@@ -430,6 +434,8 @@ def test_open_lesson_status_reports_recorded_progress_without_launching_work(tut
     source = {"id": "practice-1", "status": "open", "metadata": {"gc.delivery.workflow_root": "flow-1"}}
     workflow = {"id": "flow-1", "status": "in_progress", "metadata": {"gc.delivery.record": json.dumps({"source": source["id"], **record})}}
     def read_only(*args, **kwargs):
+        if args[1:3] == ("beads", "list"):
+            return []
         if args[:3] == ("gc", "rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(tmp_path / "projects/practice")}]}
         if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
@@ -590,7 +596,7 @@ def test_runtime_progress_uses_exact_native_assignment(tutorial, capsys, state, 
     seen = []
     def read_only(*args, **kwargs):
         seen.append(args)
-        if args[:5] == ("gc", "--rig", "practice", "bd", "list"):
+        if args == ("gc", "beads", "list", "--all", "--fresh", "--strict", "--format=json"):
             return [{"id": "pr-step", "status": "in_progress", "title": "Integrate reviewed output", "assignee": "bl-session", "metadata": {"gc.root_bead_id": "pr-root"}},
                     {"id": "pr-other", "status": "in_progress", "assignee": "unrelated", "metadata": {"gc.root_bead_id": "other-root"}}]
         if args == ("gc", "bd", "show", "bl-session", "--json"):

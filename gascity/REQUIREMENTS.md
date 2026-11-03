@@ -920,6 +920,13 @@ workflow finalizer through gc.source_bead_id/gc.source_store_ref; no origin, pus
 required. Failures retain work and evidence. Cleanup uses native ownership,
 exact attempt and merged-commit gates. The root bead owns the durable delivery
 record; an artifact or completed step alone is never proof of source delivery.
+Repeated lesson starts and retries observe the existing native workflow before
+admitting more work, including the interval before prepare records its source
+back-link. Work/source and graph/root records may occupy different bindings;
+logical store refs retain their city/rig scope. Absence checks use a fresh,
+complete native read and refuse unavailable or malformed observations rather
+than interpreting them as no workflow. Existing native admission guards remain
+in force when another process attaches work during that read.
 
 This guided route does not weaken the broader build methodology contracts. It
 teaches one complete local task before optional planning, fanout or publishing.

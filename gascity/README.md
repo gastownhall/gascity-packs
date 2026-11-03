@@ -31,7 +31,10 @@ The task runs in an owned worktree, receives independent review and tests,
 integrates locally, and closes only after cleanup and workflow finalization.
 It allows two repair rounds. GitHub and `gh` are optional; no additional starter
 pack or manual pack edits are needed. Model sessions start on demand and the
-experience preserves normal provider and capacity choices.
+experience preserves normal provider and capacity choices. Running the same
+lesson's `start` again observes its existing workflow, including while its first
+worker is still preparing. If GC cannot safely read that workflow, it reports
+the blocker and preserves your task instead of launching duplicate work.
 
 If a lesson exhausts its repairs, correct the reported problem and run
 `gc gc tutorial retry --lesson greeting` (or `api`/`client`). This starts a new

@@ -1,0 +1,100 @@
+{
+  "provenance": {
+    "gc_commit": "7d39405ca05011ae04a1895a1927086fbf1cf8fc",
+    "pack_commit": "5f4a74aff57487e764ad2509d25c004c837b44d3",
+    "source": "native stopped-profile gc beads list --all --format=json; no source/runtime mutation",
+    "raw_stdout_sha256": "751635ddc65c228dd06ac90e90bb7035900130e0534e96a3e99c26a41e6a50fa",
+    "graph_binding": "infra",
+    "source_store_ref": "rig:practice"
+  },
+  "source": {
+    "id": "pr-4ob",
+    "title": "Fix the greeting bug",
+    "status": "open",
+    "issue_type": "task",
+    "priority": 2,
+    "created_at": "2026-11-03T20:30:12Z",
+    "updated_at": "2026-11-03T20:30:18Z",
+    "description": "Fix the greeting function in hello.py. greet(\"Ada\") must return\n\"Hello, Ada!\"; greet(\"\") must return \"Hello, world!\". Preserve the public greet\nfunction and both acceptance tests. Implement the smallest useful change,\nverify with python3 -m unittest discover -s tests -v, and commit the result.\nThis is a local-only task; do not push or create a pull request. Independent\nreview and verified local integration must happen before this source task closes.\n",
+    "metadata": {
+      "gc.execution_routed_to": "practice/gc.run-operator",
+      "gc.tutorial": "rfc8191-first-local-change-v1"
+    }
+  },
+  "workflow": {
+    "id": "gcg-e8t",
+    "title": "quick-start",
+    "status": "in_progress",
+    "issue_type": "task",
+    "created_at": "2026-11-03T20:30:15Z",
+    "description": "Implement one local task in an owned worktree, independently review and verify it, integrate locally, then close the source task. No remote or GitHub account is required.",
+    "metadata": {
+      "gc.formula_contract": "graph.v2",
+      "gc.formula_hash": "62c13319182ad56c041d648c0dacf919dbcb143ced116c58b136ae8678d57294",
+      "gc.formula_name": "quick-start",
+      "gc.formula_source": "/Users/admin/rfc8191/acceptance/7d39405ca-journey-codex3/journey/gc-home/cache/repos/ae10e7eae40107196165bf60e068eb625ac9c34e5eb64f514811c05640b1b442/gascity/formulas/quick-start.formula.toml",
+      "gc.graphv2_root_key": "graphv2-root:pr-kh6:quick-start:6297ab7a8cdcbfa6:default",
+      "gc.graphv2_vars.v1": "{\"binding_name\":\"gc\",\"binding_prefix\":\"gc.\",\"input_sha\":\"\",\"rig_name\":\"practice\",\"verify_command\":\"python3 -m unittest discover -s tests -v\"}",
+      "gc.input_convoy_id": "pr-kh6",
+      "gc.kind": "workflow",
+      "gc.native_step_dependencies.v1": "[\"quick-start.workflow-finalize\"]",
+      "gc.root_store_ref": "rig:practice",
+      "gc.routed_to": "practice/gc.run-operator",
+      "gc.step_id": "quick-start",
+      "gc.var.binding_name": "gc",
+      "gc.var.binding_prefix": "gc.",
+      "gc.var.convoy_id": "pr-kh6",
+      "gc.var.rig_name": "practice",
+      "gc.var.verify_command": "python3 -m unittest discover -s tests -v",
+      "gc.workflow_expanded": "true"
+    },
+    "dependencies": [
+      {
+        "issue_id": "gcg-e8t",
+        "depends_on_id": "gcg-830",
+        "type": "tracks"
+      }
+    ]
+  },
+  "convoys": [
+    {
+      "id": "pr-g1q",
+      "title": "input convoy for pr-4ob",
+      "status": "closed",
+      "issue_type": "convoy",
+      "priority": 2,
+      "created_at": "2026-11-03T20:30:21Z",
+      "updated_at": "2026-11-03T20:30:23Z",
+      "metadata": {
+        "gc.synthetic": "true"
+      },
+      "dependencies": [
+        {
+          "issue_id": "pr-g1q",
+          "depends_on_id": "pr-4ob",
+          "type": "tracks"
+        }
+      ],
+      "close_reason": "Closed"
+    },
+    {
+      "id": "pr-kh6",
+      "title": "input convoy for pr-4ob",
+      "status": "open",
+      "issue_type": "convoy",
+      "priority": 2,
+      "created_at": "2026-11-03T20:30:14Z",
+      "updated_at": "2026-11-03T20:30:14Z",
+      "metadata": {
+        "gc.synthetic": "true"
+      },
+      "dependencies": [
+        {
+          "issue_id": "pr-kh6",
+          "depends_on_id": "pr-4ob",
+          "type": "tracks"
+        }
+      ]
+    }
+  ]
+}

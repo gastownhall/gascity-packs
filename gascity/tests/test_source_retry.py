@@ -49,6 +49,9 @@ def failed_delivery(tmp_path, monkeypatch):
     def observe(*args, **kwargs):
         state.calls.append(args)
         assert args[0] == "gc"
+        if args[1:3] == ("beads", "list"):
+            assert args[1:] == ("beads", "list", "--all", "--fresh", "--strict", "--format=json")
+            return list(state.roots.values())
         if args[1:3] == ("rig", "list"):
             return {"rigs": [{"name": "practice", "path": str(repo), "default_branch": "main",
                               "default_sling_target": "practice/gc.run-operator"}]}
@@ -70,7 +73,7 @@ def failed_delivery(tmp_path, monkeypatch):
             assert "--force" not in args and "delete-source" not in args
             if state.fail_admission:
                 raise mod.InfrastructureError("admission unavailable")
-            metadata = {"gc.kind": "workflow", "gc.formula_name": "quick-start"}
+            metadata = {"gc.kind": "workflow", "gc.formula_name": "quick-start", "gc.root_store_ref": "rig:practice"}
             metadata["gc.input_convoy_id" if state.convoy_binding else "gc.source_bead_id"] = ("cv-new" if state.convoy_binding else "pr-task")
             state.roots["wf-new"] = {"id": "wf-new", "status": "in_progress", "metadata": metadata}
             if state.lost_ack:
@@ -225,7 +228,7 @@ def test_tutorial_retry_requires_an_existing_lesson(tutorial_retry):
 def test_status_observes_new_live_attempt_before_its_source_backlink_is_written(tutorial_retry, monkeypatch, capsys):
     tutorial, s = tutorial_retry
     s.roots["wf-new"] = {"id": "wf-new", "status": "in_progress", "metadata": {
-        "gc.kind": "workflow", "gc.formula_name": "quick-start", "gc.source_bead_id": "pr-task"}}
+        "gc.kind": "workflow", "gc.formula_name": "quick-start", "gc.source_bead_id": "pr-task", "gc.root_store_ref": "rig:practice"}}
     monkeypatch.setattr("sys.argv", ["tutorial", "status"])
     tutorial.main()
     text = capsys.readouterr().out

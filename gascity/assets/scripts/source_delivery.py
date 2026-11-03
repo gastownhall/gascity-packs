@@ -371,28 +371,78 @@ def verify_output(root):
     return record
 
 
+def workflow_beads(gc):
+    """Read fresh, complete native work and graph rows before proving absence.
+
+    Explicit fresh/strict selects the native execution-host census, bypasses
+    indexed/API caches, and refuses any unavailable configured store or binding.
+    A best-effort listing cannot establish that a workflow does not exist.
+    """
+    value = gc("gc", "beads", "list", "--all", "--fresh", "--strict", "--format=json", json_output=True)
+    # gc() unwraps singleton arrays, but a cached/partial envelope is never the
+    # authoritative direct-read contract. Reject it rather than treating it as
+    # an empty set (including future partial/truncation indicators).
+    if isinstance(value, dict) and isinstance(value.get("id"), str):
+        value = [value]
+    if not isinstance(value, list):
+        raise InfrastructureError("complete native workflow observation unavailable")
+    for row in value:
+        if (not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"].strip()
+                or not isinstance(row.get("status"), str) or not row["status"].strip()
+                or not isinstance(row.get("metadata", {}), dict)
+                or any(not isinstance(key, str) or not isinstance(item, str)
+                       for key, item in row.get("metadata", {}).items())
+                or not isinstance(row.get("labels", []), list)
+                or any(not isinstance(label, str) for label in row.get("labels", []))
+                or not isinstance(row.get("issue_type", ""), str)):
+            raise InfrastructureError("complete native workflow observation is malformed")
+    return value
+
+
 def attached_workflow(gc, source, rig):
     """Follow native direct and convoy-first bindings without relaunching work."""
     def rows(*args):
         result = gc("gc", "--rig", rig, "bd", *args, json_output=True)
         return [result] if isinstance(result, dict) else result
 
-    def keyed_roots(key, value):
-        matches = rows("list", "--all", "--include-ephemeral", "--metadata-field",
-                       key + "=" + value, "--limit", "0", "--json")
+    snapshot = workflow_beads(gc)
+    scope = "rig:" + rig
+
+    def keyed_roots(key, value, formula=None):
+        matches = [row for row in snapshot if row.get("metadata", {}).get(key) == value
+                   and (formula is None or row.get("metadata", {}).get("gc.formula_name", "").strip() == formula)]
         roots = []
         for row in matches:
             metadata = row.get("metadata", {})
+            # Store refs identify logical source/root scope, never a physical
+            # binding. The graph may live in infra while its scope is rig:….
+            source_scope = metadata.get("gc.source_store_ref")
+            root_scope = metadata.get("gc.root_store_ref")
+            if source_scope and source_scope != scope:
+                continue
+            if not source_scope and root_scope and root_scope != scope:
+                continue
             kind = metadata.get("gc.kind", "").strip().lower()
             contract = metadata.get("gc.formula_contract", "").strip().lower()
             controller = row.get("issue_type", "").strip().lower() in {
                 "session", "startup-health-episode", "convergence", "op"}
             controller |= any(label.strip().lower() == "gc:session" for label in row.get("labels", []))
             if not controller and (kind == "workflow" or contract == "graph.v2"):
+                if not source_scope and not root_scope:
+                    raise ValueError("matching workflow scope is unavailable; inspect native store identity before retrying")
                 roots.append(row)
         return roots
 
-    roots_by_id = {row["id"]: row for row in keyed_roots("gc.source_bead_id", source["id"])}
+    roots_by_id = {}
+
+    def add_root(row):
+        previous = roots_by_id.get(row["id"])
+        if previous is not None and previous != row:
+            raise ValueError("ambiguous workflow identity across native stores; inspect before retrying")
+        roots_by_id[row["id"]] = row
+
+    for row in keyed_roots("gc.source_bead_id", source["id"]):
+        add_root(row)
     # A bare-source --on launch initially binds through its synthetic input
     # convoy. prepare adds the delivery back-link later; it is not admission.
     excluded = {"gc:session", "gc:order-tracking", "order-tracking", "gc:op", "gc:fact", "gc:rt"}
@@ -401,9 +451,8 @@ def attached_workflow(gc, source, rig):
                 convoy.get("metadata", {}).get("gc.synthetic", "").strip() != "true" or
                 excluded.intersection(convoy.get("labels", []))):
             continue
-        for row in keyed_roots("gc.input_convoy_id", convoy["id"]):
-            if row.get("metadata", {}).get("gc.formula_name", "").strip() == "quick-start":
-                roots_by_id[row["id"]] = row
+        for row in keyed_roots("gc.input_convoy_id", convoy["id"], formula="quick-start"):
+            add_root(row)
     roots = list(roots_by_id.values())
     live = [row for row in roots if row.get("status") != "closed"]
     if len(live) > 1:

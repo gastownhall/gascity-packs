@@ -231,10 +231,8 @@ def show_runtime_progress(gc, workflow):
         return
     root = workflow["id"]
     try:
-        rows = gc("gc", "--rig", "practice", "bd", "list", "--all", "--include-ephemeral",
-                  "--metadata-field", "gc.root_bead_id=" + root, "--limit", "0", "--json", json_output=True)
-        if isinstance(rows, dict):
-            rows = [rows]
+        from source_delivery import workflow_beads
+        rows = workflow_beads(gc)
         for step in rows:
             if step.get("metadata", {}).get("gc.root_bead_id") != root or step.get("status") != "in_progress":
                 continue
