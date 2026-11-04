@@ -140,10 +140,21 @@ func slackReadbackIsRetryable(err error) bool {
 //     there (or was different text). Re-posting the identical payload cannot
 //     change that; the truncation path is the clearest case, since an oversized
 //     body truncates the same way every time.
-//   - unavailable → transient. The read leg failed, so nothing is known about
-//     the message; retrying is the right response and is safe because
-//     handlePublish caches this receipt for re-verification rather than
-//     re-posting (see publishReceiptBlocksRepost).
+//   - unavailable → permanent. confirmPublishReceipt — this function's only
+//     caller — runs after a write Slack has already accepted (MessageID is
+//     already set on the receipt by then), so "unavailable" never means
+//     "we don't know if this posted": it means the write happened and only
+//     the read leg failed. Mapping that to transient told callers the send
+//     itself was retryable, and gc's retry protocol on a transient receipt
+//     is to re-post — which duplicates a message that is already sitting in
+//     the channel (gascity-packs#620). permanent is the kind this file
+//     already uses for "do not re-send this payload" (see unconfirmed,
+//     below); it is reused here for the same reason: retrying cannot help,
+//     because the thing retrying would fix (an unsent message) isn't the
+//     problem. The in-process dedup path (publishReceiptBlocksRepost,
+//     replayPublishReceipt) still re-verifies these receipts by metadata's
+//     readback detail rather than by this wire-level kind, so that recovery
+//     path is unaffected.
 //   - auth      → auth. A token missing history scope is a configuration
 //     fault, and gc's vocabulary already has the word for it.
 func slackReadbackReceiptFailure(err error) (kind, detail string) {
@@ -154,7 +165,7 @@ func slackReadbackReceiptFailure(err error) (kind, detail string) {
 	case slackReadbackAuth:
 		return publishFailureAuth, detail
 	default:
-		return publishFailureTransient, detail
+		return publishFailurePermanent, detail
 	}
 }
 
