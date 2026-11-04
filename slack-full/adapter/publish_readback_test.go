@@ -225,8 +225,8 @@ func TestReadBackPublishedMessageAcceptsSlackCanonicalizedText(t *testing.T) {
 }
 
 // TestSlackNormalizeTextFoldsLabelledLinks pins the fold on the link shapes
-// Slack completes with a label (gp-dadc6). `<target|label>` must fold to the
-// label the sender typed, so a stored `<http://huggingface.co/x|huggingface.co/x>`
+// Slack completes with a label (gp-dadc6). A consistent `<target|label>` folds
+// to the label the sender typed, so `<http://huggingface.co/x|huggingface.co/x>`
 // compares equal to the posted `huggingface.co/x`; folding only the brackets
 // leaves `http://...|huggingface.co/x`, and the delivered message is reported
 // as a permanent content mismatch.
@@ -274,7 +274,7 @@ func TestSlackNormalizeTextFoldsLabelledLinks(t *testing.T) {
 			equal:  true,
 		},
 		{
-			name:   "sender-authored label compares on the label",
+			name:   "sender-authored link keeps its destination and label",
 			posted: "<https://example.com|the runbook>",
 			stored: "<https://example.com|the runbook>",
 			equal:  true,
@@ -298,6 +298,32 @@ func TestSlackNormalizeTextFoldsLabelledLinks(t *testing.T) {
 					got, test.equal,
 					test.posted, slackNormalizeText(test.posted),
 					test.stored, slackNormalizeText(test.stored))
+			}
+		})
+	}
+}
+
+// A matching label alone cannot establish that Slack stored the same link.
+func TestReadbackPreservesLabelledLinkDestination(t *testing.T) {
+	tests := []struct {
+		name, posted, stored string
+		wantErr              bool
+	}{
+		{"authored target changed", "<https://example.com/approved|the runbook>", "<https://example.com/different|the runbook>", true},
+		{"authored target unchanged", "<https://example.com/approved|the runbook>", "<https://example.com/approved|the runbook>", false},
+		{"autolink target changed", "model card: huggingface.co/org/model", "model card: <http://huggingface.co/org/other|huggingface.co/org/model>", true},
+		{"autolink http", "model card: huggingface.co/org/model", "model card: <http://huggingface.co/org/model|huggingface.co/org/model>", false},
+		{"autolink https", "model card: huggingface.co/org/model", "model card: <https://huggingface.co/org/model|huggingface.co/org/model>", false},
+		{"scheme changed", "https://example.com/path", "<http://example.com/path|https://example.com/path>", true},
+		{"email target changed", "ops@example.com", "<mailto:other@example.com|ops@example.com>", true},
+		{"email unchanged", "ops@example.com", "<mailto:ops@example.com|ops@example.com>", false},
+		{"escaped query unchanged", "example.com/?a=1&b=2", "<http://example.com/?a=1&amp;b=2|example.com/?a=1&amp;b=2>", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: test.stored}, readbackTarget(test.posted))
+			if (err != nil) != test.wantErr {
+				t.Fatalf("matchReadbackMessage = %v, wantErr %t (posted %q, stored %q)", err, test.wantErr, test.posted, test.stored)
 			}
 		})
 	}

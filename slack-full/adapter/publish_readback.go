@@ -182,26 +182,26 @@ var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
 // `<mailto:a@b.co|a@b.co>`, the label keeping what the sender typed. Agent
 // traffic is full of the latter.
 //
-// A span folds to its label when it has one and to its content otherwise, so
-// both shapes land on the spelling the sender wrote. Stripping only the angle
-// brackets leaves `target|label` on the stored side, which can never equal the
-// posted text: a message carrying a labelled auto-link read back as a content
-// mismatch, was reported Delivered:false/permanent while sitting in the
-// channel, and was re-posted by the caller's retry (gp-dadc6).
+// An unlabelled span folds to its content. A labelled span folds to its label
+// only when the target is that same URL, or completes the label with an http,
+// https, or mailto scheme. Other labelled spans keep their target and label:
+// sender-authored links may display text unrelated to their destination, and
+// dropping that destination would confirm a different link as delivered.
 //
 // It is applied to BOTH sides of the compare, never to one. Normalizing only
 // the expected text would require predicting Slack's output exactly — the
 // auto-link shape in particular is not something this repo can pin — whereas
-// folding both sides only requires that the fold be the same on each, which is
-// checkable here. The fold is deliberately lossy in exactly the way Slack is
-// lossy: two texts that differ only by escaping or link markup compare equal,
-// because Slack cannot tell an operator which of the two it stored either.
-// Divergence that survives the fold is still reported unconfirmed.
+// folding both sides only requires that the fold be the same on each. A
+// destination or label change that survives this fold is reported unconfirmed.
 func slackNormalizeText(text string) string {
 	return slackAngleSpan.ReplaceAllStringFunc(slackEntityUnescape.Replace(text), func(span string) string {
 		inner := span[1 : len(span)-1]
-		if _, label, ok := strings.Cut(inner, "|"); ok {
-			return label
+		if target, label, ok := strings.Cut(inner, "|"); ok {
+			if ((strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:")) && target == label) ||
+				(!strings.Contains(label, "://") && (target == "http://"+label || target == "https://"+label || target == "mailto:"+label)) {
+				return label
+			}
+			return span
 		}
 		return inner
 	})
