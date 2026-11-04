@@ -36,6 +36,17 @@ Enable peer-fanout policy with caps (governs peer-triggered publishes):
       --max-peer-triggered-publishes 8 \
       --max-total-peer-deliveries 24
 
+NOTE: --enable-peer-fanout, --allow-untargeted-publication, and the two
+--max-* caps above all set `body.fanout_policy` on the underlying
+`POST /extmsg/groups` call. This requires a gc build that recognizes
+that property. gc 1.5.1 rejects it with:
+
+  ensure group: POST .../extmsg/groups -> 422:
+    {"errors":[{"message":"unexpected property","location":"body.fanout_policy"}]}
+
+That 422 is a gc-version mismatch, not a bad bind — the base bind-room
+call (without these four flags) succeeds on gc 1.5.1.
+
 Override participant handles (used by `@@handle` routing):
 
   gc slack bind-room C0123ROOM01 \

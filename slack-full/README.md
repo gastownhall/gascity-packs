@@ -63,7 +63,12 @@ Implemented:
       `--enable-peer-fanout`, `--allow-untargeted-publication`,
       `--max-peer-triggered-publishes`, `--max-total-peer-deliveries`,
       `--default-handle`, `--handle HANDLE=SESSION` (creates a
-      launcher-mode group + participants under the hood)
+      launcher-mode group + participants under the hood). The first
+      four of those flags set `body.fanout_policy` on the group and
+      require a gc build that accepts that property — gc 1.5.1 rejects
+      it with HTTP 422 `"unexpected property"` on
+      `body.fanout_policy`; drop the flags (base bind-room still
+      works) or upgrade gc if you hit that error.
 - [x] `gc slack reply-current` — reply to the latest Slack event in the
       current session, by default through gc's `/extmsg/outbound` so
       transcript recording + peer fanout fire (`--via adapter` keeps the
@@ -98,7 +103,7 @@ Implemented:
 - [x] Pack-owned intake service (`[[service]]` proxy_process). Phase A:
       adapter is the same Go binary, but gc supervises it via UDS for
       `/publish` while the public Slack webhook still terminates at
-      adapter TCP `:8775` (Funnel unchanged). See "Adapter as a
+      adapter TCP `:8765` (Funnel unchanged). See "Adapter as a
       proxy_process service" below for the cutover.
 
 Slash-command / launcher / projection surface (operator CLI verbs):
@@ -190,7 +195,7 @@ either can travel intact when the pack is mirrored upstream:
 
 - **Adapter** — `slack-full/adapter/gc-slack-adapter`,
   built from `adapter/main.go`. The public-facing webhook receiver
-  (Slack → `:8775` over Tailscale Funnel) and outbound publisher
+  (Slack → `:8765` over Tailscale Funnel) and outbound publisher
   (`/publish` over the controller-managed UDS). Long-running; gc
   supervises it via the `[[service]]` block in `pack.toml`.
 
@@ -220,16 +225,17 @@ for adapter-only diagnostics that bypass gc.
 
 ```
                    ┌──── public ────┐
-Slack  ──HMAC──▶  Go adapter :8775  ──▶ gc /extmsg/inbound
+Slack  ──HMAC──▶  Go adapter :8765  ──▶ gc /extmsg/inbound
                   Go adapter :8766  ◀── gc /extmsg/outbound  ◀── gc slack reply-current
                                     ◀── (--via adapter) ─────── gc slack reply-current
                    └────────────────┘
 ```
 
-The `:8775` public port above is the reference Funnel-fronted
-deployment (`LISTEN_PUBLIC=:8775`, with a Tailscale Funnel rule
-`:443 → :8775`). The bare adapter default is `:8765` — see the
-`LISTEN_PUBLIC` row in "Adapter env contract" below.
+The `:8765` public port above is the bare adapter default
+(`LISTEN_PUBLIC=:8765`) — see the `LISTEN_PUBLIC` row in "Adapter env
+contract" below. A Tailscale Funnel rule should point at whichever
+port `LISTEN_PUBLIC` is actually set to (`:443 → :8765` for the
+default).
 
 The adapter's `/publish` endpoint **requires session attribution**: every
 request must carry a `session_id` (or, for older gc binaries, the legacy
@@ -361,7 +367,7 @@ supervise the adapter as part of the city's services. The adapter
 binds a Unix domain socket for the `/publish` endpoint that gc reaches
 via the extmsg HTTP adapter, and gc reverse-proxies `/svc/slack/*` to
 that UDS. The public Slack webhook (`/slack/events`) still terminates
-at the adapter's TCP `:8775` so Tailscale Funnel and Slack's signing
+at the adapter's TCP `:8765` so Tailscale Funnel and Slack's signing
 secret verification are unchanged. The same binary runs in both modes
 — the legacy `nohup ./run.sh` deployment is preserved as a rollback
 target.
@@ -413,7 +419,7 @@ package docstring at the top of that file. Summary:
 | `LISTEN_PUBLIC`                | `:8765`                                          | Public listener for `/slack/events` (bind `0.0.0.0` if fronted by a tunnel).    |
 | `LISTEN_INTERNAL`              | `127.0.0.1:8766`                                 | Loopback listener for `/publish`. Ignored under proxy_process mode.             |
 | `INTERNAL_CALLBACK_URL`        | `http://127.0.0.1:8766`                          | URL advertised to gc at self-registration. Ignored under proxy_process mode.    |
-| `GC_API_BASE_URL`              | `http://127.0.0.1:9443`                          | Base URL for gc's HTTP API.                                                     |
+| `GC_API_BASE_URL`              | `http://127.0.0.1:8372`                          | Base URL for gc's HTTP API.                                                     |
 | `ADAPTER_PROVIDER`             | `slack`                                          | Provider name in conversation refs + adapter registration.                      |
 | `REGISTER_ON_START`            | `true`                                           | Set `false` to skip `/extmsg/adapters` registration (tests, diagnostics).       |
 | `HANDLE_PREFIX`                | `@`                                              | Leading address token for keyword routing. Empty disables routing.              |
@@ -591,7 +597,7 @@ TCP-only mode, so the same binary serves both deployments.
   proxy_process this shows up as the service stuck in `degraded`
   state with the env-var name in the reason field. Source the env
   file in the supervisor's launching shell.
-- **Funnel rule out-of-band.** Tailscale Funnel `:443 → :8775` is not
+- **Funnel rule out-of-band.** Tailscale Funnel `:443 → :8765` is not
   declared in the city. If you reboot the host or `tailscale funnel
 reset`, traffic stops landing at the adapter. Re-add the rule
   manually until Phase C lands.
