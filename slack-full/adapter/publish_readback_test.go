@@ -1105,3 +1105,35 @@ func TestReadbackMixedLinkOccurrenceIntegrity(t *testing.T) {
 		})
 	}
 }
+
+// Zero-width normalized spans must retain their own place beside authored links.
+func TestReadbackEmptySpanAndNamedHostPort(t *testing.T) {
+	const link = "<https://good.example|guide>"
+	tests := []struct {
+		name, posted, stored string
+		wantErr              bool
+	}{
+		{"empty before", "<>" + link, "<>" + link, false},
+		{"escaped empty before", "&lt;&gt;" + link, "&lt;&gt;" + link, false},
+		{"empty between", link + "<>" + link, link + "<>" + link, false},
+		{"empty missing", "<>" + link, link, true},
+		{"empty inserted", link, "<>" + link, true},
+		{"empty with changed link", "<>" + link, "<><https://bad.example|guide>", true},
+		{"empty at wrong position", link + "<>" + link, "<>" + link + link, true},
+		{"named port http", "example.com:8080/path", "<http://example.com:8080/path|example.com:8080/path>", false},
+		{"named port https", "example.com:8443/path", "<https://example.com:8443/path|example.com:8443/path>", false},
+		{"changed port", "example.com:8080/path", "<http://example.com:8081/path|example.com:8080/path>", true},
+		{"nonnumeric port", "example.com:abc/path", "<http://example.com:abc/path|example.com:abc/path>", true},
+		{"custom scheme", "ssh:example.com", "<https://ssh:example.com|ssh:example.com>", true},
+		{"double scheme", "http://example.com", "<http://http://example.com|http://example.com>", true},
+		{"double mailto", "mailto:ops@example.com", "<mailto:mailto:ops@example.com|mailto:ops@example.com>", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: test.stored}, readbackTarget(test.posted))
+			if (err != nil) != test.wantErr {
+				t.Fatalf("matchReadbackMessage = %v, wantErr %t", err, test.wantErr)
+			}
+		})
+	}
+}

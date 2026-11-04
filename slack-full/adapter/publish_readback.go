@@ -209,7 +209,7 @@ func slackFoldSpan(span string) string {
 	if target == label && (strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:")) {
 		return label
 	}
-	if !slackURIScheme.MatchString(label) {
+	if !slackURIScheme.MatchString(label) || slackNamedHostPort.MatchString(label) {
 		if strings.Contains(label, "@") && !strings.ContainsAny(label, "/?#") {
 			if target == "mailto:"+label {
 				return label
@@ -222,6 +222,11 @@ func slackFoldSpan(span string) string {
 }
 
 var slackURIScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+
+// A dotted DNS authority followed by a numeric port is not an explicit scheme.
+// Require valid nonempty DNS labels and a port boundary so arbitrary colon
+// prefixes such as ssh:example.com cannot acquire a web scheme.
+var slackNamedHostPort = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:[0-9]+(?:[/?#]|$)`)
 
 // The caller unescapes once, before identifying spans.
 func slackFoldText(text string) string {
@@ -256,13 +261,16 @@ func slackReadbackTextMatches(expected, stored string) bool {
 		parts = append(parts, slackReadbackPart{raw: plain, folded: plain})
 	}
 	part, offset := 0, 0
+	advance := func() {
+		for part < len(parts) && offset == len(parts[part].folded) && len(parts[part].folded) > 0 {
+			part++
+			offset = 0
+		}
+	}
 	consume := func(want string) bool {
 		for len(want) > 0 {
-			for part < len(parts) && offset == len(parts[part].folded) {
-				part++
-				offset = 0
-			}
-			if part == len(parts) {
+			advance()
+			if part == len(parts) || len(parts[part].folded) == 0 {
 				return false
 			}
 			remaining := parts[part].folded[offset:]
@@ -279,32 +287,28 @@ func slackReadbackTextMatches(expected, stored string) bool {
 	}
 	last = 0
 	for _, loc := range slackAngleSpan.FindAllStringIndex(expected, -1) {
+		if !consume(expected[last:loc[0]]) {
+			return false
+		}
 		span := expected[loc[0]:loc[1]]
-		if !strings.Contains(span, "|") {
-			continue
-		}
-		if !consume(slackFoldText(expected[last:loc[0]])) {
-			return false
-		}
-		// Advance past consumed parts, but do not skip an empty stored span:
-		// it is still a distinct occurrence that cannot stand for this link.
-		for part < len(parts) && offset == len(parts[part].folded) && !(parts[part].span && offset == 0) {
+		folded := slackFoldSpan(span)
+		if strings.Contains(span, "|") || folded == "" {
+			// Authored links and zero-width spans must occupy their own stored
+			// occurrence; neither can be skipped or borrowed from a neighbor.
+			advance()
+			if part == len(parts) || offset != 0 || !parts[part].span || parts[part].raw != span {
+				return false
+			}
 			part++
-			offset = 0
-		}
-		if part == len(parts) || offset != 0 || !parts[part].span || parts[part].raw != span {
+		} else if !consume(folded) {
 			return false
 		}
-		part++
 		last = loc[1]
 	}
-	if !consume(slackFoldText(expected[last:])) {
+	if !consume(expected[last:]) {
 		return false
 	}
-	for part < len(parts) && offset == len(parts[part].folded) {
-		part++
-		offset = 0
-	}
+	advance()
 	return part == len(parts)
 }
 
