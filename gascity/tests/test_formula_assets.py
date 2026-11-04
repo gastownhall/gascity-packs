@@ -811,6 +811,22 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(agent=agent_name):
                 self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
 
+    def test_role_worker_reruns_failed_ci_jobs_only(self) -> None:
+        # Owner rule 2026-11-04: failed jobs only, no cancel-and-rerun, no Bazel
+        # rerun while rbe-west is down.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        section = text[text.index("## CI Reruns") : text.index("## Invariants")]
+        for required in (
+            "`gh run rerun <run-id> --failed`",
+            "Never re-run all jobs",
+            "Never cancel a progressing run to rerun it",
+            "Never rerun Bazel jobs while\nrbe-west is down",
+            "`Ping` / `rbe_ping`",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, section)
+
     def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")

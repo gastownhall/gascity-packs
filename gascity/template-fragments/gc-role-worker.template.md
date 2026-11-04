@@ -97,6 +97,16 @@ gc runtime drain-ack
 
 Then exit. Never claim "drained" without acknowledgement.
 
+## CI Reruns
+
+Rerun failed jobs only: `gh run rerun <run-id> --failed`, or `--job <job-id>`.
+Never re-run all jobs (`gh run rerun <run-id>` without `--failed`, `POST
+.../actions/runs/<id>/rerun`). Never cancel a progressing run to rerun it,
+and never push an empty commit to retrigger CI. Never rerun Bazel jobs while
+rbe-west is down: the run's `Ping` / `rbe_ping` step failed or timed out, or
+its lanes sat at `[Sched] ... 0 running` until timeout. Report it as
+infrastructure and wait. `gh` refuses these reruns. Never work around it.
+
 ## Invariants
 
 - `gc.kind=workflow` and `gc.kind=scope`: latch beads, not normal work.
