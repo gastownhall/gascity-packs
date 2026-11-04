@@ -79,6 +79,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -463,6 +464,25 @@ func bridgeEvent(cfg config, env slackEventEnvelope) {
 	}
 	log.Printf("inbound: chan=%s user=%s ts=%s thread=%s target=%s text=%dch",
 		msg.Channel, msg.User, msg.TS, msg.ThreadTS, cfg.inboundTarget, len(text))
+	rememberInboundTS(os.Getenv("GC_SERVICE_RUN_ROOT"), msg.Channel, msg.ThreadTS, msg.TS)
+}
+
+// rememberInboundTS records, per channel, the thread a reply should land in.
+// gc's reply reminder names only the conversation id, so `reply-current`
+// reads this file to thread under the mention instead of posting top-level.
+// One small file per channel under the service run root; a missing root
+// (standalone TCP mode, tests) is a no-op.
+func rememberInboundTS(runRoot, channel, threadTS, ts string) {
+	if runRoot == "" || channel == "" || ts == "" {
+		return
+	}
+	if threadTS == "" {
+		threadTS = ts
+	}
+	if err := os.MkdirAll(runRoot, 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(runRoot, "last-inbound-"+channel+".ts"), []byte(threadTS+"\n"), 0o600)
 }
 
 // leadingMentionRE matches one or more leading Slack user-mention tokens

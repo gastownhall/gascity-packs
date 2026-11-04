@@ -533,3 +533,21 @@ func TestPostJSONSurfacesErrorStatus(t *testing.T) {
 		t.Fatalf("expected error surfacing body, got %v", err)
 	}
 }
+
+func TestRememberInboundTSWritesThreadPerChannel(t *testing.T) {
+	root := t.TempDir()
+	rememberInboundTS(root, "C1", "", "1700000000.0001")
+	got, err := os.ReadFile(filepath.Join(root, "last-inbound-C1.ts"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != "1700000000.0001\n" {
+		t.Fatalf("top-level mention should record its own ts, got %q", got)
+	}
+	rememberInboundTS(root, "C1", "1699999999.0009", "1700000000.0002")
+	got, _ = os.ReadFile(filepath.Join(root, "last-inbound-C1.ts"))
+	if string(got) != "1699999999.0009\n" {
+		t.Fatalf("a reply inside a thread should record the thread ts, got %q", got)
+	}
+	rememberInboundTS("", "C1", "", "1700000000.0003") // no run root: no-op, no panic
+}

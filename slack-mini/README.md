@@ -141,6 +141,17 @@ binary from source on first start (see [Build](#build)). Start your city and `@`
 
 ## Replying in a thread
 
+When gc delivers a mention it tells the session to run `reply-current`. slack-mini
+ships that verb: it posts the body file to the conversation and threads under
+the mention automatically (the adapter remembers each channel's latest inbound
+thread under its service run root):
+
+```sh
+gc slack-mini reply-current --conversation-id C0123 --body-file reply.md
+```
+
+To thread by hand with `post-message`:
+
 When the mayor session handles an inbound mention, the conversation carries
 the Slack message `ts` as its reply-to id. Answer in the same thread with:
 

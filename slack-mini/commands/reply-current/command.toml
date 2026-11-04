@@ -1,0 +1,2 @@
+description = "Reply to the Slack conversation gc handed this session (the verb gc's inbound reminder names)"
+run = "../reply-current.sh"

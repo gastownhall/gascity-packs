@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A mention can be answered with the verb gc advertises.** gc's inbound
+  system-reminder tells the session to run `reply-current --conversation-id
+  <C…> --body-file <path>`, which slack-mini never shipped, so a Tier 1 city
+  received mentions it had no advertised way to answer
+  (gastownhall/gascity#5166). `commands/reply-current` now exists: it posts the
+  body through `post-message` and threads under the mention, because the
+  adapter records each channel's latest inbound thread ts under its service run
+  root (`last-inbound-<channel>.ts`). The namespace half of #5166 (gc says
+  `gc slack …`, the service is `slack-mini`) is still the engine's to fix.
+
 - **A pack pin bump no longer strands the adapter service.** The `[[service]]`
   command pointed straight at the gitignored `adapter/gc-slack-mini-adapter`
   binary, which `gc import install` (git-only) never ships, so the service
