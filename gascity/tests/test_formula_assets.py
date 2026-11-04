@@ -812,8 +812,7 @@ class FormulaAssetTests(unittest.TestCase):
                 self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
 
     def test_role_worker_reruns_failed_ci_jobs_only(self) -> None:
-        # Owner rule 2026-11-04: failed jobs only, no cancel-and-rerun, no Bazel
-        # rerun while rbe-west is down.
+        # Failed jobs only, no full rerun, no cancel-and-rerun.
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
         section = text[text.index("## CI Reruns") : text.index("## Invariants")]
@@ -821,11 +820,15 @@ class FormulaAssetTests(unittest.TestCase):
             "`gh run rerun <run-id> --failed`",
             "Never re-run all jobs",
             "Never cancel a progressing run to rerun it",
-            "Never rerun Bazel jobs while\nrbe-west is down",
-            "`Ping` / `rbe_ping`",
+            "infrastructure that is still down, report\nit and wait",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, section)
+        # The pack is public and opt-in: no claim about a city's gh guard, no
+        # city-specific farm names (those live in the city overlay).
+        for city_specific in ("rbe-west", "rbe_ping", "refuses"):
+            with self.subTest(city_specific=city_specific):
+                self.assertNotIn(city_specific, section)
 
     def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]

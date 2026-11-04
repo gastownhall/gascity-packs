@@ -99,13 +99,12 @@ Then exit. Never claim "drained" without acknowledgement.
 
 ## CI Reruns
 
-Rerun failed jobs only: `gh run rerun <run-id> --failed`, or `--job <job-id>`.
-Never re-run all jobs (`gh run rerun <run-id>` without `--failed`, `POST
-.../actions/runs/<id>/rerun`). Never cancel a progressing run to rerun it,
-and never push an empty commit to retrigger CI. Never rerun Bazel jobs while
-rbe-west is down: the run's `Ping` / `rbe_ping` step failed or timed out, or
-its lanes sat at `[Sched] ... 0 running` until timeout. Report it as
-infrastructure and wait. `gh` refuses these reruns. Never work around it.
+When CI fails, rerun the failed jobs only: `gh run rerun <run-id> --failed`,
+or `--job <job-id>` for one failed job. Never re-run all jobs: no
+`gh run rerun <run-id>` without `--failed`, no `POST .../actions/runs/<id>/rerun`.
+Never cancel a progressing run to rerun it, and never push an empty commit
+to retrigger CI. When the failure is infrastructure that is still down, report
+it and wait instead of rerunning. Your city may add rules for its own CI.
 
 ## Invariants
 
