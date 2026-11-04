@@ -206,7 +206,7 @@ func slackFoldSpan(span string) string {
 	if !labelled {
 		return inner
 	}
-	if target == label && (strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:")) {
+	if target == label && slackURIScheme.MatchString(target) {
 		return label
 	}
 	if !slackURIScheme.MatchString(label) || slackNamedHostPort.MatchString(label) {
@@ -226,7 +226,7 @@ var slackURIScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
 // A dotted DNS authority followed by a numeric port is not an explicit scheme.
 // Require valid nonempty DNS labels and a port boundary so arbitrary colon
 // prefixes such as ssh:example.com cannot acquire a web scheme.
-var slackNamedHostPort = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?:[0-9]+(?:[/?#]|$)`)
+var slackNamedHostPort = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.?:[0-9]+(?:[/?#]|$)`)
 
 // The caller unescapes once, before identifying spans.
 func slackFoldText(text string) string {
