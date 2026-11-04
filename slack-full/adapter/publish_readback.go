@@ -194,7 +194,17 @@ var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
 // folding both sides only requires that the fold be the same on each. A
 // destination or label change that survives this fold is reported unconfirmed.
 func slackNormalizeText(text string) string {
-	return slackAngleSpan.ReplaceAllStringFunc(slackEntityUnescape.Replace(text), func(span string) string {
+	return slackNormalizeTextWithAuthoredLinks(text, nil)
+}
+
+// Protect sender-authored labelled spans as distinct tokens on both sides.
+// Escaping NUL in ordinary text makes those tokens unambiguous.
+func slackNormalizeTextWithAuthoredLinks(text string, authored map[string]bool) string {
+	text = strings.ReplaceAll(slackEntityUnescape.Replace(text), "\x00", "\x00\x00")
+	return slackAngleSpan.ReplaceAllStringFunc(text, func(span string) string {
+		if authored[span] {
+			return "\x00\x01" + span + "\x00\x02"
+		}
 		inner := span[1 : len(span)-1]
 		if target, label, ok := strings.Cut(inner, "|"); ok {
 			if ((strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:")) && target == label) ||
@@ -318,7 +328,13 @@ func matchReadbackMessage(message slackReadbackMessage, target slackReadbackTarg
 		return readbackFailure(slackReadbackUnconfirmed, false,
 			"Slack readback missing reference marker for message %s", target.messageTS)
 	}
-	if slackNormalizeText(message.Text) != slackNormalizeText(target.expectedText) {
+	authored := make(map[string]bool)
+	for _, span := range slackAngleSpan.FindAllString(slackEntityUnescape.Replace(target.expectedText), -1) {
+		if strings.Contains(span, "|") {
+			authored[strings.ReplaceAll(span, "\x00", "\x00\x00")] = true
+		}
+	}
+	if slackNormalizeTextWithAuthoredLinks(message.Text, authored) != slackNormalizeTextWithAuthoredLinks(target.expectedText, authored) {
 		return readbackFailure(slackReadbackUnconfirmed, false,
 			"Slack readback content mismatch for message %s", target.messageTS)
 	}

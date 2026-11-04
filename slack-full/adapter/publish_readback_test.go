@@ -310,6 +310,9 @@ func TestReadbackPreservesLabelledLinkDestination(t *testing.T) {
 		wantErr              bool
 	}{
 		{"authored target changed", "<https://example.com/approved|the runbook>", "<https://example.com/different|the runbook>", true},
+		{"authored scheme changed with same label", "<http://example.com|example.com>", "<https://example.com|example.com>", true},
+		{"authored link replaced by plain label", "<http://example.com|example.com>", "example.com", true},
+		{"authored same URL and label preserved", "<https://example.com|https://example.com>", "<https://example.com|https://example.com>", false},
 		{"authored target unchanged", "<https://example.com/approved|the runbook>", "<https://example.com/approved|the runbook>", false},
 		{"autolink target changed", "model card: huggingface.co/org/model", "model card: <http://huggingface.co/org/other|huggingface.co/org/model>", true},
 		{"autolink http", "model card: huggingface.co/org/model", "model card: <http://huggingface.co/org/model|huggingface.co/org/model>", false},
