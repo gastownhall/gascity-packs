@@ -194,27 +194,118 @@ var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
 // folding both sides only requires that the fold be the same on each. A
 // destination or label change that survives this fold is reported unconfirmed.
 func slackNormalizeText(text string) string {
-	return slackNormalizeTextWithAuthoredLinks(text, nil)
+	return slackFoldText(slackEntityUnescape.Replace(text))
 }
 
-// Protect sender-authored labelled spans as distinct tokens on both sides.
-// Escaping NUL in ordinary text makes those tokens unambiguous.
-func slackNormalizeTextWithAuthoredLinks(text string, authored map[string]bool) string {
-	text = strings.ReplaceAll(slackEntityUnescape.Replace(text), "\x00", "\x00\x00")
-	return slackAngleSpan.ReplaceAllStringFunc(text, func(span string) string {
-		if authored[span] {
-			return "\x00\x01" + span + "\x00\x02"
-		}
-		inner := span[1 : len(span)-1]
-		if target, label, ok := strings.Cut(inner, "|"); ok {
-			if ((strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:")) && target == label) ||
-				(!strings.Contains(label, "://") && (target == "http://"+label || target == "https://"+label || target == "mailto:"+label)) {
+// slackFoldSpan recognizes only destination-preserving autolinks. An already
+// schemed label is never completed again, and email and web destinations are
+// distinct even when their visible labels happen to be equal.
+func slackFoldSpan(span string) string {
+	inner := span[1 : len(span)-1]
+	target, label, labelled := strings.Cut(inner, "|")
+	if !labelled {
+		return inner
+	}
+	if target == label && (strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:")) {
+		return label
+	}
+	if !slackURIScheme.MatchString(label) {
+		if strings.Contains(label, "@") && !strings.ContainsAny(label, "/?#") {
+			if target == "mailto:"+label {
 				return label
 			}
-			return span
+		} else if target == "http://"+label || target == "https://"+label {
+			return label
 		}
-		return inner
-	})
+	}
+	return span
+}
+
+var slackURIScheme = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+
+// The caller unescapes once, before identifying spans.
+func slackFoldText(text string) string {
+	return slackAngleSpan.ReplaceAllStringFunc(text, slackFoldSpan)
+}
+
+type slackReadbackPart struct {
+	raw, folded string
+	span        bool
+}
+
+// Compare in occurrence order: an authored span must match the stored span at
+// that position exactly, while intervening plain text may be auto-linked. A
+// stream cursor prevents a plain occurrence identical to an authored one from
+// inheriting the authored occurrence's identity.
+func slackReadbackTextMatches(expected, stored string) bool {
+	expected = slackEntityUnescape.Replace(expected)
+	stored = slackEntityUnescape.Replace(stored)
+	var parts []slackReadbackPart
+	last := 0
+	for _, loc := range slackAngleSpan.FindAllStringIndex(stored, -1) {
+		if loc[0] > last {
+			plain := stored[last:loc[0]]
+			parts = append(parts, slackReadbackPart{raw: plain, folded: plain})
+		}
+		span := stored[loc[0]:loc[1]]
+		parts = append(parts, slackReadbackPart{raw: span, folded: slackFoldSpan(span), span: true})
+		last = loc[1]
+	}
+	if last < len(stored) {
+		plain := stored[last:]
+		parts = append(parts, slackReadbackPart{raw: plain, folded: plain})
+	}
+	part, offset := 0, 0
+	consume := func(want string) bool {
+		for len(want) > 0 {
+			for part < len(parts) && offset == len(parts[part].folded) {
+				part++
+				offset = 0
+			}
+			if part == len(parts) {
+				return false
+			}
+			remaining := parts[part].folded[offset:]
+			n := len(want)
+			if len(remaining) < n {
+				n = len(remaining)
+			}
+			if want[:n] != remaining[:n] {
+				return false
+			}
+			want, offset = want[n:], offset+n
+		}
+		return true
+	}
+	last = 0
+	for _, loc := range slackAngleSpan.FindAllStringIndex(expected, -1) {
+		span := expected[loc[0]:loc[1]]
+		if !strings.Contains(span, "|") {
+			continue
+		}
+		if !consume(slackFoldText(expected[last:loc[0]])) {
+			return false
+		}
+		// Advance past consumed parts, but do not skip an empty stored span:
+		// it is still a distinct occurrence that cannot stand for this link.
+		for part < len(parts) && offset == len(parts[part].folded) && !(parts[part].span && offset == 0) {
+			part++
+			offset = 0
+		}
+		if part == len(parts) || offset != 0 || !parts[part].span || parts[part].raw != span {
+			return false
+		}
+		part++
+		last = loc[1]
+	}
+	if !consume(slackFoldText(expected[last:])) {
+		return false
+	}
+	for part < len(parts) && offset == len(parts[part].folded) {
+		part++
+		offset = 0
+	}
+	return part == len(parts)
 }
 
 // readBackPublishedMessage verifies a post through Slack's read API rather
@@ -328,13 +419,7 @@ func matchReadbackMessage(message slackReadbackMessage, target slackReadbackTarg
 		return readbackFailure(slackReadbackUnconfirmed, false,
 			"Slack readback missing reference marker for message %s", target.messageTS)
 	}
-	authored := make(map[string]bool)
-	for _, span := range slackAngleSpan.FindAllString(slackEntityUnescape.Replace(target.expectedText), -1) {
-		if strings.Contains(span, "|") {
-			authored[strings.ReplaceAll(span, "\x00", "\x00\x00")] = true
-		}
-	}
-	if slackNormalizeTextWithAuthoredLinks(message.Text, authored) != slackNormalizeTextWithAuthoredLinks(target.expectedText, authored) {
+	if !slackReadbackTextMatches(target.expectedText, message.Text) {
 		return readbackFailure(slackReadbackUnconfirmed, false,
 			"Slack readback content mismatch for message %s", target.messageTS)
 	}

@@ -993,3 +993,115 @@ func assertSlackReadbackQuery(t *testing.T, query url.Values, channel, messageTS
 		}
 	}
 }
+
+// Regression controls from the independent gp-9ywz3 destination review.
+func TestReadbackDestinationControls(t *testing.T) {
+	cases := []struct {
+		name, posted, stored string
+		accept               bool
+	}{
+		{"authored target only", "<https://example.com/approved|runbook>", "<https://example.com/other|runbook>", false},
+		{"authored scheme only", "<http://example.com|example.com>", "<https://example.com|example.com>", false},
+		{"authored target label identical", "<https://example.com|https://example.com>", "<https://example.com|https://example.com>", true},
+		{"authored repeated label target changed", "<https://example.com|https://example.com>", "<https://other.example|https://example.com>", false},
+		{"authored rendered as plain label", "<http://example.com|example.com>", "example.com", false},
+		{"authored label only", "<https://example.com|runbook>", "<https://example.com|guide>", false},
+		{"authored mail target only", "<mailto:ops@example.com|on call>", "<mailto:other@example.com|on call>", false},
+		{"authored query escaping", "<https://example.com/?a=1&b=2|guide>", "<https://example.com/?a=1&amp;b=2|guide>", true},
+		{"authored NUL identical", "<https://example.com|a\x00b>", "<https://example.com|a\x00b>", true},
+		{"authored NUL target changed", "<https://example.com|a\x00b>", "<https://other.example|a\x00b>", false},
+		{"NUL sentinel spoof", "<http://example.com|example.com>", "\x00\x01<http://example.com|example.com>\x00\x02", false},
+		{"plain http completion", "example.com/path", "<http://example.com/path|example.com/path>", true},
+		{"plain https completion", "example.com/path", "<https://example.com/path|example.com/path>", true},
+		{"typed https no label", "https://example.com/path", "<https://example.com/path>", true},
+		{"typed https repeated label", "https://example.com/path", "<https://example.com/path|https://example.com/path>", true},
+		{"typed http repeated label", "http://example.com/path", "<http://example.com/path|http://example.com/path>", true},
+		{"typed scheme change", "https://example.com/path", "<http://example.com/path|https://example.com/path>", false},
+		{"typed scheme removal", "https://example.com/path", "<http://example.com/path|example.com/path>", false},
+		{"autolink target only", "example.com/path", "<http://example.com/other|example.com/path>", false},
+		{"mail completion", "ops@example.com", "<mailto:ops@example.com|ops@example.com>", true},
+		{"mail target only", "ops@example.com", "<mailto:other@example.com|ops@example.com>", false},
+		{"query escaping", "example.com/?a=1&b=2", "<http://example.com/?a=1&amp;b=2|example.com/?a=1&amp;b=2>", true},
+		{"entity single pass", "docs &amp;lt;", "docs &lt;", false},
+		{"different text", "approved", "different", false},
+		{"truncated text", "approved text", "approved", false},
+		{"mixed different spans", "<https://docs.example|docs> example.com", "<https://docs.example|docs> <http://example.com|example.com>", true},
+		{"two authored spans exact", "<http://example.com|example.com> <http://example.com|example.com>", "<http://example.com|example.com> <http://example.com|example.com>", true},
+		{"two plain URLs", "example.com example.com", "<http://example.com|example.com> <http://example.com|example.com>", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: c.stored}, readbackTarget(c.posted))
+			if (err == nil) != c.accept {
+				t.Fatalf("accept=%t want=%t err=%v posted=%q stored=%q", err == nil, c.accept, err, c.posted, c.stored)
+			}
+			if err != nil && (slackReadbackFailureKind(err) != slackReadbackUnconfirmed || slackReadbackIsRetryable(err)) {
+				t.Fatalf("mismatch classification changed: %v", err)
+			}
+		})
+	}
+}
+
+func TestReadbackMixedAuthoredAndPlainLinks(t *testing.T) {
+	cases := []struct{ name, posted, stored string }{
+		{"authored then plain domain", "<http://example.com|example.com> example.com", "<http://example.com|example.com> <http://example.com|example.com>"},
+		{"plain then authored domain", "example.com <http://example.com|example.com>", "<http://example.com|example.com> <http://example.com|example.com>"},
+		{"authored then plain email", "<mailto:ops@example.com|ops@example.com> ops@example.com", "<mailto:ops@example.com|ops@example.com> <mailto:ops@example.com|ops@example.com>"},
+		{"authored then repeated typed https", "<https://example.com|https://example.com> https://example.com", "<https://example.com|https://example.com> <https://example.com|https://example.com>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: c.stored}, readbackTarget(c.posted))
+			if err != nil {
+				t.Fatalf("valid unchanged destinations rejected: %v; posted=%q stored=%q", err, c.posted, c.stored)
+			}
+		})
+	}
+}
+
+func TestReadbackAutoLinkSchemeKinds(t *testing.T) {
+	cases := []struct {
+		name, posted, stored string
+		accept               bool
+	}{
+		{"email to mailto positive", "ops@example.com", "<mailto:ops@example.com|ops@example.com>", true},
+		{"email to http changes destination kind", "ops@example.com", "<http://ops@example.com|ops@example.com>", false},
+		{"email to https changes destination kind", "ops@example.com", "<https://ops@example.com|ops@example.com>", false},
+		{"domain to http positive", "example.com", "<http://example.com|example.com>", true},
+		{"domain to mailto changes destination kind", "example.com", "<mailto:example.com|example.com>", false},
+		{"typed mailto repeated label positive", "mailto:ops@example.com", "<mailto:ops@example.com|mailto:ops@example.com>", true},
+		{"typed mailto doubled scheme", "mailto:ops@example.com", "<mailto:mailto:ops@example.com|mailto:ops@example.com>", false},
+		{"typed mailto to https changes destination kind", "mailto:ops@example.com", "<https://mailto:ops@example.com|mailto:ops@example.com>", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: c.stored}, readbackTarget(c.posted))
+			if (err == nil) != c.accept {
+				t.Errorf("accept=%t want=%t err=%v posted=%q stored=%q", err == nil, c.accept, err, c.posted, c.stored)
+			}
+		})
+	}
+}
+
+func TestReadbackMixedLinkOccurrenceIntegrity(t *testing.T) {
+	tests := []struct {
+		name, posted, stored string
+		accept               bool
+	}{
+		{"changed authored first", "<http://example.com|example.com> example.com", "<https://example.com|example.com> <http://example.com|example.com>", false},
+		{"changed authored second", "example.com <http://example.com|example.com>", "<http://example.com|example.com> <https://example.com|example.com>", false},
+		{"changed plain first", "example.com <http://example.com|example.com>", "<http://other.example|example.com> <http://example.com|example.com>", false},
+		{"consecutive authored and plain", "<http://example.com|example.com>example.com", "<http://example.com|example.com><http://example.com|example.com>", true},
+		{"changed adjacent authored", "example.com<http://example.com|example.com>", "<http://example.com|example.com><https://example.com|example.com>", false},
+		{"web query containing email", "example.com/?email=ops@example.com", "<http://example.com/?email=ops@example.com|example.com/?email=ops@example.com>", true},
+		{"unknown existing scheme not completed", "custom:thing", "<https://custom:thing|custom:thing>", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: test.stored}, readbackTarget(test.posted))
+			if (err == nil) != test.accept {
+				t.Fatalf("accept=%t want=%t err=%v", err == nil, test.accept, err)
+			}
+		})
+	}
+}
