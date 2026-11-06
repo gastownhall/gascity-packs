@@ -811,6 +811,25 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(agent=agent_name):
                 self.assertEqual(prompt.read_text(encoding="utf-8"), f"{include}\n")
 
+    def test_role_worker_reruns_failed_ci_jobs_only(self) -> None:
+        # Failed jobs only, no full rerun, no cancel-and-rerun.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        section = text[text.index("## CI Reruns") : text.index("## Invariants")]
+        for required in (
+            "`gh run rerun <run-id> --failed`",
+            "Never re-run all jobs",
+            "Never cancel a progressing run to rerun it",
+            "infrastructure that is still down, report\nit and wait",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, section)
+        # The pack is public and opt-in: no claim about a city's gh guard, no
+        # city-specific farm names (those live in the city overlay).
+        for city_specific in ("rbe-west", "rbe_ping", "refuses"):
+            with self.subTest(city_specific=city_specific):
+                self.assertNotIn(city_specific, section)
+
     def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")

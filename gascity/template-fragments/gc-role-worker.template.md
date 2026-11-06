@@ -97,6 +97,15 @@ gc runtime drain-ack
 
 Then exit. Never claim "drained" without acknowledgement.
 
+## CI Reruns
+
+When CI fails, rerun the failed jobs only: `gh run rerun <run-id> --failed`,
+or `--job <job-id>` for one failed job. Never re-run all jobs: no
+`gh run rerun <run-id>` without `--failed`, no `POST .../actions/runs/<id>/rerun`.
+Never cancel a progressing run to rerun it, and never push an empty commit
+to retrigger CI. When the failure is infrastructure that is still down, report
+it and wait instead of rerunning. Your city may add rules for its own CI.
+
 ## Invariants
 
 - `gc.kind=workflow` and `gc.kind=scope`: latch beads, not normal work.
