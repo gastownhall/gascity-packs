@@ -15,6 +15,27 @@ fail() {
     exit 1
 }
 
+# EXTERNAL PREREQUISITES. All three are undeclared ambient dependencies on CI:
+# the ubuntu-2404 image ships ripgrep and jq, and python3 is present on any dev
+# box, so none is installed or named in .github/workflows/ci.yml. Because they
+# are ambient, the failure mode is not "the dependency is missing everywhere" but
+# "this host has it and that one does not" — and the suite reported that as a
+# BEHAVIOURAL assertion. Measured on gk-aqw47: `rg: command not found` at line
+# 469 arrives at `|| fail "shutdown probe did not route the target work query to
+# its rig store"`, so a reader is sent to dispatch routing instead of to a
+# missing tool. (On that box `rg` existed only as a shell function, which bash
+# does not hand to a script's subshell — precisely the kind of host difference
+# this check exists to name.) The harness should report a missing tool as a
+# missing tool, so all three are checked up front and named here. Fails rather
+# than skips on purpose: CI has the tools, and a suite that silently skips there
+# is the gate-fails-green shape. Same form as test_deacon_dolt_health_guard.sh.
+for tool in rg jq python3; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "FAIL: $tool required (this suite asserts with real ripgrep, reads the ledger with real jq, and parses formulas with real python3); install it or run on an image that ships it" >&2
+        exit 1
+    }
+done
+
 extract_validator() {
     local output=$1
     python3 - "$POLECAT_FORMULA" "$output" <<'PY'
