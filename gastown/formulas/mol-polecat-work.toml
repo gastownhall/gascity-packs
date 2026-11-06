@@ -1189,6 +1189,15 @@ the caller, `metadata.existing_pr` is preserved for refinery validation. The
 refinery records canonical `pr_url` only after verifying the PR is open and
 matches the branch, base, and origin repository.
 
+**Do not hand-write a PR handoff.** `gc gastown pr-merge-reconcile record` is
+the one supported writer: it stores `pr_url` together with the retry marker
+the reconciler selects on, in one atomic update. A bead parked `blocked` with
+`pr_url` and the `pr_*` fields set by hand has no marker, so the reconciler
+never selects it, never looks it up, and never closes it. The reconciler now
+adopts a complete unmarked handoff if one already exists, but it cannot
+reconstruct a head SHA or branch nobody recorded — write the handoff through
+`record`, not by hand.
+
 **Every `gc bd update` call in this step uses `--append-notes`. Never use
 `--notes`.** The two flags do not differ in emphasis: `--notes` REPLACES the
 whole notes field, `--append-notes` appends to it with a newline separator. The
