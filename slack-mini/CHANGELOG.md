@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Channel lookup** (`GET /channels` on the internal listener): the full
+  channel name → id map from `conversations.list` (paginated, cached per
+  process for 5 minutes). Needs bot scopes `channels:read` + `groups:read`.
+- **User lookup by email** (`GET /user-id?email=` on the internal listener):
+  the Slack user id from `users.lookupByEmail`, cached per process for
+  5 minutes. Unknown emails answer HTTP 404 (`users_not_found`) so callers
+  can fall back to the plain address. Needs bot scope `users:read.email`.
+- **Outbound-only mode** (`SLACK_MINI_INBOUND=off`): no public listener, no
+  Socket Mode connection, no signing-secret or app-token checks, and no
+  extmsg self-registration — only the internal listener serves outbound
+  verbs and lookups. Default unchanged (any other value keeps inbound on).
+- **Unfurl control**: `unfurl_links` / `unfurl_media` pass through
+  `/post-message` and `gc slack-mini post-message --unfurl-links` /
+  `--unfurl-media` (each `true` or `false`) to `chat.postMessage`. Absent =
+  field omitted = Slack default.
 - **Socket Mode transport** (`adapter/socketmode.go`), an ingress-free
   alternative to the public Events API listener: the adapter opens an
   outbound WebSocket to Slack instead of receiving webhooks, so the pack
