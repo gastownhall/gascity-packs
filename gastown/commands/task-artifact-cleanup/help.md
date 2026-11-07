@@ -39,8 +39,17 @@ verified-merge reconciliation establish explicit `mr_merged` evidence.
 Non-terminal MR handoffs are marked `artifact_cleanup_state=pending`;
 verified-merge reconciliation calls the same command again. Successful or
 already-completed cleanup records `artifact_cleanup_state=complete`.
-With no bead ID, the command retries at most one closed artifact still marked
-`pending` whose result is exactly `merged`, `already_merged`, or `mr_merged`.
+With no bead ID, the command retries at most one closed artifact whose result
+is exactly `merged`, `already_merged`, or `mr_merged`. The queue is derived
+from the artifact path keys (`artifact_dir`, and the legacy `work_dir` the path
+read still honours) alongside `artifact_cleanup_state`, so a closed bead that
+never traversed the refinery rebase step — the only writer that arms the
+marker — is still visited instead of staying invisible forever. A row whose
+`artifact_cleanup_state` is `blocked`, `complete`, `removed`, or `authorized`
+is skipped. Widening the queue does not widen deletion: every selected row
+still has to pass the same closed-status, terminal-result, validator, clean
+worktree, exact-SHA, and live-remote-evidence gates above, and a row that
+cannot prove itself is stamped `blocked` and leaves the queue.
 Filtering terminal results before ordering the sweep prevents an older
 non-terminal record from starving a newer actionable cleanup. The refinery
 runs that bounded sweep before looking for new work.
