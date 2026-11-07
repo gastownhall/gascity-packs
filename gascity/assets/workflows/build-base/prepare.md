@@ -21,6 +21,7 @@ Launch inputs:
 - code_review_formula: {{code_review_formula}}
 - review_fix_formula: {{review_fix_formula}}
 - max_iterations: {{max_iterations}}
+- base_branch: {{base_branch}}
 - push: {{push}}
 - open_pr: {{open_pr}}
 

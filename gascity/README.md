@@ -144,6 +144,7 @@ launch or pin them in a rig's `formula_vars`:
 | `drain_policy` | `separate` | `separate` runs implementation beads in parallel worker sessions; `same-session` runs them serially in one shared session. |
 | `implementation_target` | `gc.implementation-worker` | The rig role that implements each work item. |
 | `push` / `open_pr` | `false` | Allow the publish stage to push and open a PR after all checks pass. |
+| `base_branch` | (empty) | Branch every implementation worktree is cut from and every PR targets. Empty means the remote default branch. An explicit base that origin lacks fails the run rather than falling back. |
 | `max_iterations` | `10` | Bound on implementation/review fix attempts. |
 
 When variables are not enough, every stage prompt can be replaced by dropping

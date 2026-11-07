@@ -5,3 +5,7 @@ Concrete methodology packs override this step only when their implementation
 items need different setup. Preserve the source-anchor metadata contract, pass
 through optional context `{{context_path}}`, and do not edit launcher-checkout
 files here.
+
+Cut the item worktree from the up-to-date base branch: base_branch
+`{{base_branch}}` when it is set, otherwise the remote default branch. Never
+base it on the launcher's local `HEAD`.
