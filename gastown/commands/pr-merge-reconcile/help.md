@@ -23,6 +23,15 @@ marker is retained to avoid creating a duplicate PR. An interrupted
 changed-head requeue is likewise adopted and released for revalidation. Work
 and artifact metadata are preserved.
 
+A bead that is `blocked`, carries `pr_url`, has no reconciliation marker, and
+has not already recorded a different merge result is also in the scan — a
+hand-written handoff, which the marker-only rotation would otherwise never look
+at, close, or quarantine. A complete one (PR URL/number, head SHA, repository,
+and the exact `polecat/<work>` branch and target) is adopted into the canonical
+record and validated like any other; one missing that evidence is quarantined
+and escalated instead of trusted on its URL. A failed scan fails the run: it
+never reports an empty queue it did not measure.
+
 Before any GitHub lookup, blocked records must be exactly
 `pull_request_pending`, or exactly `mr_merged` with the complete stored merge
 SHA, `pr_state=merged`, and merge timestamp produced before a verified close
