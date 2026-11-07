@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import validate_verdict_report
+from gc_agent_marker import with_agent_marker
 
 try:
     import yaml
@@ -151,7 +152,7 @@ def render_pr_review_comment(
     head_sha = marker_value("head_sha", head_sha)
     artifact = public_line("artifact_ref", artifact_ref or str(report_path))
     gate_text = "human approved" if human_approved else "not human approved"
-    return (
+    return with_agent_marker(
         f"<!-- gc:github-pr-review head_sha={head_sha} outcome={outcome} -->\n"
         "## GC PR Review\n\n"
         f"- outcome: {outcome}\n"
@@ -191,7 +192,7 @@ def render_triage_comment(
         lines.append(f"- note: {'; '.join(approval_notes)}")
     elif report.analysis_body:
         lines.extend(["", "## Analysis", "", demote_markdown_headings(report.analysis_body)])
-    return "\n".join(lines) + "\n"
+    return with_agent_marker("\n".join(lines) + "\n")
 
 
 def render_issue_fix_status(
@@ -216,7 +217,7 @@ def render_issue_fix_status(
         lines.append(f"- pr: {public_line('pr_url', pr_url)}")
     if artifact_ref:
         lines.append(f"- artifact: {public_line('artifact_ref', artifact_ref)}")
-    return "\n".join(lines) + "\n"
+    return with_agent_marker("\n".join(lines) + "\n")
 
 
 def required_string(data: dict[str, Any], key: str) -> str:
