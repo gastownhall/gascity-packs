@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-14T11:45:12.780029+00:00",
+  "request": {
+    "method": "conversations.replies",
+    "query": {
+      "channel": "C0BKF28CYUE",
+      "ts": "1787962615.345489",
+      "oldest": "1791976711.647429",
+      "latest": "1791976711.647429",
+      "inclusive": "true",
+      "limit": "2"
+    }
+  },
+  "response": {
+    "ok": true,
+    "error": null,
+    "message_count": 2,
+    "message_ts": [
+      "1787962615.345489",
+      "1791976711.647429"
+    ],
+    "has_more": false,
+    "target_found": true
+  },
+  "body": {
+    "characters": 3429,
+    "sha256": "77e9a59769a8baac15633844349566c211485988632baf9a1a0ff75f219ef92d",
+    "mail_auto_links": 2,
+    "old_normalization_equal": false,
+    "with_mailto_normalization_equal": true
+  },
+  "log_excerpt": [
+    "2026/10/14 06:18:31 slack readback failed: Slack readback content mismatch for message 1791976711.647429"
+  ]
+}

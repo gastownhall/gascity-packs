@@ -14,31 +14,15 @@ import (
 
 const slackReadbackResponseLimit = 1 << 20
 
-// Readback classifications. These are the adapter's own vocabulary and never
-// reach the wire on their own: slackReadbackReceiptFailure maps them onto gc's
-// closed PublishFailureKind set and carries the value here as receipt metadata
-// instead. See that function for why.
+// Readback classifications live in receipt metadata. gc's PublishFailureKind
+// is closed (gascity internal/extmsg/types.go); a read failure after Slack
+// accepted a post is not a publish failure of any kind.
 const (
-	slackReadbackUnconfirmed = "readback_unconfirmed"
-	slackReadbackUnavailable = "readback_unavailable"
-	slackReadbackAuth        = "readback_auth"
+	slackReadbackUnconfirmed   = "readback_unconfirmed"
+	slackReadbackUnavailable   = "readback_unavailable"
+	slackReadbackAuth          = "readback_auth"
+	receiptMetadataKeyReadback = "readback"
 )
-
-// gc's PublishFailureKind vocabulary, as far as this file needs it
-// (gascity internal/extmsg/types.go: unsupported|transient|rate_limited|
-// permanent|auth|not_found). Named here so the mapping below reads as a
-// mapping rather than as bare strings.
-const (
-	publishFailureTransient = "transient"
-	publishFailurePermanent = "permanent"
-	publishFailureAuth      = "auth"
-)
-
-// receiptMetadataKeyReadback carries the readback classification that
-// PublishFailureKind cannot express. Metadata is the only additive channel gc
-// actually forwards (see publishReceipt.Metadata), so it is where the detail
-// the closed enum would drop has to live.
-const receiptMetadataKeyReadback = "readback"
 
 // slackReadbackTiming bounds what the readback can cost the caller. gc gives
 // the adapter a 30s budget per call (gascity internal/extmsg/http_adapter.go),
@@ -125,39 +109,6 @@ func slackReadbackIsRetryable(err error) bool {
 	return ok && typed.retryable
 }
 
-// slackReadbackReceiptFailure maps a readback failure onto gc's
-// PublishFailureKind vocabulary and returns the adapter-level detail to record
-// under receiptMetadataKeyReadback.
-//
-// gc's PublishFailureKind is a closed, documented set. Because it is a string
-// typedef, an adapter-invented value deserializes silently and every consumer
-// written against the documented enum falls through its default arm — the
-// receipt would carry a kind no retry policy can read. So the wire gets a value
-// from gc's vocabulary and the metadata carries which readback outcome produced
-// it, which is strictly more than an unknown enum value would have told anyone:
-//
-//   - unconfirmed → permanent. The read path answered and the message was not
-//     there (or was different text). Re-posting the identical payload cannot
-//     change that; the truncation path is the clearest case, since an oversized
-//     body truncates the same way every time.
-//   - unavailable → transient. The read leg failed, so nothing is known about
-//     the message; retrying is the right response and is safe because
-//     handlePublish caches this receipt for re-verification rather than
-//     re-posting (see publishReceiptBlocksRepost).
-//   - auth      → auth. A token missing history scope is a configuration
-//     fault, and gc's vocabulary already has the word for it.
-func slackReadbackReceiptFailure(err error) (kind, detail string) {
-	detail = slackReadbackFailureKind(err)
-	switch detail {
-	case slackReadbackUnconfirmed:
-		return publishFailurePermanent, detail
-	case slackReadbackAuth:
-		return publishFailureAuth, detail
-	default:
-		return publishFailureTransient, detail
-	}
-}
-
 // slackEntityUnescape reverses the three entities Slack escapes when it stores
 // message text. Replacer scans the input once and does not re-scan what it
 // substitutes, so "&amp;lt;" unescapes to "&lt;" rather than collapsing two
@@ -167,6 +118,11 @@ var slackEntityUnescape = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&amp;",
 // slackAngleSpan matches a well-formed <...> span, which is the shape Slack
 // wraps an auto-linked URL in.
 var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
+
+// Slack's redundant labels are presentation; different destinations remain
+// distinct. Inline/fenced code is literal and must not interpret link markup.
+var slackReadbackCodeOrAngleSpan = regexp.MustCompile("(?s)```.*?```|`[^`\\n]*`|<[^<>]*>")
+var slackReadbackReference = regexp.MustCompile(`^(?:@[UW][A-Z0-9]+|#[CG][A-Z0-9]+|!subteam\^S[A-Z0-9]+)$`)
 
 // slackNormalizeText folds the transformations Slack applies between
 // chat.postMessage and conversations.history: it entity-escapes `&`, `<` and
@@ -181,7 +137,28 @@ var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
 // because Slack cannot tell an operator which of the two it stored either.
 // Divergence that survives the fold is still reported unconfirmed.
 func slackNormalizeText(text string) string {
-	return slackAngleSpan.ReplaceAllString(slackEntityUnescape.Replace(text), "$1")
+	return slackReadbackCodeOrAngleSpan.ReplaceAllStringFunc(slackEntityUnescape.Replace(text), func(span string) string {
+		if strings.HasPrefix(span, "`") {
+			return span
+		}
+		body := span[1 : len(span)-1]
+		target, label, labeled := strings.Cut(body, "|")
+		for _, scheme := range []string{"mailto:", "tel:"} {
+			if strings.HasPrefix(target, scheme) {
+				address := strings.TrimPrefix(target, scheme)
+				if address != "" && (!labeled || label == address) {
+					return address
+				}
+			}
+		}
+		if labeled && slackReadbackReference.MatchString(target) {
+			return target
+		}
+		if labeled && label == target && (strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://")) {
+			return target
+		}
+		return body
+	})
 }
 
 // readBackPublishedMessage verifies a post through Slack's read API rather
@@ -302,40 +279,43 @@ func matchReadbackMessage(message slackReadbackMessage, target slackReadbackTarg
 	return nil
 }
 
-// confirmPublishReceipt runs the readback for a write Slack accepted and
-// records what it proved on the receipt. It is the only place Delivered is set
-// for a successful post: chat.postMessage's own answer is not delivery
-// evidence, which is the premise this whole path exists to enforce.
+// publishReadbackConfirmed separates the read proof from Slack acceptance.
+// Successful reads omit metadata.readback for wire compatibility. An accepted
+// but unconfirmed receipt must remain eligible for re-verification, including
+// the once-only busy-reaction and own-thread bookkeeping on confirmation.
+func publishReadbackConfirmed(receipt publishReceipt) bool {
+	return receipt.Delivered && receipt.Metadata[receiptMetadataKeyReadback] == ""
+}
+
+// confirmPublishReceipt preserves Slack's accepted write even when its read
+// API is unavailable, has not indexed the message, or returns different text.
+// Callers must not retry a posted message as though Slack rejected it.
 func confirmPublishReceipt(token string, receipt *publishReceipt, target slackReadbackTarget) {
+	if receipt.MessageID == "" {
+		// ok without a ts is not evidence of acceptance.
+		receipt.Delivered = false
+		receipt.FailureKind = "transient"
+		return
+	}
+	receipt.Delivered = true
+	receipt.FailureKind = ""
 	err := readBackPublishedMessage(slackReadbackHTTPClient, token, target)
 	if err == nil {
-		receipt.Delivered = true
-		receipt.FailureKind = ""
-		// A re-verified receipt must not keep the detail from the read that
-		// failed, or a caller would see a delivered receipt still blaming the
-		// readback.
 		delete(receipt.Metadata, receiptMetadataKeyReadback)
 		return
 	}
 	log.Printf("slack readback failed: %v", err)
-	kind, detail := slackReadbackReceiptFailure(err)
-	receipt.Delivered = false
-	receipt.FailureKind = kind
 	if receipt.Metadata == nil {
 		receipt.Metadata = map[string]string{}
 	}
-	receipt.Metadata[receiptMetadataKeyReadback] = detail
+	receipt.Metadata[receiptMetadataKeyReadback] = slackReadbackFailureKind(err)
 }
 
 // replayPublishReceipt answers a retry on an idempotency key that already
 // produced a receipt, without posting to Slack again.
 //
-// A delivered receipt is returned as it stands. A posted-but-unconfirmed one —
-// a write Slack accepted whose read leg was unavailable — is re-verified
-// instead: the message very probably exists, so the one thing this must not do
-// is post it a second time. Only a readback that positively reports the message
-// absent releases the key, and then by returning ok=false so the caller's
-// normal post path runs.
+// A confirmed receipt is returned as it stands. Unconfirmed acceptance is
+// re-read, never re-posted, even when the read API returns an empty result.
 func replayPublishReceipt(
 	token string,
 	dedup *publishDedupCache,
@@ -346,17 +326,11 @@ func replayPublishReceipt(
 	if !ok {
 		return publishReceipt{}, false
 	}
-	if cached.Delivered {
+	if publishReadbackConfirmed(cached) {
 		return cached, true
 	}
 	target.messageTS = cached.MessageID
 	confirmPublishReceipt(token, &cached, target)
-	if !cached.Delivered && cached.Metadata[receiptMetadataKeyReadback] == slackReadbackUnconfirmed {
-		log.Printf("publish: dedup re-verify idem=%s ts=%s -> Slack does not have the message; releasing the key",
-			key, cached.MessageID)
-		dedup.Delete(key)
-		return publishReceipt{}, false
-	}
 	dedup.Put(key, cached)
 	return cached, true
 }

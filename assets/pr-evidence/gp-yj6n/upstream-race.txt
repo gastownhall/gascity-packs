@@ -1,0 +1,26 @@
+GC_NO_INSTALL=1; GC_TEMPLATE unset; ICU CGO flags as upstream-go.txt. Public synthetic incident shape.
+go -C slack-full/adapter test -race -json ./... -count=1 -run TestReadbackRedundantAutoLinks|TestAcceptedReplayMetadataIsIsolated|TestReadBackInvestorDigest|TestAcceptedPublishSurvivesReadbackFailure|TestPublishWithoutTimestamp|TestHandlePublishReplaysPosted|TestHandlePublishKeepsTheKey
+20 passed cases; 0 failures; 0 skipped; race detector clean; exit 0.
+
+--- PASS: TestReadbackRedundantAutoLinks/a@example.test<mailto:a@example.test|a@example.test> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/+15551234567<tel:+15551234567|+15551234567> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/https://example.test<https://example.test|https://example.test> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/<@U123><@U123|name> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/<#C123><#C123|channel> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/a@example.test<mailto:b@example.test|a@example.test> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/+15551234567<tel:+15557654321|+15551234567> (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks/`a@example.test``<mailto:a@example.test|a@example.test>` (0.00s)
+--- PASS: TestReadbackRedundantAutoLinks (0.00s)
+--- PASS: TestAcceptedReplayMetadataIsIsolated (0.01s)
+--- PASS: TestPublishWithoutTimestampRemainsFailure (0.00s)
+--- PASS: TestReadBackInvestorDigest (0.01s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/absent (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/mismatch (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/auth (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/unavailable (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/malformed (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure (0.00s)
+--- PASS: TestHandlePublishReplaysPostedButUnconfirmedReceipt (0.00s)
+--- PASS: TestHandlePublishKeepsTheKeyWhenSlackReadbackDoesNotFindTheMessage (0.00s)
+PASS
+ok  	github.com/sjarmak/gc-slack-adapter	1.399s

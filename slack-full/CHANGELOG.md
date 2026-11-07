@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Accepted text publishes retain delivery on readback failure** (gp-yj6n).
+  A Slack timestamp now means delivered, with readback uncertainty in metadata.
+  Keyed retries recheck the original timestamp without reposting; the three
+  text CLIs exit zero on an accepted timestamp and warn on stderr when readback
+  is unconfirmed. Their full JSON envelopes retain receipt metadata. Redundant
+  mailto/tel auto-link labels normalize without losing different destinations.
+  See [delivery evidence](docs/delivery-evidence.md).
+
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and
