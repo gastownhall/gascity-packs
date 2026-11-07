@@ -149,38 +149,51 @@ def contained_path(base, *parts):
     return None
 
 
-def find_transcript(work_dir, session_key, session_id=None, w0=None, w1=None):
+def find_transcript(work_dir, session_key, session_id=None, w0=None, w1=None, claimed=None):
     """Resolve a session's transcript.
 
     Preferred: work_dir + session_key -> <slug>/<key>.jsonl (1:1).
     Fallback (session beads often lack session_key): scan the slug dir for
     transcripts whose mtime falls in the session window and whose CONTENT
-    mentions the gc session id — sessions reference their own id in env/
-    claim output, making content-match the reliable join.
+    carries the session's own GC_SESSION_ID=<id> marker — that's how a
+    session identifies itself in its own env/claim output. A bare mention of
+    the id (e.g. a coordinator session listing or quoting it) is not enough:
+    it is not prefixed with GC_SESSION_ID=, so it never matches this needle
+    (GH gascity-packs#576).
+
+    claimed: a set of resolved transcript paths already assigned to another
+    session this collect run, by either method. Such a path is never reused
+    — a session whose only matching candidate is already claimed is left
+    unresolved rather than guessing (same issue).
     """
+    if claimed is None:
+        claimed = set()
     if not work_dir:
         return None, None
     base = os.path.expanduser("~/.claude/projects")
     for slug in slug_candidates(work_dir):
         if session_key and SAFE_SESSION_KEY.match(session_key):
             p = contained_path(base, slug, session_key + ".jsonl")
-            if p and os.path.exists(p):
+            if p and p not in claimed and os.path.exists(p):
                 return p, "session_key"
     if not (session_id and w0 and w1):
         return None, None
-    needle = session_id.encode()
+    needle = f"GC_SESSION_ID={session_id}".encode()
     for slug in slug_candidates(work_dir):
         d = os.path.join(base, slug)
         if not os.path.isdir(d):
             continue
         for p in glob.glob(os.path.join(d, "*.jsonl")):
-            m = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc)
+            rp = os.path.realpath(p)
+            if rp in claimed:
+                continue
+            m = datetime.fromtimestamp(os.path.getmtime(rp), tz=timezone.utc)
             if not (w0 <= m <= w1 + timedelta(hours=1)):
                 continue
             try:
-                with open(p, "rb") as f:
+                with open(rp, "rb") as f:
                     if needle in f.read():
-                        return p, "content-match"
+                        return rp, "content-match"
             except OSError:
                 continue
     return None, None
@@ -294,6 +307,7 @@ def main():
 
     # ---- transcripts ----
     found, missed, how = 0, [], {}
+    claimed_paths = set()
     for b in session_beads:
         if b.get("issue_type") != "session":
             continue
@@ -301,8 +315,10 @@ def main():
         s0 = parse_ts(b.get("created_at")) or w0
         s1 = parse_ts(b.get("closed_at")) or w1
         p, method = find_transcript(md.get("work_dir"), md.get("session_key"),
-                                    b["id"], s0 - timedelta(minutes=5), s1)
+                                    b["id"], s0 - timedelta(minutes=5), s1,
+                                    claimed=claimed_paths)
         if p:
+            claimed_paths.add(p)
             dst = os.path.join(out, "transcripts", f"{b['id']}.jsonl.gz")
             with open(p, "rb") as src, gzip.open(dst, "wb") as dz:
                 shutil.copyfileobj(src, dz)

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -113,6 +114,101 @@ class SlugTests(unittest.TestCase):
 
     def test_no_work_dir_resolves_no_transcript(self) -> None:
         self.assertEqual(collect.find_transcript("", "key"), (None, None))
+
+
+# GH gascity-packs#576: a bare mention of a session's id in another session's
+# transcript (a coordinator listing sessions, reading mail, or quoting ids) is
+# not that session's own transcript. Before this, "needle in f.read()" treated
+# a mention exactly like ownership, so several unrelated sessions could all be
+# attributed the one file that happened to name them all.
+class ContentMatchOwnershipTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = pathlib.Path(self.tmp.name)
+        self.work_dir = str(base / "rig")
+        slug = collect.project_slug(self.work_dir)
+        self.slug_dir = base / "home" / ".claude" / "projects" / slug
+        self.slug_dir.mkdir(parents=True)
+        self.prior_home = os.environ.get("HOME")
+        os.environ["HOME"] = str(base / "home")
+
+    def tearDown(self) -> None:
+        if self.prior_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.prior_home
+
+    def _write(self, name, text):
+        p = self.slug_dir / name
+        p.write_text(text, encoding="utf-8")
+        return str(p)
+
+    def test_a_bare_mention_of_the_id_does_not_match(self) -> None:
+        # The file names ga-sess-x's id, but is not its own transcript: no
+        # GC_SESSION_ID= marker for it anywhere in the file.
+        self._write("mentioner.jsonl", json.dumps(
+            {"type": "assistant", "text": "listing sessions: ga-sess-x, ga-sess-y"}) + "\n")
+        now = datetime.now(timezone.utc)
+        path, method = collect.find_transcript(
+            self.work_dir, None, "ga-sess-x",
+            now - timedelta(minutes=5), now + timedelta(minutes=5))
+        self.assertIsNone(path, "a bare mention must not resolve as this session's transcript")
+        self.assertIsNone(method)
+
+    def test_the_owning_markers_file_matches(self) -> None:
+        self._write("mentioner.jsonl", json.dumps(
+            {"type": "assistant", "text": "listing sessions: ga-sess-x, ga-sess-y"}) + "\n")
+        owner = self._write("owner.jsonl", json.dumps(
+            {"type": "tool_result", "text": "env: GC_SESSION_ID=ga-sess-x\n"}) + "\n")
+        now = datetime.now(timezone.utc)
+        path, method = collect.find_transcript(
+            self.work_dir, None, "ga-sess-x",
+            now - timedelta(minutes=5), now + timedelta(minutes=5))
+        self.assertEqual(path, os.path.realpath(owner))
+        self.assertEqual(method, "content-match")
+
+    def test_seven_sessions_merely_mentioned_in_one_file_all_stay_unresolved(self) -> None:
+        # The issue's own observed shape: one file mentions many session ids
+        # (e.g. because it coordinated or quoted them) but is not owned by
+        # any of them. None should resolve to it.
+        mentioned = [f"ga-sess-{i}" for i in range(7)]
+        self._write("mentioner.jsonl", json.dumps(
+            {"type": "assistant", "text": "sessions seen: " + ", ".join(mentioned)}) + "\n")
+        now = datetime.now(timezone.utc)
+        for sid in mentioned:
+            path, method = collect.find_transcript(
+                self.work_dir, None, sid,
+                now - timedelta(minutes=5), now + timedelta(minutes=5))
+            self.assertIsNone(path, f"{sid} must not resolve to the mentioning file")
+            self.assertIsNone(method)
+
+    def test_a_claimed_path_is_never_reused_for_another_session(self) -> None:
+        # Contrived but exercises the dedup directly: a file that (for
+        # whatever reason) carries two sessions' markers must still only ever
+        # be assigned to the one that claims it first.
+        owned = self._write("shared.jsonl", json.dumps(
+            {"text": "GC_SESSION_ID=ga-sess-a GC_SESSION_ID=ga-sess-b"}) + "\n")
+        now = datetime.now(timezone.utc)
+        w0, w1 = now - timedelta(minutes=5), now + timedelta(minutes=5)
+        claimed = set()
+        path_a, method_a = collect.find_transcript(
+            self.work_dir, None, "ga-sess-a", w0, w1, claimed=claimed)
+        self.assertEqual(path_a, os.path.realpath(owned))
+        self.assertEqual(method_a, "content-match")
+        claimed.add(path_a)
+        path_b, method_b = collect.find_transcript(
+            self.work_dir, None, "ga-sess-b", w0, w1, claimed=claimed)
+        self.assertIsNone(path_b, "a path already claimed must not be handed to a second session")
+        self.assertIsNone(method_b)
+
+    def test_session_key_path_already_claimed_is_also_skipped(self) -> None:
+        key = "0b9f4c2e-7a11-4d3b-9f21-2c8e5a6d1234"
+        p = self._write(key + ".jsonl", json.dumps({"type": "assistant"}) + "\n")
+        claimed = {os.path.realpath(p)}
+        path, method = collect.find_transcript(self.work_dir, key, claimed=claimed)
+        self.assertIsNone(path)
+        self.assertIsNone(method)
 
 
 # session_key comes from bead metadata, which the profiler does not author. Before this
