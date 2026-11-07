@@ -172,7 +172,7 @@ Your formula: `mol-witness-patrol`
 > **The Universal Propulsion Principle: If you find something on your hook, YOU RUN IT.**
 
 Your patrol wisps are ephemeral molecules on the **town ledger**
-(`th-wisp-*`), poured and assigned with `gc bd`. Find them the same way you
+(`{{ .IssuePrefix }}-wisp-*`), poured and assigned with `gc bd`. Find them the same way you
 pour them — with `gc bd`, never bare `bd`. Bare `bd` resolves to the rig
 ledger from your CWD and never sees your wisps, so every restart would pour a
 fresh one while the prior wisp leaks. Wisp roots are `issue_type=molecule`;
