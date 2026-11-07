@@ -45,6 +45,7 @@ class Runnable:
     description: str
     acceptance_criteria: list[str]
     parent_convoy: str
+    parent: str = ""
     dependencies: list[str] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
@@ -62,6 +63,7 @@ class Convoy:
     labels: list[str] = field(default_factory=list)
     metadata: dict[str, str] = field(default_factory=dict)
     target: str = ""
+    parent: str = ""
     convoy_keys: list[str] = field(default_factory=list)
     bead_keys: list[str] = field(default_factory=list)
 
@@ -72,6 +74,7 @@ class Plan:
     labels: list[str]
     convoys: list[Convoy]
     runnables: list[Runnable]
+    parent: str = ""
 
     @property
     def items(self) -> list[Convoy | Runnable]:
@@ -171,6 +174,15 @@ def metadata_map(value: Any, field_name: str) -> dict[str, str]:
     return out
 
 
+def optional_string(raw: dict[str, Any], field_name: str, item_name: str, default: str) -> str:
+    if field_name not in raw or raw[field_name] is None:
+        return default
+    value = raw[field_name]
+    if not isinstance(value, str) or not value.strip():
+        raise PlanError(f"{item_name}: {field_name} must be a non-empty string")
+    return value.strip()
+
+
 def required_string(raw: dict[str, Any], field_name: str, item_name: str) -> str:
     value = raw.get(field_name)
     if not isinstance(value, str) or not value.strip():
@@ -185,6 +197,7 @@ def parse_runnable(
     parent_convoy: str,
     inherited_labels: list[str],
     inherited_metadata: dict[str, str],
+    inherited_parent: str = "",
 ) -> Runnable:
     name = f"beads[{index}]"
     if not isinstance(raw, dict):
@@ -205,6 +218,7 @@ def parse_runnable(
         description=required_string(raw, "description", key),
         acceptance_criteria=string_list(raw.get("acceptance_criteria"), f"{key}.acceptance_criteria"),
         parent_convoy=parent_convoy,
+        parent=optional_string(raw, "parent", key, inherited_parent),
         dependencies=string_list(raw.get("dependencies"), f"{key}.dependencies"),
         labels=[*inherited_labels, *string_list(raw.get("labels"), f"{key}.labels")],
         files=string_list(raw.get("files"), f"{key}.files"),
@@ -222,6 +236,7 @@ def parse_convoy(
     inherited_labels: list[str],
     inherited_metadata: dict[str, str],
     inherited_target: str,
+    inherited_parent: str = "",
 ) -> None:
     name = f"convoys[{index}]"
     if not isinstance(raw, dict):
@@ -230,6 +245,7 @@ def parse_convoy(
     labels = [*inherited_labels, *string_list(raw.get("labels"), f"{key}.labels")]
     metadata = {**inherited_metadata, **metadata_map(raw.get("metadata"), f"{key}.metadata")}
     target = str(raw.get("target", inherited_target)).strip()
+    parent = optional_string(raw, "parent", key, inherited_parent)
     convoy = Convoy(
         key=key,
         title=required_string(raw, "title", key),
@@ -239,6 +255,7 @@ def parse_convoy(
         labels=labels,
         metadata=metadata,
         target=target,
+        parent=parent,
     )
     plan.convoys.append(convoy)
 
@@ -254,6 +271,7 @@ def parse_convoy(
             inherited_labels=labels,
             inherited_metadata=metadata,
             inherited_target=target,
+            inherited_parent=parent,
         )
         convoy.convoy_keys.append(child_key)
 
@@ -267,6 +285,7 @@ def parse_convoy(
             parent_convoy=key,
             inherited_labels=labels,
             inherited_metadata=metadata,
+            inherited_parent=parent,
         )
         plan.runnables.append(runnable)
         convoy.bead_keys.append(runnable.key)
@@ -284,7 +303,13 @@ def parse_plan(payload: dict[str, Any]) -> Plan:
         raise PlanError("convoys must be a list")
     if not isinstance(raw_beads, list):
         raise PlanError("beads must be a list")
-    plan = Plan(target_rig=target_rig, labels=string_list(payload.get("labels"), "labels"), convoys=[], runnables=[])
+    plan = Plan(
+        target_rig=target_rig,
+        labels=string_list(payload.get("labels"), "labels"),
+        convoys=[],
+        runnables=[],
+        parent=optional_string(payload, "parent", "payload", ""),
+    )
     for index, raw in enumerate(raw_convoys):
         parse_convoy(
             raw,
@@ -294,6 +319,7 @@ def parse_plan(payload: dict[str, Any]) -> Plan:
             inherited_labels=plan.labels,
             inherited_metadata={},
             inherited_target="",
+            inherited_parent=plan.parent,
         )
     for index, raw in enumerate(raw_beads):
         plan.runnables.append(
@@ -303,6 +329,7 @@ def parse_plan(payload: dict[str, Any]) -> Plan:
                 parent_convoy="",
                 inherited_labels=plan.labels,
                 inherited_metadata={},
+                inherited_parent=plan.parent,
             )
         )
     if not plan.runnables:
@@ -547,6 +574,8 @@ def create_runnable(runner: Runner, item: Runnable, mappings: dict[str, str]) ->
     ]
     if item.labels:
         args.extend(["--labels", ",".join(dict.fromkeys(item.labels))])
+    if item.parent:
+        args.extend(["--parent", item.parent])
     output = runner.run_bd(args)
     if runner.dry_run:
         return f"<{item.key}>"
@@ -659,6 +688,13 @@ def add_dependencies(runner: Runner, plan: Plan, mappings: dict[str, str]) -> No
         runner.run_bd(["dep", "add", issue_id, depends_on_id])
 
 
+def verify_parents(runner: Runner, plan: Plan, mappings: dict[str, str]) -> None:
+    """Fail before creating anything if a parent bead does not exist."""
+    pending = [item for item in plan.runnables if item.key not in mappings]
+    for parent in dict.fromkeys(item.parent for item in pending if item.parent):
+        runner.run_bd(["show", parent, "--json"])
+
+
 def create_from_tasks(path: Path, *, city: str | None, dry_run: bool, force: bool) -> int:
     markdown = path.read_text(encoding="utf-8")
     if front_matter_status(markdown) == "created" and not force:
@@ -671,6 +707,7 @@ def create_from_tasks(path: Path, *, city: str | None, dry_run: bool, force: boo
     if dry_run:
         print(f"# target rig: {plan.target_rig}")
     try:
+        verify_parents(runner, plan, mappings)
         for item in ordered_runnables:
             mappings.setdefault(item.key, create_runnable(runner, item, mappings))
         for convoy in reversed(plan.convoys):

@@ -156,6 +156,31 @@ updated_at: 2026-05-10T00:00:00Z
 Use nested `convoys[]` for arbitrary groupings. Do not emit `epics[]`.
 Dependencies use local keys; the script resolves them to bead IDs.
 
+When the plan breaks down an existing bead (a feature, epic, or story), set
+`parent: <bead-id>` at the top of the payload. Every runnable bead is then
+created as a child of that bead (`gc bd create --parent`), so the work stays
+grouped under it in beads and in trackers that mirror them (for example, as
+Linear sub-issues). A convoy or a single bead can set its own `parent` to
+override the inherited one. Convoys keep their `tracks` membership for
+dispatch; `parent` only sets the parent-child hierarchy. The script checks
+that every parent exists before it creates anything.
+
+```yaml
+target_rig: backend
+parent: be-a1b2c3
+labels:
+  - plan:example-slug
+convoys:
+  - key: implementation
+    title: Implement example
+    description: Group implementation work.
+    beads:
+      - key: schema
+        title: Add schema
+        type: task
+        description: Add the schema.
+```
+
 ## Formula Discovery
 
 When the user asks to run, schedule, start, review, triage, fix, build, or
