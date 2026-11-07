@@ -410,6 +410,7 @@ package docstring at the top of that file. Summary:
 
 | Var                            | Default                                          | Purpose                                                                         |
 | ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `SLACK_TRUSTED_BOT_APPS`       | *(unset: every bot message is dropped)*          | Slack app ids whose bot messages reach bound sessions like a human's. See [Trusted bot apps](#trusted-bot-apps-optional). |
 | `LISTEN_PUBLIC`                | `:8765`                                          | Public listener for `/slack/events` (bind `0.0.0.0` if fronted by a tunnel).    |
 | `LISTEN_INTERNAL`              | `127.0.0.1:8766`                                 | Loopback listener for `/publish`. Ignored under proxy_process mode.             |
 | `INTERNAL_CALLBACK_URL`        | `http://127.0.0.1:8766`                          | URL advertised to gc at self-registration. Ignored under proxy_process mode.    |
@@ -521,6 +522,44 @@ SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
 GC_CITY_NAME=<your-city-name>
 ```
+
+### Trusted bot apps (optional)
+
+The adapter drops every bot-authored message on the legacy (non
+company-room) path, so a bot that posts into a bound channel never
+reaches the session there. To let another app's bot through, list its app
+id in the env file and restart the adapter:
+
+```sh
+SLACK_TRUSTED_BOT_APPS=AXXXXXXXXXX   # comma- or space-separated
+```
+
+A listed app's message is posted inbound like a human's. The actor is the
+bot's user id, `display_name` is its `bot_profile.name`, and `is_bot` is
+true. Address prefixes, thread context and aliases work as for a human;
+launcher mode (`@@handle`) stays human-only.
+
+The check fails closed:
+
+- The message's `bot_id` is looked up with `bots.info` (bot token scope
+  `users:read`; cached for 10 minutes), and the app it belongs to must be
+  listed. The event's own `app_id` and `bot_profile.app_id` must agree
+  with it. A lookup that still fails after three tries drops the message.
+  If the bot token lacks `users:read`, every lookup fails: the adapter
+  says so at startup (`WARN: SLACK_TRUSTED_BOT_APPS is set but the bot
+  token lacks the users:read scope`). Add the scope and reinstall the app.
+- The adapter's own app is never admitted, even if listed. It is taken
+  from each event's `api_app_id` and `SLACK_APP_ID`. A listed id equal to
+  `SLACK_APP_ID` is skipped at startup with a warning, as is a malformed
+  one.
+- Edits, deletes, joins and other subtypes stay dropped. Only plain bot
+  posts and the `bot_message` subtype are considered.
+
+The log has `inbound: … bot="<name>" app=<app id>` for each admitted bot
+message. A dropped bot message is logged as `inbound dropped: bot message
+…` with the reason: once per app per hour for an unlisted app, and every
+time for a listed app's message that fails verification. The adapter's
+own posts are not logged.
 
 ### Cutover sequence
 
