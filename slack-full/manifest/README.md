@@ -70,8 +70,11 @@ Schema reference: <https://api.slack.com/reference/manifests>
   the adapter doesn't subscribe to `file_shared` separately.
 - **Concrete `slash_commands` entries** — see above; gc-cby.2 owns this.
 - **Interactivity / Socket Mode / Org Deploy / Token Rotation** —
-  disabled. The adapter uses HTTP event POSTs (Tailscale Funnel
-  terminates `/slack/events`); see `adapter/SETUP.md`.
+  disabled. The adapter uses HTTP event POSTs by default (Tailscale Funnel
+  terminates `/slack/events`); see `adapter/SETUP.md`. Socket Mode is an
+  opt-in you turn on after install: enable it in the app settings and give
+  the adapter an app-level token in `SLACK_APP_TOKEN` (README, "Socket
+  Mode").
 
 ## Install paths
 

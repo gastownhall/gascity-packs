@@ -410,6 +410,7 @@ package docstring at the top of that file. Summary:
 
 | Var                            | Default                                          | Purpose                                                                         |
 | ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `SLACK_APP_TOKEN`              | *(unset: HTTP-only inbound)*                     | App-level token (`xapp-…`, scope `connections:write`). Turns on Socket Mode inbound for the app that owns it; the public listener stays up as the fallback. See [Socket Mode](#socket-mode-optional). |
 | `LISTEN_PUBLIC`                | `:8765`                                          | Public listener for `/slack/events` (bind `0.0.0.0` if fronted by a tunnel).    |
 | `LISTEN_INTERNAL`              | `127.0.0.1:8766`                                 | Loopback listener for `/publish`. Ignored under proxy_process mode.             |
 | `INTERNAL_CALLBACK_URL`        | `http://127.0.0.1:8766`                          | URL advertised to gc at self-registration. Ignored under proxy_process mode.    |
@@ -520,7 +521,70 @@ SLACK_WORKSPACE_ID=T0XXXXXXXXX
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
 GC_CITY_NAME=<your-city-name>
+# Optional: Socket Mode inbound (see below)
+# SLACK_APP_TOKEN=xapp-...
 ```
+
+### Socket Mode (optional)
+
+By default Slack delivers events by POSTing to `/slack/events`, so the
+public listener has to be reachable from the internet (Tailscale Funnel,
+ngrok, a reverse proxy). With Socket Mode the adapter opens an outbound
+WebSocket to Slack instead, and events arrive over it. Nothing has to
+reach the host from outside.
+
+The app-level token is a secret like the bot token. It lives in the same
+place: add `SLACK_APP_TOKEN` to the env file above (`0600`), next to
+`SLACK_BOT_TOKEN`, and restart the adapter service so it picks it up.
+
+Slack app settings (<https://api.slack.com/apps> → your app):
+
+1. **Basic Information → App-Level Tokens → Generate Token and Scopes.**
+   Name it (e.g. `socket-mode`), add the `connections:write` scope, and
+   generate. Copy the `xapp-…` value into `SLACK_APP_TOKEN`.
+2. **Socket Mode → Enable Socket Mode.** While it is on, Slack stops
+   POSTing this app's events to the Request URL and sends them over the
+   socket. Event subscriptions themselves (**Event Subscriptions →
+   Subscribe to bot events**) are unchanged.
+3. Restart the adapter. Its log says `inbound=socket-mode+http` at
+   startup and `socket mode: connected` once the socket is up, and
+   `/healthz` reports `socket_mode=on` and `socket_mode_connections=1`.
+
+How it behaves:
+
+- **HTTP stays up as the fallback.** The public listener keeps running.
+  If you switch Socket Mode off in the app settings, delivery returns to
+  `/slack/events` with no adapter change. Registered agent apps
+  (company-rooms DMs and group DMs), the OAuth routes and
+  `/slack/interactions` keep using the listener, because an app-level
+  token covers only the app that owns it.
+- **One handler for both transports.** A socket envelope's payload is the
+  same JSON Slack would have POSTed. It goes through the same handler
+  `/slack/events` uses once it has checked the signature, so company-room
+  admission, DM gating, legacy fanout and aliases behave the same on both.
+  The HMAC check is skipped for socket envelopes only: the adapter opened
+  that connection itself with the app-level token, which is Slack's trust
+  model for Socket Mode. `/slack/events` still verifies every request.
+- **Acks follow the handler's answer.** An envelope is acked once the
+  handler has accepted it. A retryable answer (the company gateway's 503
+  while its startup barrier is closed or its receipt store is failing) is
+  left unacked, so Slack redelivers it, as it retries a 503 over HTTP.
+- **Duplicates are absorbed.** The same event can arrive twice: a
+  redelivery after a lost ack, or both transports while Socket Mode is
+  being switched on or off. The adapter dispatches each
+  (`api_app_id`, `event_id`) once and acks the copy. `/healthz` counts
+  them as `inbound_event_duplicates_total`.
+- **Reconnects are automatic.** Slack recycles socket connections
+  routinely. The adapter dials a replacement when warned, pings to detect
+  a dead connection, and backs off (1s up to 30s) when connects fail.
+- **Interactivity is not carried.** With Socket Mode on, Slack sends
+  block actions and slash commands over the socket too. slack-full
+  handles those only on `/slack/interactions`, so over the socket they
+  are acked and logged as dropped. The shipped manifest has
+  interactivity disabled. If you rely on slash commands, leave Socket Mode
+  off for that app.
+- **Run one adapter per app token.** Two adapters sharing a token compete
+  for Slack's connection limit and keep displacing each other.
 
 ### Cutover sequence
 
