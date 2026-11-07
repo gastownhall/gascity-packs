@@ -57,16 +57,16 @@ default = "autonomous"
 id = "requirements"
 title = "Superpowers brainstorm requirements"
 needs = ["prepare"]
-metadata = { "gc.run_target" = "superpowers.brainstorming", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "superpowers.brainstorming", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "superpowers-brainstorming"
-expand_vars = { brainstorming_approval_mode = "{{brainstorming_approval_mode}}" }
+expand_vars = { brainstorming_approval_mode = "{{brainstorming_approval_mode}}", failure_scope = "build-body" }
 description_file = "../assets/workflows/superpowers-build/requirements.md"
 
 [[steps]]
 id = "plan"
 title = "Superpowers write plan"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "superpowers.writing-plans", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "superpowers.writing-plans", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-build/plan.md"
 
 [steps.check]
@@ -81,15 +81,16 @@ timeout = "5m"
 id = "plan-review"
 title = "Superpowers plan review"
 needs = ["plan"]
-metadata = { "gc.run_target" = "superpowers.plan-reviewer" }
+metadata = { "gc.run_target" = "superpowers.plan-reviewer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "superpowers-plan-review"
+expand_vars = { failure_scope = "build-body" }
 description_file = "../assets/workflows/superpowers-build/plan-review.md"
 
 [[steps]]
 id = "decompose"
 title = "Create Superpowers implementation convoy"
 needs = ["plan-review"]
-metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path" }
+metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-build/decompose.md"
 
 [steps.check]
@@ -105,7 +106,7 @@ id = "implement"
 title = "Drain Superpowers development"
 needs = ["decompose"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-build/implement.md"
 
 [steps.drain]
@@ -118,7 +119,7 @@ id = "implement-same-session"
 title = "Drain Superpowers development in one shared session"
 needs = ["decompose"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-build/implement-same-session.md"
 
 [steps.drain]
@@ -134,16 +135,16 @@ single_lane = true
 id = "review"
 title = "Superpowers request code review"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "superpowers.code-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "superpowers.code-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "superpowers-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path", failure_scope = "build-body" }
 description_file = "../assets/workflows/superpowers-build/review.md"
 
 [[steps]]
 id = "finalize"
 title = "Superpowers finish branch"
 needs = ["review"]
-metadata = { "gc.run_target" = "superpowers.finisher", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+metadata = { "gc.run_target" = "superpowers.finisher", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-build/finalize.md"
 
 [steps.check]

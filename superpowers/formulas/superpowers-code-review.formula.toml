@@ -25,14 +25,14 @@ default = "agent"
 [[template]]
 id = "{target}.setup-superpowers-code-review"
 title = "Prepare Superpowers code review"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-code-review/{target}.setup-superpowers-code-review.md"
 
 [[template]]
 id = "{target}.superpowers-code-review-loop"
 title = "Run Superpowers code review until approved"
 needs = ["{target}.setup-superpowers-code-review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-code-review/{target}.superpowers-code-review-loop.md"
 
 [template.check]
@@ -67,7 +67,7 @@ description_file = "../assets/workflows/superpowers-code-review/{target}.process
 id = "{target}"
 title = "Finalize Superpowers code review"
 needs = ["{target}.superpowers-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/superpowers-code-review/{target}.md"
 
 [template.check]
@@ -77,3 +77,7 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""

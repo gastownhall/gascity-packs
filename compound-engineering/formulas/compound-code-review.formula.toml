@@ -28,21 +28,21 @@ default = "agent"
 [[template]]
 id = "{target}.setup-compound-code-review"
 title = "Prepare Compound Engineering code review"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-code-review/{target}.setup-compound-code-review.md"
 
 [[template]]
 id = "{target}.select-compound-reviewers"
 title = "Select Compound Engineering conditional reviewers"
 needs = ["{target}.setup-compound-code-review"]
-metadata = { "gc.run_target" = "compound-engineering.ce-code-review-selector" }
+metadata = { "gc.run_target" = "compound-engineering.ce-code-review-selector", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-code-review/{target}.select-compound-reviewers.md"
 
 [[template]]
 id = "{target}.compound-code-review-loop"
 title = "Run Compound Engineering code review lanes until approved"
 needs = ["{target}.select-compound-reviewers"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-code-review/{target}.compound-code-review-loop.md"
 
 [template.check]
@@ -262,7 +262,7 @@ description_file = "../assets/workflows/compound-code-review/{target}.apply-revi
 id = "{target}"
 title = "Finalize approved Compound Engineering code review"
 needs = ["{target}.compound-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-code-review/{target}.md"
 
 [template.check]
@@ -272,3 +272,7 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""
