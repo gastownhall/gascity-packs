@@ -251,6 +251,11 @@ class BuildArtifactValidatorTests(unittest.TestCase):
             "Artifacts",
             "Remaining Risks",
         ],
+        "gc.build.plan-review.v1": [
+            "Verdict",
+            "Findings",
+            "Verification",
+        ],
     }
     SCHEMA_STATUS = {
         "gc.build.requirements.v1": "approved",
@@ -259,6 +264,10 @@ class BuildArtifactValidatorTests(unittest.TestCase):
         "gc.build.implementation-summary.v1": "approved",
         "gc.build.review.v1": "approved",
         "gc.build.final-report.v1": "approved",
+        "gc.build.plan-review.v1": "approved",
+    }
+    SCHEMA_EXTRA_FRONT_MATTER = {
+        "gc.build.plan-review.v1": "verdict: approved\n",
     }
     SCHEMA_FILES = {
         "gc.build.requirements.v1": "requirements.v1.yaml",
@@ -267,6 +276,7 @@ class BuildArtifactValidatorTests(unittest.TestCase):
         "gc.build.implementation-summary.v1": "implementation-summary.v1.yaml",
         "gc.build.review.v1": "review.v1.yaml",
         "gc.build.final-report.v1": "final-report.v1.yaml",
+        "gc.build.plan-review.v1": "plan-review.v1.yaml",
     }
     SCHEMA_ROOT = pathlib.Path(__file__).resolve().parents[1] / "schemas" / "build"
     VALIDATOR_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "assets" / "scripts" / "validate_build_artifact.py"
@@ -297,7 +307,7 @@ producer:
   stage: requirements
   attempt: 1
 status: {self.SCHEMA_STATUS[schema]}
-trace:
+{self.SCHEMA_EXTRA_FRONT_MATTER.get(schema, "")}trace:
   upstream:
     - path: requirements.after.md
       hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -322,6 +332,33 @@ trace:
 
                 self.assertEqual(artifact.schema_id, schema)
                 self.assertEqual([entry["id"] for entry in artifact.coverage], ["GC-METH-001", "GC-METH-012"])
+
+    def test_plan_review_artifact_requires_a_verdict_from_the_closed_vocabulary(self) -> None:
+        schema = "gc.build.plan-review.v1"
+        approved = self.valid_artifact(schema)
+
+        artifact = build_artifact_validator.validate_artifact_text(approved, expected_schema=schema)
+        self.assertEqual(artifact.front_matter["verdict"], "approved")
+
+        for blocking in ("proceed-with-fixes", "changes_required", "Blocked"):
+            with self.subTest(verdict=blocking):
+                text = approved.replace("verdict: approved\n", f"verdict: {blocking}\n")
+                blocked = build_artifact_validator.validate_artifact_text(text, expected_schema=schema)
+                self.assertEqual(blocked.front_matter["verdict"], blocking)
+
+        with self.assertRaisesRegex(build_artifact_validator.ValidationError, "missing required fields.*verdict"):
+            build_artifact_validator.validate_artifact_text(
+                approved.replace("verdict: approved\n", ""), expected_schema=schema
+            )
+        with self.assertRaisesRegex(build_artifact_validator.ValidationError, "verdict must be one of"):
+            build_artifact_validator.validate_artifact_text(
+                approved.replace("verdict: approved\n", "verdict: ship-it\n"), expected_schema=schema
+            )
+
+    def test_schemas_without_allowed_verdicts_ignore_a_verdict_key(self) -> None:
+        text = self.valid_artifact("gc.build.review.v1").replace("status: approved\n", "status: approved\nverdict: whatever\n")
+        artifact = build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.review.v1")
+        self.assertEqual(artifact.schema_id, "gc.build.review.v1")
 
     def test_build_artifact_rejects_missing_front_matter_and_wrong_schema(self) -> None:
         with self.assertRaisesRegex(build_artifact_validator.ValidationError, "front matter"):
