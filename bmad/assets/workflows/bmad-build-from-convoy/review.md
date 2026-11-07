@@ -1,0 +1,16 @@
+Use the assigned BMAD review synthesis skill over the whole convoy's
+implementation. Review lane delegation is defined by the formula graph; this
+stage records blind-hunter, edge-case, acceptance-auditor, gap-analysis,
+synthesis, fix requirements, and artifact paths.
+
+Required review fixes are handled by the single apply-review-findings lane with
+implementation target {{implementation_target}} recorded on the artifact.
+
+Do not invoke provider-native subagents or upstream BMAD runtime commands.
+
+The terminal code-review step writes the review report to the resolved review
+report path and records that path on the workflow root bead as
+`gc.build.review_report_path` before closing. Use
+`gc bd update "<workflow-root-id>" --set-metadata "gc.build.review_report_path=<absolute path>"`.
+
+Artifact validation: this stage is gated by the pack-owned `build-artifact-valid.sh` check, which validates the artifact recorded at `gc.build.review_report_path` against schema `gc.build.review.v1`. On repair attempts (`gc.attempt` greater than 1), read the validator errors from `gc.attempt_log` on the validation loop control bead (the dependent of this step bead) and repair the artifact in place instead of rewriting it. Two bounded repair attempts follow the first failure; exhausting them closes this stage with `gc.outcome=fail` and machine-readable validation errors that block downstream stages. Never ask questions in headless mode; record unresolved ambiguity inside the artifact.
