@@ -291,6 +291,11 @@ asset tests fail if a formula exists without a requirements row.
 
 ## Build Flow
 
+Workspace lifecycle record contracts and their read-only JSON validator are
+documented in [`schemas/workspace/README.md`](schemas/workspace/README.md). The
+contracts include a closed source inventory and acceptance oracles for later
+workflow migration. Current formulas retain their existing lifecycle behavior.
+
 `build-base` is the virtual contract. `build-basic` is the concrete Gas City
 implementation that demonstrates the override surface without vendoring a
 third-party methodology.
