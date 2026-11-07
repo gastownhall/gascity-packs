@@ -191,7 +191,15 @@ def assert_clean_worker_render(prompt: str, persona_heading: str) -> None:
     assert "CLAIMED_CONTINUATION_GROUP" in prompt
     assert 'gc bd update "$CLAIMED_BEAD_ID"' in prompt
     assert "An empty continuation group is a hard session boundary" in prompt
-    assert "never clear by retrying" in prompt
+    bead_errors = " ".join(
+        prompt[prompt.index("## Bead Errors") : prompt.index("## Continue")].split()
+    )
+    assert "Retry the same command at most twice" in bead_errors
+    assert "close it, then go to Continue as after any close" in bead_errors
+    assert (
+        "If `gc gc claim` failed, or `CLAIMED_BEAD_ID` cannot be updated or closed, "
+        "report the exact command and its error once and stop. Do not drain"
+    ) in bead_errors
     assert "Never merge a pull request yourself unless the bead explicitly" in prompt
     assert "`gc.failure_class=pr_handoff_failed`" in prompt
     assert "gc mail send mayor" not in prompt
