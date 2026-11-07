@@ -1399,6 +1399,94 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
        "$source_sha"$'\t'"refs/heads/polecat/ac-mr" ]] ||
         fail "verified MR cleanup removed its remote recovery source ref"
 
+    # already_merged handoffs lose their remote branch the same way mr_merged
+    # does: a redundant close (content landed via a sibling PR) deletes
+    # polecat/<bead>, while GitHub keeps the head immutably at
+    # refs/pull/<n>/head. That stand-in is accepted only at the exact artifact
+    # source SHA and must survive cleanup as recovery evidence.
+    artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-am"
+    git -C "$rig" worktree add -q --detach "$artifact" origin/main
+    printf 'redundant close source\n' >"$artifact/redundant-source"
+    git -C "$artifact" add redundant-source
+    git -C "$artifact" commit -qm "redundant close source"
+    source_sha=$(git -C "$artifact" rev-parse HEAD)
+    target_sha=$(git -C "$rig" rev-parse refs/remotes/origin/main)
+    git -C "$rig" push -qu origin "$source_sha:refs/heads/polecat/ac-am"
+    git -C "$rig" push -q origin "$source_sha:refs/pull/12/head"
+    git -C "$rig" push -q origin --delete polecat/ac-am
+    write_cleanup_bead_json \
+        "$bead_json" ac-am closed already_merged \
+        "$source_sha" "$artifact" "" polecat/ac-am main "$target_sha"
+    jq '.[0].metadata.pr_number = "12"' "$bead_json" >"$bead_json.next"
+    mv "$bead_json.next" "$bead_json"
+    : >"$calls"
+    GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
+        GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+        PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-am
+    [[ ! -e "$artifact" ]] ||
+        fail "already_merged cleanup rejected the deleted-branch pull-head stand-in"
+    grep -qF -- '--unset-metadata artifact_dir --unset-metadata work_dir --set-metadata artifact_cleanup_state=complete' "$calls" ||
+        fail "already_merged cleanup did not record completion"
+    remote_record=$(git -C "$rig" ls-remote --exit-code origin \
+        refs/pull/12/head)
+    [[ "$remote_record" == "$source_sha"$'\t'"refs/pull/12/head" ]] ||
+        fail "already_merged cleanup disturbed its pull-head recovery evidence"
+
+    # With the branch deleted and no pull-head ref either, nothing on the
+    # remote proves the source: fail closed and stay retryable.
+    artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-am-no-ref"
+    git -C "$rig" worktree add -q --detach "$artifact" origin/main
+    source_sha=$(git -C "$artifact" rev-parse HEAD)
+    git -C "$rig" push -qu origin \
+        "$source_sha:refs/heads/polecat/ac-am-no-ref"
+    target_sha=$(git -C "$rig" rev-parse refs/remotes/origin/main)
+    git -C "$rig" push -q origin --delete polecat/ac-am-no-ref
+    write_cleanup_bead_json \
+        "$bead_json" ac-am-no-ref closed already_merged \
+        "$source_sha" "$artifact" "" polecat/ac-am-no-ref main "$target_sha"
+    jq '.[0].metadata.pr_number = "13"' "$bead_json" >"$bead_json.next"
+    mv "$bead_json.next" "$bead_json"
+    : >"$calls"
+    set +e
+    GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
+        GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+        PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-am-no-ref
+    status=$?
+    set -e
+    [[ "$status" -ne 0 && -d "$artifact" ]] ||
+        fail "already_merged cleanup removed an artifact without remote source evidence"
+    grep -qF 'artifact_cleanup_state=pending' "$calls" ||
+        fail "already_merged cleanup did not stay retryable without source evidence"
+
+    # A pull-head ref at any other SHA is not the artifact source.
+    artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-am-wrong"
+    git -C "$rig" worktree add -q --detach "$artifact" origin/main
+    printf 'mismatched stand-in source\n' >"$artifact/mismatch-source"
+    git -C "$artifact" add mismatch-source
+    git -C "$artifact" commit -qm "mismatched stand-in source"
+    source_sha=$(git -C "$artifact" rev-parse HEAD)
+    target_sha=$(git -C "$rig" rev-parse refs/remotes/origin/main)
+    git -C "$rig" push -qu origin "$source_sha:refs/heads/polecat/ac-am-wrong"
+    git -C "$rig" push -q origin \
+        "refs/remotes/origin/main:refs/pull/14/head"
+    git -C "$rig" push -q origin --delete polecat/ac-am-wrong
+    write_cleanup_bead_json \
+        "$bead_json" ac-am-wrong closed already_merged \
+        "$source_sha" "$artifact" "" polecat/ac-am-wrong main "$target_sha"
+    jq '.[0].metadata.pr_number = "14"' "$bead_json" >"$bead_json.next"
+    mv "$bead_json.next" "$bead_json"
+    : >"$calls"
+    set +e
+    GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
+        GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+        PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-am-wrong
+    status=$?
+    set -e
+    [[ "$status" -ne 0 && -d "$artifact" ]] ||
+        fail "already_merged cleanup accepted a mismatched pull-head stand-in"
+    grep -qF 'artifact_cleanup_state=blocked' "$calls" ||
+        fail "already_merged cleanup did not block on a mismatched stand-in"
+
     # Even valid remote evidence is stale if the bead changes between the
     # initial decision and the final pre-removal read.
     artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-race"
