@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import tomllib
 import unittest
 
 PACK_ROOT = pathlib.Path(__file__).resolve().parents[1]
+JQ_DIR = pathlib.Path(shutil.which("jq")).parent
 FORMULA = PACK_ROOT / "formulas" / "mol-pr-review.formula.toml"
 
 # Real sizes, measured 2026-08-22 on gastownhall/gascity:
@@ -260,52 +262,87 @@ class CommandPreflightTests(unittest.TestCase):
     the command has to refuse before `gc sling` ever starts an agent.
     """
 
-    def _run(self, args, pr_lines=248, gh_fails=False):
+    def _run(self, args, pr_lines=248, gh_fails=False, rig_resolves=True):
         with tempfile.TemporaryDirectory() as td:
             tmp = pathlib.Path(td)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
+            rig_dir = tmp / "rig"
+            rig_dir.mkdir()
+            self.rig_dir = rig_dir
             (bin_dir / "gh").write_text(
                 "#!/usr/bin/env bash\n"
-                f'echo "$*" >> "{tmp}/gh.log"\n'
+                # PWD, not just the invocation, is the point of this stub:
+                # GH#522 is gh silently resolving the wrong repository from
+                # cwd, which an args-only log can't catch.
+                f'echo "pwd=$PWD $*" >> "{tmp}/gh.log"\n'
                 + ("exit 4\n" if gh_fails else f'echo "{pr_lines} 4"\n'))
+            # `gc rig list --city ... --json` resolves $RIG ("r") to its
+            # checkout, which run.sh then cd's into before calling gh
+            # (GH#522: gh resolves its repo from cwd, not from --rig/$RIG).
+            rigs_json = f'[{{"name":"r","path":"{rig_dir}"}}]' if rig_resolves else "[]"
             (bin_dir / "gc").write_text(
-                "#!/usr/bin/env bash\n" + f'echo "$*" >> "{tmp}/gc.log"\n')
+                "#!/usr/bin/env bash\n"
+                f'echo "$*" >> "{tmp}/gc.log"\n'
+                'case "$*" in\n'
+                '  "rig list "*)\n'
+                f'    echo \'{{"rigs":{rigs_json}}}\'\n'
+                "    ;;\n"
+                "esac\n")
             for f in ("gh", "gc"):
                 (bin_dir / f).chmod(0o755)
             proc = subprocess.run(
                 ["sh", str(RUN_SH)] + args, capture_output=True, text=True,
-                env={"PATH": f"{bin_dir}:/usr/bin:/bin",
-                     "GC_PACK_DIR": str(PACK_ROOT), "GC_RIG": "r"}, cwd=td)
-            log = tmp / "gc.log"
-            return proc, log.read_text() if log.exists() else ""
+                env={"PATH": f"{bin_dir}:{JQ_DIR}:/usr/bin:/bin",
+                     "GC_PACK_DIR": str(PACK_ROOT), "GC_RIG": "r",
+                     "GC_CITY_PATH": str(tmp)}, cwd=td)
+            gclog = tmp / "gc.log"
+            ghlog = tmp / "gh.log"
+            return (proc, gclog.read_text() if gclog.exists() else "",
+                    ghlog.read_text() if ghlog.exists() else "")
 
     def test_an_oversized_pr_is_refused_before_the_sling(self):
-        proc, gclog = self._run(["123"], pr_lines=113042)
+        proc, gclog, _ = self._run(["123"], pr_lines=113042)
         self.assertEqual(proc.returncode, 3,
                          "a budget refusal needs its own non-retryable code")
         self.assertNotIn("sling", gclog, "an agent was started anyway")
         self.assertIn("no model", proc.stderr)
 
     def test_a_typical_pr_is_slung(self):
-        proc, gclog = self._run(["123"])
+        proc, gclog, _ = self._run(["123"])
         self.assertIn("sling", gclog)
         self.assertIn("max_diff_lines=", gclog,
                       "the limit must reach the formula too")
 
     def test_an_unreadable_size_refuses_rather_than_slinging(self):
-        proc, gclog = self._run(["123"], gh_fails=True)
+        proc, gclog, _ = self._run(["123"], gh_fails=True)
         self.assertEqual(proc.returncode, 1)
         self.assertNotIn("sling", gclog)
 
     def test_a_malformed_limit_refuses_rather_than_failing_open(self):
-        proc, gclog = self._run(["123", "--max-diff-lines", "abc"])
+        proc, gclog, _ = self._run(["123", "--max-diff-lines", "abc"])
         self.assertEqual(proc.returncode, 2)
         self.assertNotIn("sling", gclog)
 
     def test_zero_disables_the_preflight_deliberately(self):
-        proc, gclog = self._run(["123", "--max-diff-lines=0"], pr_lines=113042)
+        proc, gclog, _ = self._run(["123", "--max-diff-lines=0"], pr_lines=113042)
         self.assertIn("sling", gclog)
+
+    def test_the_pr_size_check_runs_from_the_rig_not_cwd(self):
+        """GH#522: gh resolves its repo from cwd, not --rig/$RIG.
+
+        From the city directory (this test's cwd), an unpatched preflight
+        calls `gh pr view` from there and gh finds no repository at all.
+        """
+        _, _, ghlog = self._run(["123"])
+        self.assertIn(f"pwd={self.rig_dir}", ghlog,
+                     "gh pr view must run from the resolved rig checkout")
+
+    def test_an_unresolvable_rig_refuses_rather_than_reading_the_wrong_repo(self):
+        proc, gclog, ghlog = self._run(["123"], rig_resolves=False)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(ghlog, "", "gh must never run against an unresolved rig")
+        self.assertNotIn("sling", gclog)
 
     def test_the_command_default_matches_the_formula_default(self):
         """Two copies of a number drift; this is what notices."""
