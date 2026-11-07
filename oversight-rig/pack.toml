@@ -63,9 +63,10 @@
 # its escalation machinery, not a slack bridge.
 #
 # Optional: the project-lead's rig-scoped dispatch examples use convoy
-# formulas (mol-decompose, mol-pr-from-issue) supplied by a workflow/formula
-# pack (e.g. gastown). The oversight role works without them — it just won't
-# offer those particular dispatch shortcuts.
+# formulas — a methodology pack's planning formula (e.g. compound-planning),
+# gascity's build-from-decompose, and pr-pipeline's mol-pr-from-issue. The
+# oversight role works without them — it just won't offer those particular
+# dispatch shortcuts.
 #
 # To install in an existing city:
 #   1. Add the pack to city.toml (and stamp a project-lead per rig).
