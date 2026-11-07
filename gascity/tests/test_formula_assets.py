@@ -830,6 +830,76 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(city_specific=city_specific):
                 self.assertNotIn(city_specific, section)
 
+    def test_role_worker_stops_on_non_clearing_bead_errors(self) -> None:
+        # A claim whose bead read can never succeed (wrong store, missing bead)
+        # must end in one report or one fail-close, not an unbounded retry
+        # loop: ga-b1jo91 looped ~23h on a dead store that a worktree `bd`
+        # resolved to.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        raw = text[text.index("## Bead Errors") : text.index("## Continue")]
+        section = " ".join(raw.split())
+
+        for required in (
+            "never plain `bd`",
+            "`GC_CITY_PATH` selects the city",
+            "Do not `cd` elsewhere",
+            "never re-run a failed claim",
+            "background retry loop",
+            "schedule a wakeup",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, section)
+
+        blocks = [" ".join(block.split()) for block in re.split(r"\n\n(?:- )?|\n- ", raw)]
+        non_clearing = next(b for b in blocks if b.startswith("Non-clearing ("))
+        transient = next(b for b in blocks if b.startswith("Transient ("))
+        fail_close = next(b for b in blocks if b.startswith("Fail-close:"))
+        unclosed = next(b for b in blocks if b.startswith("If `gc gc claim` failed"))
+
+        # The prompt's classes map 1:1 onto the controller's failure classes
+        # (internal/dispatch/retry.go): non-clearing is terminal `hard`; an
+        # exhausted transient error is `transient`, so the controller
+        # re-dispatches it within the formula's bounded max_attempts.
+        for hard_error in ("bead not found", "city or store not found", "permission refused"):
+            with self.subTest(non_clearing=hard_error):
+                self.assertIn(hard_error, non_clearing)
+                self.assertNotIn(hard_error, transient)
+        self.assertIn("do not retry", non_clearing)
+        self.assertIn("`gc.failure_class=hard`", non_clearing)
+        self.assertNotIn("transient", non_clearing)
+
+        for transient_error in (
+            "store unreachable",
+            "circuit breaker open",
+            "timeout",
+            "lock contention",
+            "connection reset",
+        ):
+            with self.subTest(transient=transient_error):
+                self.assertIn(transient_error, transient)
+                self.assertNotIn(transient_error, non_clearing)
+        self.assertIn("at most twice", transient)
+        self.assertIn("`gc.failure_class=transient`", transient)
+        self.assertNotIn("hard", transient)
+        self.assertNotIn("non-clearing", transient.lower())
+
+        # After a fail-close the bead is resolved: continue normally (drain on
+        # an empty continuation group, claim the next member otherwise). Only
+        # a failed claim or an unwritable bead stops without draining, since
+        # that claim may hold an assignment the controller must see.
+        self.assertIn("`gc.failure_reason`", fail_close)
+        self.assertIn("go to Continue", fail_close)
+        self.assertNotIn("drain", fail_close.lower())
+        self.assertNotIn("stop", fail_close.lower())
+        self.assertIn("cannot be updated or closed", unclosed)
+        self.assertIn("Do not drain", unclosed)
+        self.assertEqual(section.count("Do not drain"), 1)
+
+        # Role-neutral and city-neutral: the session env names the city.
+        self.assertNotRegex(section, r"--city\s+/")
+        self.assertNotRegex(section, r"/data/|/home/")
+
     def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")

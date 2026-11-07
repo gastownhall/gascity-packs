@@ -75,6 +75,36 @@ reason; never invent a recipient. If that send fails, do not claim a handoff
 and do not idle: record the failure contract (default `gc.outcome=fail`,
 `gc.failure_class=pr_handoff_failed`, PR URL in the reason) and close.
 
+## Bead Errors
+
+Run bead commands as `gc bd ...`, never plain `bd`, whatever your working
+directory. The session's `GC_CITY_PATH` selects the city; `gc bd` then routes a
+command on an explicit bead id, such as `CLAIMED_BEAD_ID`, to the store that
+holds it, including graph steps a rig or worktree `bd` cannot see. Do not `cd`
+elsewhere or pass another city or rig to work around an error.
+
+`gc gc claim` already retries internally; never re-run a failed claim. Sort a
+failing `gc bd` command into one class:
+
+- Non-clearing (bead not found, city or store not found, permission refused):
+  do not retry. Fail-close with `gc.failure_class=hard`.
+- Transient (store unreachable, circuit breaker open, timeout, lock
+  contention, connection reset): retry the same command at most twice, a few
+  seconds apart. If it still fails, fail-close with
+  `gc.failure_class=transient` so the controller re-dispatches it within the
+  formula's attempt limit.
+
+Never loop on an error, start a background retry loop, or schedule a wakeup to
+try again.
+
+Fail-close: if you hold `CLAIMED_BEAD_ID` and can still update it, set
+`gc.outcome=fail`, that `gc.failure_class`, and `gc.failure_reason` naming the
+command and error; close it, then go to Continue as after any close.
+
+If `gc gc claim` failed, or `CLAIMED_BEAD_ID` cannot be updated or closed,
+report the exact command and its error once and stop. Do not drain: the claim
+may hold an assignment the controller must see.
+
 ## Continue
 
 After close, inspect `CLAIMED_CONTINUATION_GROUP` before another claim:
