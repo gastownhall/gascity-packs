@@ -1,6 +1,13 @@
 description = """
 Report-only implementation review over a diff, branch, or artifact set.
 
+This is a CODE reviewer. It judges executable change on behavior, correctness,
+error handling, security, and resource handling. Documentation-only diffs, and
+subjects that are prose rather than behavior, are out of its subject matter: the
+honest outcome for one is `questions` or `blocked` naming what could not be
+reviewed, never `approved`. Route design documents to `design-review`, which is
+prose-shaped.
+
 Launch inputs:
 - context_path: {{context_path}} (empty means no extra context bundle)
 - subject_path: {{subject_path}}
@@ -17,7 +24,7 @@ mode = "report"
 
 [catalog]
 name = "review"
-description = "Write an implementation review report for a diff, branch, or artifact set."
+description = "Write an implementation review report for a diff, branch, or artifact set. Code subject matter; documentation-only subjects are out of scope (use design-review for design documents)."
 
 [vars]
 [vars.context_path]

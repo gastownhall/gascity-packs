@@ -1,4 +1,32 @@
 
+Your subject is EXECUTABLE CHANGE: behavior, correctness, error handling,
+security, resource handling, and the claims the code makes about itself. Judge
+the diff in `{{subject_path}}` on those grounds. Documentation-only diffs and
+prose subjects are outside this reviewer's subject matter.
+
+## Report what you could not review
+
+The artifact schema enforces an approval floor (see the `approval_*` keys in
+`gc.build.review.v1`): `status: approved` is REJECTED unless the subjects you
+marked `covered` outnumber the ones you did not, and at least one subject is
+`covered`. A verdict that scoped out most of its own coverage matrix will fail
+validation and cost a repair attempt, so do not write it.
+
+Concretely, when most of the matrix is `out_of_scope` you have not reviewed the
+subject and must not resolve `approved`:
+
+- Use `questions` when the subject is reviewable in principle but the evidence
+  or the diff is ambiguous, and name the ambiguity.
+- Use `blocked` when the subject is outside what this reviewer can judge. State
+  in `## Verdict` that the subject was not reviewed, and name the reviewer or
+  formula that can review it (`design-review` reviews design documents; the
+  pack's own prose reviewer, where one exists, reviews prose).
+- Use `draft` when you ran out of room to do the job.
+
+This is not a demotion. An `approved` that certifies subjects you declined to
+examine is worse for the caller than an honest `questions`, because the caller
+skims for the word.
+
 Write the review verdict report to {{report_path}} with pass/fail, findings,
 missing evidence, and recommended fixes for subject {{subject_path}}.
 
