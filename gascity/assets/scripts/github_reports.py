@@ -69,8 +69,9 @@ def validate_triage_report_text(
     expected_issue_number: int = 0,
     expected_body_hash: str = "",
 ) -> TriageReport:
-    if yaml is None:
-        raise ValidationError("PyYAML is required to parse triage reports")
+    # Same interpreter, same import result: the verdict validator's helper
+    # raises its DependencyError with the interpreter diagnosis.
+    validate_verdict_report.require_yaml("triage reports")
     match = FRONT_MATTER_RE.match(text)
     if not match:
         raise ValidationError("triage report must start with YAML front matter")
@@ -368,6 +369,10 @@ def main(argv: list[str] | None = None) -> int:
             output = {"ok": True, "output": str(args.output)}
         else:  # pragma: no cover
             raise ValidationError(f"unsupported command {args.command}")
+    except validate_verdict_report.DependencyError as exc:
+        # The report was never examined: same contract as the validators.
+        print(f"environment error: {exc}", file=sys.stderr)
+        return validate_verdict_report.EX_CONFIG
     except CLI_ERROR_TYPES as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

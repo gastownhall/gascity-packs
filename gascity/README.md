@@ -985,6 +985,18 @@ Each item has only `name`, `path`, and `description`. Validate with:
 python3 <pack-root>/assets/scripts/validate_context_bundle.py context.yaml --allow-root <artifact-root>
 ```
 
+The validators need PyYAML importable by the `python3` that runs them. When it
+is not, they exit 78 and print which interpreter, `HOME`, and `PYTHONUSERBASE`
+they saw, rather than reporting the content as invalid. Gas City versions that
+include gastownhall/gascity#8378 read 78 inside a check gate as "fix the
+environment" and hold the step instead of spending an attempt; earlier versions
+grade it like any other failure. The orchestrator runs check scripts with
+`HOME` set to the city directory and a short `PATH`, so a PyYAML installed only
+in your user site (`pip install --user`) is not visible to them. Install it for
+the `python3` that check `PATH` resolves: the orchestrator builds that `PATH`
+from the directories holding `gc`, `bd`, `dolt` and `jq`, then
+`/usr/local/bin:/usr/bin:/bin`.
+
 Gap-analysis and review reports use `schema: gc.verdict-report.v1` front matter
 with `verdict: pass|fail`. Validate with:
 
