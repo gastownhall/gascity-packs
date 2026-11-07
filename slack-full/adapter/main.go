@@ -843,6 +843,9 @@ type externalInboundMessage struct {
 	Attachments       []externalAttachment `json:"attachments,omitempty"`
 	DedupKey          string               `json:"dedup_key,omitempty"`
 	ReceivedAt        time.Time            `json:"received_at"`
+	// Attribution is composer evidence from the Slack event (attribution.go).
+	// Omitted when nil, so a gc that rejects unknown fields sees the old body.
+	Attribution map[string]string `json:"attribution,omitempty"`
 }
 
 type adapterCapabilities struct {
@@ -2865,13 +2868,15 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 		Attachments:      attachments,
 		DedupKey:         "slack-" + msg.TS,
 		ReceivedAt:       time.Now().UTC(),
+		Attribution:      slackAttribution(msg),
 	}
 	if err := postInbound(cfg, inbound); err != nil {
 		log.Printf("inbound POST failed: %v", err)
 		return
 	}
-	log.Printf("inbound: chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch",
-		msg.Channel, msg.User, msg.TS, msg.ThreadTS, target, len(attachments), len(text))
+	log.Printf("inbound: chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch%s",
+		msg.Channel, msg.User, msg.TS, msg.ThreadTS, target, len(attachments), len(text),
+		attributionLogTag(inbound.Attribution))
 
 	// "Eyes" reaction signals to the human that an agent was explicitly
 	// addressed (via `@handle:` prefix or a Slack User Group mention
@@ -4336,7 +4341,32 @@ func handleIdentityDelete(reg *identityRegistry) http.HandlerFunc {
 	}
 }
 
+// postInbound POSTs msg to gc's extmsg inbound endpoint.
+//
+// An old gc that does not know message.attribution answers 422 or 400 naming
+// the field. The first such answer latches for this process: that message is
+// sent once more without the field, one log line says attribution is disabled
+// until restart, and later messages omit it. The attribution is evidence; the
+// message is the delivery. Any other 4xx is the message's own fault and is
+// not resent.
 func postInbound(cfg config, msg externalInboundMessage) error {
+	if attributionDisabled.Load() {
+		msg.Attribution = nil
+	}
+	err := postInboundOnce(cfg, msg)
+	if err != nil && msg.Attribution != nil && attributionRejected(err) {
+		if attributionDisabled.CompareAndSwap(false, true) {
+			log.Printf("inbound POST: gc refused the attribution field; attribution disabled until restart: msg=%s/%s",
+				msg.Conversation.ConversationID, msg.ProviderMessageID)
+		}
+		msg.Attribution = nil
+		return postInboundOnce(cfg, msg)
+	}
+	return err
+}
+
+// postInboundOnce is one delivery of msg, with no retry.
+func postInboundOnce(cfg config, msg externalInboundMessage) error {
 	body, _ := json.Marshal(map[string]any{
 		"message": msg,
 	})
