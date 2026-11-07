@@ -65,6 +65,25 @@ as more issue ids and may fuzzy-match unrelated beads.
 gc bd close "$CLAIMED_BEAD_ID" --reason '...'
 ```
 
+## Bead Errors
+
+Run every bead command as `gc bd ...`, never plain `bd`, from any working
+directory. `gc bd` reaches the city store through the session's
+`GC_CITY_PATH`, including graph steps that a rig or worktree `bd` cannot see.
+Do not `cd` elsewhere or pass another city or rig to work around an error.
+
+Some `gc gc claim` or `gc bd` failures never clear by retrying: bead not found,
+store unreachable or circuit breaker open, city or store not found, permission
+refused. On one, stop. Do not retry it, loop on it, start a background retry
+loop, or schedule a wakeup to try again. If you hold `CLAIMED_BEAD_ID` and can
+still update it, record its failure contract (default `gc.outcome=fail`,
+`gc.failure_class=bead_command_failed`, command and error in the reason) and
+close it. Otherwise report the exact command and its error once and stop. Do not
+drain: the claim may hold an assignment the controller must see.
+
+Retry only a transient error (timeout, lock contention, connection reset), at
+most twice; if it persists, treat it as non-clearing.
+
 PR handoff. Never merge a pull request yourself unless the bead explicitly
 authorizes merging. If your work opened or updated a PR, never close without
 naming it: set any PR or publish metadata the bead's result contract requests,

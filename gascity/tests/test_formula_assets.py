@@ -830,6 +830,39 @@ class FormulaAssetTests(unittest.TestCase):
             with self.subTest(city_specific=city_specific):
                 self.assertNotIn(city_specific, section)
 
+    def test_role_worker_stops_on_non_clearing_bead_errors(self) -> None:
+        # A claim whose bead read can never succeed (wrong store, dead store,
+        # missing bead) must end in one report, not an unbounded retry loop:
+        # ga-b1jo91 looped ~23h on a store a worktree `bd` resolved to.
+        root = pathlib.Path(__file__).resolve().parents[1]
+        text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
+        section = " ".join(text[text.index("## Bead Errors") : text.index("## Continue")].split())
+
+        for required in (
+            "never plain `bd`",
+            "`GC_CITY_PATH`",
+            "from any working directory",
+            "Do not `cd` elsewhere",
+            "never clear by retrying",
+            "bead not found",
+            "circuit breaker open",
+            "permission refused",
+            "background retry loop",
+            "schedule a wakeup",
+            "`gc.failure_class=bead_command_failed`",
+            "report the exact command and its error once",
+            "at most twice",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, section)
+
+        # Ambiguous assignments are never drained: a drained session leaves
+        # a bead the next session would claim and fail on the same way.
+        self.assertIn("Do not drain", section)
+        # Role-neutral and city-neutral: the session env names the city.
+        self.assertNotRegex(section, r"--city\s+/")
+        self.assertNotRegex(section, r"/data/|/home/")
+
     def test_role_worker_pr_handoff_defers_to_bead_contract(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
