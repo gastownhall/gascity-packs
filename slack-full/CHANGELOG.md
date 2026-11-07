@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A delivered message carrying a labelled auto-link is no longer reported
+  `delivered=false`/`permanent`.** `/publish` reads each unkeyed post back
+  and compares it with the posted text after folding Slack's
+  canonicalization. The fold stripped the angle brackets of a link span
+  but left its label, so a stored `<http://huggingface.co/x|huggingface.co/x>`
+  folded to `http://huggingface.co/x|huggingface.co/x` and never equalled
+  the posted `huggingface.co/x`. The post was in the channel, the receipt
+  said `delivered=false`, `failure_kind=permanent`,
+  `metadata.readback=readback_unconfirmed` alongside a real `message_id`,
+  and a caller that retries on `permanent` posted it again (three copies
+  in one observed case). A `<target|label>` span now folds to its label;
+  `<target>` still folds to its content. A genuinely different body, link
+  or label still reads back unconfirmed. (`gp-dadc6`)
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and

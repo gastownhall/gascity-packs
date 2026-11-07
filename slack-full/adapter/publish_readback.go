@@ -170,7 +170,24 @@ var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
 
 // slackNormalizeText folds the transformations Slack applies between
 // chat.postMessage and conversations.history: it entity-escapes `&`, `<` and
-// `>` in the stored text, and auto-links bare URLs into `<url>` spans.
+// `>` in the stored text, and auto-links URL-shaped text into `<...>` spans.
+//
+// Those spans come in two shapes. A URL the sender wrote with its scheme is
+// stored as `<https://host/path>`. Text Slack completes is stored with a label:
+// Slack's docs show a typed `https://docs.slack.dev/` reading back as
+// `<https://docs.slack.dev/|https://docs.slack.dev/>`, and a scheme-less
+// domain (`huggingface.co/org/model`), an email address or a file name that
+// ends in a TLD (`main.py`, `run.sh`) is expected to read back as
+// `<http://huggingface.co/org/model|huggingface.co/org/model>` or
+// `<mailto:a@b.co|a@b.co>`, the label keeping what the sender typed. Agent
+// traffic is full of the latter.
+//
+// A span folds to its label when it has one and to its content otherwise, so
+// both shapes land on the spelling the sender wrote. Stripping only the angle
+// brackets leaves `target|label` on the stored side, which can never equal the
+// posted text: a message carrying a labelled auto-link read back as a content
+// mismatch, was reported Delivered:false/permanent while sitting in the
+// channel, and was re-posted by the caller's retry (gp-dadc6).
 //
 // It is applied to BOTH sides of the compare, never to one. Normalizing only
 // the expected text would require predicting Slack's output exactly — the
@@ -181,7 +198,13 @@ var slackAngleSpan = regexp.MustCompile(`<([^<>]*)>`)
 // because Slack cannot tell an operator which of the two it stored either.
 // Divergence that survives the fold is still reported unconfirmed.
 func slackNormalizeText(text string) string {
-	return slackAngleSpan.ReplaceAllString(slackEntityUnescape.Replace(text), "$1")
+	return slackAngleSpan.ReplaceAllStringFunc(slackEntityUnescape.Replace(text), func(span string) string {
+		inner := span[1 : len(span)-1]
+		if _, label, ok := strings.Cut(inner, "|"); ok {
+			return label
+		}
+		return inner
+	})
 }
 
 // readBackPublishedMessage verifies a post through Slack's read API rather
