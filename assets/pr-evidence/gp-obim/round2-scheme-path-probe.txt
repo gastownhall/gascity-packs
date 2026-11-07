@@ -1,0 +1,8 @@
+Supplemental failing Go overlay reproduction before the fix; excluded from final suite counts.
+Source: be3bbb5d
+--- FAIL: TestRound2DroppedSchemeURLSuffix (0.00s)
+    round2_performance_probe_test.go:24: missing explicit-scheme URL suffix was confirmed: https://example.com/🎉
+    round2_performance_probe_test.go:24: missing explicit-scheme URL suffix was confirmed: https://example.com/:id:
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.253s
+FAIL

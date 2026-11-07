@@ -1,0 +1,20 @@
+Source: 3f98f79858cc894ce7bd78771967a604e6c76cff
+cwd: .
+env -u GC_TEMPLATE GC_NO_INSTALL=1 TMPDIR="${TMPDIR%/}" uv run --offline --with pytest --with pyyaml --with jsonschema python3 -m pytest slack-full/tests -q
+go version go1.26.5 darwin/arm64
+
+............ss.......................................................... [ 14%]
+........................................................................ [ 29%]
+........................................................................ [ 44%]
+........................................................................ [ 59%]
+........................................................................ [ 74%]
+........................................................................ [ 89%]
+.................................................                        [100%]
+=============================== warnings summary ===============================
+slack-full/tests/test_slack_company_outbound.py::test_two_process_flock_race
+slack-full/tests/test_slack_company_outbound.py::test_two_process_flock_race
+  /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/tests/test_slack_company_outbound.py:698: DeprecationWarning: This process (pid=59278) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+479 passed, 2 skipped, 2 warnings in 27.76s

@@ -1,0 +1,15 @@
+# codex-gate review: base 355a458adad243a7e17968e72832b9ffc73df6d5 (merge base of --base 355a458adad243a7e17968e72832b9ffc73df6d5 = 355a458adad243a7e17968e72832b9ffc73df6d5 and the head) head ffc58b046626edc3dc86847ec7134fd5108c7736; 6 file(s); class QUICK; model gpt-6-astra; 2026-10-15T07:53:49Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 4 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |  3 ++-
+#  slack-full/adapter/publish_readback.go       |  3 ++-
+#  slack-full/adapter/publish_readback_match.go | 17 ++++++++---------
+#  slack-full/adapter/publish_readback_test.go  |  7 +++++++
+#  slack-full/adapter/publish_receipts.go       | 19 +++++++++++++++----
+#  slack-full/adapter/publish_receipts_test.go  | 32 ++++++++++++++++++++++----------
+#  6 files changed, 56 insertions(+), 25 deletions(-)
+
+- **Major — [publish_readback_match.go:473](/var/folders/n0/yx26c20j4y5b0597zqpc5kzh0000gn/T/codex-gate-tree.9U9Yls/tree/slack-full/adapter/publish_readback_match.go:473): Internal underscores can disable URL validation.** The new forward scan treats `_` inside a URL path or shortcode as a closing formatting marker. For example, `_https://a.co/:white_check_mark:/:id:_` now matches `_<https://a.co/>:white_check_mark:/:ok:_`: the underscore inside `:white_check_mark:` ends literal protection, allowing emoji folding to hide the changed `:id:` segment. The base rejected this mismatch. Preserve literal protection inside path identifiers and shortcode tokens, and add this regression case.
+
+Static review only; tests were not run under the read-only gate.
+
+VERDICT: BLOCK

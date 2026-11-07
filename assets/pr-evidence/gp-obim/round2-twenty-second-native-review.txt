@@ -1,0 +1,22 @@
+Source: b1421040
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher rejects valid Slack transformations at two URL boundaries, causing false delivery failures. Native Go tests could not run because the read-only sandbox prevents creating a build directory.
+
+Full review comments:
+
+- [P2] End implicit-URL suffix validation at pipe separators — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:433-437
+  For pipe-delimited text such as `|www.a.co/x|:thumbsup:|`, Slack can return `|<http://www.a.co/x|www.a.co/x>|:+1:|`. This loop consumes the pipe as a URL character, then requires the following emoji shortcode to remain literal, incorrectly reporting a permanent readback mismatch. The previous comparison accepted this transformation. Stop URL-suffix protection at the pipe boundary, consistently with `slackVerbatimSpan` and `slackURIToken`.
+
+- [P2] Recognize parenthesized links after an unwrapped URI — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:184-186
+  When Slack returns `(s3://bucket/x),(<http://www.b.co|www.b.co>)` for `(s3://bucket/x),(www.b.co)`, this branch rejects the unchanged content. The source URI regex spans both parenthesized expressions, and the comma exception does not clear `inVerbatim` because the character immediately before the second URL is `(`. Recognize the intervening punctuation boundary rather than treating the second URL as part of the unwrapped URI; otherwise a previously accepted readback becomes a permanent publish failure.
+The new matcher rejects valid Slack transformations at two URL boundaries, causing false delivery failures. Native Go tests could not run because the read-only sandbox prevents creating a build directory.
+
+Full review comments:
+
+- [P2] End implicit-URL suffix validation at pipe separators — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:433-437
+  For pipe-delimited text such as `|www.a.co/x|:thumbsup:|`, Slack can return `|<http://www.a.co/x|www.a.co/x>|:+1:|`. This loop consumes the pipe as a URL character, then requires the following emoji shortcode to remain literal, incorrectly reporting a permanent readback mismatch. The previous comparison accepted this transformation. Stop URL-suffix protection at the pipe boundary, consistently with `slackVerbatimSpan` and `slackURIToken`.
+
+- [P2] Recognize parenthesized links after an unwrapped URI — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:184-186
+  When Slack returns `(s3://bucket/x),(<http://www.b.co|www.b.co>)` for `(s3://bucket/x),(www.b.co)`, this branch rejects the unchanged content. The source URI regex spans both parenthesized expressions, and the comma exception does not clear `inVerbatim` because the character immediately before the second URL is `(`. Recognize the intervening punctuation boundary rather than treating the second URL as part of the unwrapped URI; otherwise a previously accepted readback becomes a permanent publish failure.

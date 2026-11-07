@@ -1,0 +1,7 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (1578 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T04:15:42Z
+
+- **Major — Preserve literal suffixes after empty query/fragment delimiters.** [publish_readback_match.go:108](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:108) treats targets ending in `?` or `#` as bare hosts because their parsed components are empty. Consequently, posted `hou.vc?:id:` matches stored `<http://hou.vc?|hou.vc?>:ok:`, falsely confirming changed literal query text. The fragment equivalent also passes. Check delimiter presence, including `ForceQuery`, before permitting shortcode folding, and add regression cases for both.
+
+Go tests were not run under the read-only gate; validation used source inspection and an in-memory matcher model.
+
+VERDICT: BLOCK

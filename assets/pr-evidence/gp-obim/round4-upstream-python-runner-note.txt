@@ -1,0 +1,1 @@
+The first upstream attempt used make test and exited 2: this base has no test target. The final transcript uses the direct offline uv command recorded in round3-upstream-python-tests.txt. No dependency or repository change was made for the runner.

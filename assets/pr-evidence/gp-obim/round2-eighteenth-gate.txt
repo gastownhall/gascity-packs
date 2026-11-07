@@ -1,0 +1,18 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (4720 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T06:05:09Z
+
+**Major — Implicit URL tails corrupt formatting state** at [publish_readback_match.go:87](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:87).
+
+Only full-scheme suffixes extend the spans excluded from formatting scans. Literal markers in implicit URL suffixes still toggle surrounding formatting. This valid canonicalization is consequently rejected:
+
+```text
+Posted: *See www.a.co/*/x then www.b.co/x*:thumbsup:
+Stored: *See <http://www.a.co/|www.a.co/>*/x then <http://www.b.co/x|www.b.co/x>*:+1:
+```
+
+The first URL’s literal `*` incorrectly closes bold, causing the later emoji alias conversion to fail. Conversely, without surrounding bold, that literal marker opens formatting and allows a later URL suffix `*:id:` to change to `*:ok:` while confirming delivery.
+
+Exclude preserved implicit URL tail characters from formatting transitions, while retaining genuine prose boundaries, and add both regression cases.
+
+Validated through source tracing and an in-memory model; Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

@@ -1,0 +1,7 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (1199 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T03:05:22Z
+
+- **Major — [publish_readback.go:222](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:222):** The new domain matcher also captures numeric prose such as `4.5/5🎉` as a verbatim URL. Consequently, `Score 4.5/5🎉` fails comparison against `Score 4.5/5:tada:`. The expansion fallback uses the same matcher, so it also fails. This regression reports an accepted message as unconfirmed and permits reposting on retry. Tighten URL recognition to exclude dotted numeric prose, and add a keyed retry regression test for this case.
+
+Verified with an in-memory matcher reproduction; Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

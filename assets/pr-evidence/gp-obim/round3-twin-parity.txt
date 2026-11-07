@@ -1,0 +1,12 @@
+Fork base: 355a458adad243a7e17968e72832b9ffc73df6d5
+Fork source: 89d3b6692f050b96e3416928b249a079889a6b1d
+Upstream base: 34f643e8c85c74c316ccb82987d468e8c7f652c5
+Upstream source: d543ef56b00f26ff6d5fe632e25f414812738e93
+All five source commits cherry-picked without conflicts; same six-file patch byte for byte (excluding index and hunk-location metadata).
+SHA256: 272979ec52b2984314ae6e47d72dbae3d649da4582ab32b385f3a233b68ca8d1
+slack-full/CHANGELOG.md: pre-existing base differences outside the identical delta
+slack-full/adapter/publish_readback.go: pre-existing base differences outside the identical delta
+slack-full/adapter/publish_readback_match.go: identical whole file
+slack-full/adapter/publish_readback_test.go: identical whole file
+slack-full/adapter/publish_receipts.go: identical whole file
+slack-full/adapter/publish_receipts_test.go: identical whole file

@@ -1,0 +1,22 @@
+Source: 1a3d12f5
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The readback changes introduce both false rejection of delivered text and false confirmation of changed link destinations. Targeted Go tests could not run because the read-only sandbox blocked creation of Go’s temporary build directory.
+
+Full review comments:
+
+- [P2] Keep following prose out of bare-domain verbatim spans — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:221-222
+  For a message such as `See (www.example.com/docs)🎉`, Slack can return `See (<http://www.example.com/docs|www.example.com/docs>):tada:`. The new expression consumes `www.example.com/docs)🎉` as one verbatim span, preventing both emoji matchers from recognizing the conversion. This previously confirmed successfully; it now returns `readback_unconfirmed`, allowing retries to duplicate the delivered message. Preserve the URL boundary rather than treating all following non-whitespace characters as URL content.
+
+- [P2] Restrict implicit-scheme folding to bare-domain labels — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:267-270
+  A posted `<mailto:jane@example.com|jane@example.com>` now matches a readback of `<https://jane@example.com|jane@example.com>` because both normalize to `jane@example.com`. The latter points to a website with URL userinfo, not the email recipient. The new destination guard does not catch this because it only collects HTTP(S) links from the expected text, so this changed destination is incorrectly recorded as confirmed. Validate that the label is actually a bare-domain URL, or preserve other explicit link destinations before folding.
+The readback changes introduce both false rejection of delivered text and false confirmation of changed link destinations. Targeted Go tests could not run because the read-only sandbox blocked creation of Go’s temporary build directory.
+
+Full review comments:
+
+- [P2] Keep following prose out of bare-domain verbatim spans — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:221-222
+  For a message such as `See (www.example.com/docs)🎉`, Slack can return `See (<http://www.example.com/docs|www.example.com/docs>):tada:`. The new expression consumes `www.example.com/docs)🎉` as one verbatim span, preventing both emoji matchers from recognizing the conversion. This previously confirmed successfully; it now returns `readback_unconfirmed`, allowing retries to duplicate the delivered message. Preserve the URL boundary rather than treating all following non-whitespace characters as URL content.
+
+- [P2] Restrict implicit-scheme folding to bare-domain labels — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:267-270
+  A posted `<mailto:jane@example.com|jane@example.com>` now matches a readback of `<https://jane@example.com|jane@example.com>` because both normalize to `jane@example.com`. The latter points to a website with URL userinfo, not the email recipient. The new destination guard does not catch this because it only collects HTTP(S) links from the expected text, so this changed destination is incorrectly recorded as confirmed. Validate that the label is actually a bare-domain URL, or preserve other explicit link destinations before folding.
