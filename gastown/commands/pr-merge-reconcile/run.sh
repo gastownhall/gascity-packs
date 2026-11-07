@@ -178,7 +178,7 @@ lookup_pr_info() {
     if [ "${GASTOWN_PR_RECONCILE_FORCE_REST:-0}" != "1" ] &&
        command -v gh >/dev/null 2>&1; then
         gh pr view "$pr_url" \
-            --json url,number,state,headRefName,headRefOid,baseRefName,mergedAt,mergeCommit \
+            --json url,number,state,headRefName,headRefOid,baseRefName,mergedAt,mergeCommit,mergeable,mergeStateStatus,autoMergeRequest,id \
             2>"$err_file"
         return $?
     fi
@@ -207,8 +207,66 @@ lookup_pr_info() {
         headRefOid: .head.sha,
         baseRefName: .base.ref,
         mergedAt: .merged_at,
-        mergeCommit: (if .merge_commit_sha then {oid: .merge_commit_sha} else null end)
+        mergeCommit: (if .merge_commit_sha then {oid: .merge_commit_sha} else null end),
+        id: .node_id,
+        mergeable: .mergeable,
+        mergeStateStatus: (if .mergeable_state then (.mergeable_state | ascii_upcase) else null end),
+        autoMergeRequest: .auto_merge
     }'
+}
+
+resolve_auto_merge_method() {
+    am_method=${GASTOWN_PR_AUTO_MERGE_METHOD:-squash}
+    case "$am_method" in
+        merge|rebase|squash)
+            printf '%s\n' "$am_method"
+            ;;
+        *)
+            echo "pr-merge-reconcile: invalid GASTOWN_PR_AUTO_MERGE_METHOD '$am_method' (want merge, rebase, or squash)" >&2
+            return 1
+            ;;
+    esac
+}
+
+arm_pull_request_automerge() {
+    am_pr_url=$1
+    am_node_id=$2
+    am_method=$3
+    am_err_file=$4
+    if [ "${GASTOWN_PR_RECONCILE_FORCE_REST:-0}" = "1" ] ||
+       ! command -v gh >/dev/null 2>&1; then
+        am_token=$(resolve_github_token)
+        if [ -z "$am_token" ]; then
+            echo "Auto-merge arming requires gh or a GitHub token." >"$am_err_file"
+            return 1
+        fi
+        if [ -z "$am_node_id" ]; then
+            echo "Auto-merge arming without gh requires the pull-request node id." >"$am_err_file"
+            return 1
+        fi
+        am_graphql_method=$(printf '%s\n' "$am_method" | tr '[:lower:]' '[:upper:]')
+        am_payload=$(jq -n \
+            --arg node_id "$am_node_id" \
+            --arg method "$am_graphql_method" \
+            '{query: ("mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"" + $node_id + "\", mergeMethod: " + $method + "}) { clientMutationId } }")}')
+        curl -fsS \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $am_token" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            --data "$am_payload" \
+            "https://api.github.com/graphql" 2>"$am_err_file" 1>/dev/null
+        return $?
+    fi
+    gh pr merge "$am_pr_url" --auto "--$am_method" 2>"$am_err_file"
+}
+
+blocker_bead_status() {
+    hold_bead=$1
+    if ! hold_bead_json=$(bd_show "$hold_bead" 2>/dev/null | grep -v '^named_session'); then
+        return 1
+    fi
+    printf '%s\n' "$hold_bead_json" |
+        jq -r 'if type == "array" then ((.[0].status // "") | tostring) else ((.status // "") | tostring) end' 2>/dev/null
 }
 
 record_handoff() {
@@ -385,6 +443,160 @@ requeue_changed_open_head() {
         --unset-metadata pr_reconcile_pending \
         --unset-metadata gc.routed_to
     echo "REVALIDATE: $work — $reason"
+}
+
+decide_open_pr_automerge() {
+    work=$1
+    pr_url=$2
+    target=$3
+    now=$4
+    row=$5
+    pr_info=$6
+    pr_node_id=$7
+
+    recorded_pr_state=$(printf '%s\n' "$row" | jq -r '.metadata.pr_state // empty')
+    recorded_automerge=$(printf '%s\n' "$row" | jq -r '.metadata.auto_merge_armed // empty')
+    recorded_hold_state=$(printf '%s\n' "$row" | jq -r '.metadata.publish_order_blocker_state // empty')
+    hold_bead=$(printf '%s\n' "$row" | jq -r '.metadata.publish_after // empty')
+    mergeable=$(printf '%s\n' "$pr_info" | jq -r 'if .mergeable == null then empty else (.mergeable | tostring) end')
+    remote_armed=$(printf '%s\n' "$pr_info" | jq -r '.autoMergeRequest // empty')
+
+    # Publish-order lock: while the bead names a publish_after blocker that has
+    # not closed, the handoff stays pending and auto-merge is never armed. The
+    # lock belongs to the owning bead; reconcile holds until it closes.
+    if [ -n "$hold_bead" ]; then
+        if [ "$hold_bead" = "$work" ]; then
+            hold_state=malformed
+            hold_reason="publish_after on $work names itself; the publish-order lock cannot resolve"
+        elif ! blocker_status=$(blocker_bead_status "$hold_bead"); then
+            hold_state=unknown
+            hold_reason="publish-order blocker $hold_bead could not be read; holding until it resolves"
+        elif [ "$blocker_status" = closed ]; then
+            hold_state=released
+            hold_reason="publish-order blocker $hold_bead is closed"
+        else
+            hold_state=$blocker_status
+            hold_reason="publish order: $pr_url waits for $hold_bead (status: ${blocker_status:-unknown})"
+        fi
+        if [ "$hold_state" != released ]; then
+            bd_update "$work" \
+                --assignee="$GC_AGENT" \
+                --set-metadata pr_state=open \
+                --set-metadata pr_last_checked_at="$now" \
+                --set-metadata publish_order_hold=true \
+                --set-metadata publish_order_blocker_state="$hold_state" \
+                --unset-metadata pr_reconcile_error
+            case "$hold_state" in
+                open|in_progress|blocked)
+                    echo "HOLD: $work — $hold_reason; auto-merge not armed."
+                    ;;
+                *)
+                    bd_update "$work" \
+                        --assignee="$GC_AGENT" \
+                        --set-metadata pr_reconcile_error="$hold_reason"
+                    echo "HOLD: $work — $hold_reason; auto-merge not armed."
+                    if [ "$recorded_hold_state" != "$hold_state" ]; then
+                        mail_mayor \
+                            "publish-order lock on $work cannot resolve" \
+                            "$hold_reason. Reconcile holds auto-merge and keeps retrying; fix or clear metadata.publish_after on $work."
+                    fi
+                    ;;
+            esac
+            return 0
+        fi
+        bd_update "$work" \
+            --assignee="$GC_AGENT" \
+            --set-metadata pr_state=open \
+            --set-metadata pr_last_checked_at="$now" \
+            --unset-metadata pr_reconcile_error \
+            --unset-metadata publish_order_hold \
+            --unset-metadata publish_order_blocker_state
+        echo "HOLD-RELEASED: $work — $hold_reason; publish-order lock released."
+    fi
+
+    # A remote that is already armed gets a durable record the moment reconcile
+    # observes it, whoever armed it. A hand re-arm therefore always leaves a
+    # bead record within one reconcile pass.
+    if [ -n "$remote_armed" ]; then
+        if [ -n "$recorded_automerge" ]; then
+            bd_update "$work" \
+                --assignee="$GC_AGENT" \
+                --set-metadata pr_state=open \
+                --set-metadata pr_last_checked_at="$now" \
+                --unset-metadata pr_reconcile_error
+            echo "PENDING: $work — $pr_url is still open; auto-merge already armed."
+        else
+            bd_update "$work" \
+                --assignee="$GC_AGENT" \
+                --set-metadata pr_state=open \
+                --set-metadata pr_last_checked_at="$now" \
+                --set-metadata auto_merge_armed=observed_external \
+                --set-metadata auto_merge_armed_by="$GC_AGENT" \
+                --set-metadata auto_merge_armed_at="$now" \
+                --unset-metadata pr_reconcile_error
+            echo "ARMED-EXTERNAL: $work — $pr_url already has auto-merge; observer recorded ($GC_AGENT)."
+        fi
+        return 0
+    fi
+
+    if [ "$mergeable" != true ]; then
+        if [ -z "$mergeable" ]; then
+            bd_update "$work" \
+                --assignee="$GC_AGENT" \
+                --set-metadata pr_state=open \
+                --set-metadata pr_last_checked_at="$now" \
+                --unset-metadata pr_reconcile_error
+            echo "PENDING: $work — $pr_url is still open; mergeability not computed yet."
+            return 0
+        fi
+        conflict_reason="Pull request $pr_url conflicts with $target and cannot arm auto-merge; the branch must be re-published (rebase or force-push) by an actor that owns it."
+        bd_update "$work" \
+            --assignee="$GC_AGENT" \
+            --set-metadata pr_state=merge_conflicting \
+            --set-metadata pr_last_checked_at="$now" \
+            --set-metadata pr_reconcile_error="$conflict_reason"
+        echo "CONFLICT: $work — $conflict_reason"
+        if [ "$recorded_pr_state" != merge_conflicting ]; then
+            mail_mayor \
+                "PR for $work conflicts with $target; re-publish required" \
+                "$conflict_reason Reconcile keeps the handoff pending and retries."
+        fi
+        return 0
+    fi
+
+    if ! am_method=$(resolve_auto_merge_method); then
+        bd_update "$work" \
+            --assignee="$GC_AGENT" \
+            --set-metadata pr_state=arm_method_invalid \
+            --set-metadata pr_last_checked_at="$now" \
+            --set-metadata pr_reconcile_error="GASTOWN_PR_AUTO_MERGE_METHOD is invalid; auto-merge not armed."
+        return 1
+    fi
+    arm_err=$(mktemp "${TMPDIR:-/tmp}/gascity-pr-reconcile.XXXXXX")
+    trap 'rm -f "$arm_err"' EXIT HUP INT TERM
+    if ! arm_pull_request_automerge "$pr_url" "$pr_node_id" "$am_method" "$arm_err"; then
+        arm_reason="Auto-merge arming failed for $pr_url; will retry."
+        bd_update "$work" \
+            --assignee="$GC_AGENT" \
+            --set-metadata pr_state=arm_failed \
+            --set-metadata pr_last_checked_at="$now" \
+            --set-metadata pr_reconcile_error="$arm_reason"
+        cat "$arm_err" >&2
+        rm -f "$arm_err"
+        trap - EXIT HUP INT TERM
+        return 1
+    fi
+    rm -f "$arm_err"
+    trap - EXIT HUP INT TERM
+    bd_update "$work" \
+        --assignee="$GC_AGENT" \
+        --set-metadata pr_state=open \
+        --set-metadata pr_last_checked_at="$now" \
+        --set-metadata auto_merge_armed=by_reconcile \
+        --set-metadata auto_merge_armed_by="$GC_AGENT" \
+        --set-metadata auto_merge_armed_at="$now" \
+        --unset-metadata pr_reconcile_error
+    echo "ARMED: $work — auto-merge ($am_method) enabled on $pr_url by $GC_AGENT."
 }
 
 quarantine_terminal_pr() {
@@ -618,12 +830,14 @@ reconcile_one() {
                 requeue_changed_open_head "$work" "$pr_url" "$expected_head" "$actual_head" "$now"
                 return 0
             fi
-            bd_update "$work" \
-                --assignee="$GC_AGENT" \
-                --set-metadata pr_state=open \
-                --set-metadata pr_last_checked_at="$now" \
-                --unset-metadata pr_reconcile_error
-            echo "PENDING: $work — $pr_url is still open."
+            decide_open_pr_automerge \
+                "$work" \
+                "$pr_url" \
+                "$target" \
+                "$now" \
+                "$row" \
+                "$pr_info" \
+                "$(printf '%s\n' "$pr_info" | jq -r '.id // empty')"
             ;;
         CLOSED)
             quarantine_terminal_pr \
