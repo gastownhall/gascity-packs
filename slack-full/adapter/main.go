@@ -77,7 +77,7 @@
 //     In proxy_process mode this is computed
 //     from GC_API_BASE_URL + GC_SERVICE_URL_PREFIX
 //     and the env var is ignored.
-//   - GC_API_BASE_URL              Default "http://127.0.0.1:9443". Base
+//   - GC_API_BASE_URL              Default "http://127.0.0.1:8372". Base
 //     URL for gc's HTTP API.
 //   - ADAPTER_PROVIDER             Default "slack". Provider name used in
 //     conversation refs and adapter registration.
@@ -553,7 +553,7 @@ func loadConfigFromEnv(getenv func(string) string) (config, error) {
 		internalListen:       envOrFn("LISTEN_INTERNAL", defaultInternalListen),
 		serviceSocket:        getenv("GC_SERVICE_SOCKET"),
 		internalCallbackURL:  strings.TrimRight(envOrFn("INTERNAL_CALLBACK_URL", defaultInternalCallback), "/"),
-		gcAPIBase:            strings.TrimRight(envOrFn("GC_API_BASE_URL", "http://127.0.0.1:9443"), "/"),
+		gcAPIBase:            strings.TrimRight(envOrFn("GC_API_BASE_URL", "http://127.0.0.1:8372"), "/"),
 		cityName:             getenv("GC_CITY_NAME"),
 		provider:             envOrFn("ADAPTER_PROVIDER", "slack"),
 		accountID:            getenv("SLACK_WORKSPACE_ID"),
@@ -2458,6 +2458,8 @@ func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 
 		// URL verification challenge.
 		if env.Type == "url_verification" && env.Challenge != "" {
+			log.Printf("slack signature verify OK type=%q api_app_id=%q team_id=%q",
+				clipTeamIDForLog(head.Type), clipTeamIDForLog(head.APIAppID), clipTeamIDForLog(head.TeamID))
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte(env.Challenge))
 			return
