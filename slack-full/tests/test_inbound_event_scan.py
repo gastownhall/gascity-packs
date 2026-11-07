@@ -180,3 +180,115 @@ def test_thread_lookup_returns_empty_root_for_plain_inbound(gc_mock: "GcMock") -
     assert mid == "1786291407.960839"
     assert thread_root == ""
     assert conv["conversation_id"] == "C0PLAIN"
+
+
+# --------------------------------------------------------------------------
+# gp-x4jak: agent-scoped inbounds and newest-first servers.
+#
+# Live shape (fartnadofalls, 2026-10-14): the mayor's own channel delivers
+# through a durable agent binding, so gc stamps those events with
+# target_agent="gasburger.mayor" and an empty target_session. Only the
+# shared bind-room fanout (#cityhall) carried target_session. The scan
+# matched only the room events, and every reply-current landed in #cityhall.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def newest_first_gc(monkeypatch: pytest.MonkeyPatch) -> "GcMock":
+    g = GcMock(city_name="test-city", events_newest_first=True)
+    monkeypatch.setenv("GC_API_BASE_URL", g.url)
+    yield g
+    g.close()
+
+
+def test_agent_scoped_seat_inbound_beats_older_room_fanout(
+    newest_first_gc: "GcMock", monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GC_ALIAS", "gasburger.mayor")
+    common = _import_common()
+    newest_first_gc.register_inbound_event(
+        target_session="gc-test-session", conversation_id="C0CITYHALL",
+        age_seconds=300, stamp=True,
+    )
+    newest_first_gc.register_inbound_event(
+        target_session="", target_agent="gasburger.mayor",
+        conversation_id="C0MAYOR", age_seconds=30, stamp=True,
+    )
+
+    event = common.find_latest_inbound_for_session("gc-test-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "C0MAYOR"
+
+
+def test_newer_room_fanout_still_wins_over_older_seat_inbound(
+    newest_first_gc: "GcMock", monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The fix picks the newest inbound for the session, not "never the room".
+    monkeypatch.setenv("GC_ALIAS", "gasburger.mayor")
+    common = _import_common()
+    newest_first_gc.register_inbound_event(
+        target_session="", target_agent="gasburger.mayor",
+        conversation_id="C0MAYOR", age_seconds=300, stamp=True,
+    )
+    newest_first_gc.register_inbound_event(
+        target_session="gc-test-session", conversation_id="C0CITYHALL",
+        age_seconds=30, stamp=True,
+    )
+
+    event = common.find_latest_inbound_for_session("gc-test-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "C0CITYHALL"
+
+
+def test_newest_first_server_returns_newest_match(newest_first_gc: "GcMock") -> None:
+    # Current gc serves seq DESC; matches[-1] there is the OLDEST match.
+    common = _import_common()
+    for conv, age in (("D0OLDEST", 240), ("D0MIDDLE", 120), ("D0NEWEST", 5)):
+        newest_first_gc.register_inbound_event(
+            target_session="gc-test-session", conversation_id=conv,
+            age_seconds=age, stamp=True,
+        )
+
+    event = common.find_latest_inbound_for_session("gc-test-session")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "D0NEWEST"
+
+
+def test_agent_scoped_inbound_for_another_seat_is_ignored(
+    gc_mock: "GcMock", monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GC_ALIAS", "helios/canola")
+    common = _import_common()
+    gc_mock.register_inbound_event(
+        target_session="", target_agent="gasburger.mayor", conversation_id="C0MAYOR",
+    )
+    # Same seat name, but addressed to a different session: not ours.
+    gc_mock.register_inbound_event(
+        target_session="other-session", target_agent="helios/canola",
+        conversation_id="C0OTHER",
+    )
+
+    assert common.find_latest_inbound_for_session("gc-test-session") is None
+
+
+def test_other_session_resolves_its_seat_via_session_list(
+    gc_mock: "GcMock", monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # --session <id> for another session must not borrow the caller's alias.
+    monkeypatch.setenv("GC_ALIAS", "gasburger.mayor")
+    common = _import_common()
+    gc_mock.register_session(session_id="fa-canola", alias="helios/canola")
+    gc_mock.register_inbound_event(
+        target_session="", target_agent="gasburger.mayor", conversation_id="C0MAYOR",
+    )
+    gc_mock.register_inbound_event(
+        target_session="", target_agent="helios/canola", conversation_id="C0CANOLA",
+    )
+
+    event = common.find_latest_inbound_for_session("fa-canola")
+
+    assert event is not None
+    assert event["payload"]["conversation_id"] == "C0CANOLA"

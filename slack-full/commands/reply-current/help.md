@@ -39,6 +39,18 @@ that command: `--turn-ref` binds the reply to the originating channel/thread
 even if a newer message in another channel wakes the same agent session.
 Post-rollout company turns fail closed when the flag is omitted.
 
+A company turn never captures a reply meant elsewhere. An explicit
+--conversation-id wins: the reply uses the company turn only when that id
+is the turn's own channel, and it is refused with --turn-ref for another
+channel. Without either flag, an inbound in another conversation that is
+newer than the company turn sends the reply there. Once a company reply
+posts, its turn is marked answered and stops claiming later replies; pass
+--kind room|dm|mpim (or --turn-ref) to answer the same turn again.
+
+The latest inbound includes messages from a seat's durable agent binding
+(gc sends those with `target_agent` and no `target_session`), and the
+newest one wins whichever order gc lists events in.
+
 Formatting guard: tildes that would accidentally pair into Slack
 strikethrough (e.g. "~$58.5k … ~$16.5k" — tilde as "approximately") are
 neutralized by default with a visually identical substitute (U+223C).

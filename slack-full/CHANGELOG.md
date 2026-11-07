@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`reply-current` no longer answers a seat's own channel in a shared
+  room.** Two bugs sent replies to the bind-room channel (`#cityhall`)
+  instead of the seat channel the message came from. First, the
+  latest-inbound scan matched `target_session` only. A seat bound by a
+  durable agent binding gets its own channel's events with
+  `target_agent` and an empty `target_session`, so only the room fanout
+  matched; thread inheritance then reused the room thread. Second, the
+  scan took the last match in list order, and current gc lists events
+  newest first, so it picked the oldest match. The scan now matches
+  agent-scoped events for the session's seat and picks the newest match
+  by `seq`/`ts`. On the company path, a live current-turn pointer no
+  longer takes every reply. An explicit `--conversation-id` wins unless
+  it names the turn's own channel, and a newer inbound in another
+  conversation wins over the turn. A posted company reply marks its turn
+  answered (`company-current-turn/answered/`), so a stale pointer cannot
+  claim later replies. (`gp-x4jak`)
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and
