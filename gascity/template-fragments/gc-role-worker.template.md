@@ -77,27 +77,33 @@ and do not idle: record the failure contract (default `gc.outcome=fail`,
 
 ## Bead Errors
 
-Run every bead command as `gc bd ...`, never plain `bd`, from any working
+Run bead commands as `gc bd ...`, never plain `bd`, whatever your working
 directory. The session's `GC_CITY_PATH` selects the city; `gc bd` then routes a
 command on an explicit bead id, such as `CLAIMED_BEAD_ID`, to the store that
 holds it, including graph steps a rig or worktree `bd` cannot see. Do not `cd`
 elsewhere or pass another city or rig to work around an error.
 
-Transient errors: timeout, lock contention, connection reset, store
-unreachable, circuit breaker open. Retry the same command at most twice, a few
-seconds apart. If it still fails, treat it as non-clearing.
+`gc gc claim` already retries internally; never re-run a failed claim. Sort a
+failing `gc bd` command into one class:
 
-Non-clearing errors: bead not found, city or store not found, permission
-refused, or a transient error that outlasted its retries. Do not retry it, loop
-on it, start a background retry loop, or schedule a wakeup to try again.
+- Non-clearing (bead not found, city or store not found, permission refused):
+  do not retry. Fail-close with `gc.failure_class=hard`.
+- Transient (store unreachable, circuit breaker open, timeout, lock
+  contention, connection reset): retry the same command at most twice, a few
+  seconds apart. If it still fails, fail-close with
+  `gc.failure_class=transient` so the controller re-dispatches it within the
+  formula's attempt limit.
 
-- If you hold `CLAIMED_BEAD_ID` and can still update it, record its failure
-  contract (default `gc.outcome=fail`, `gc.failure_class=hard`,
-  `gc.failure_reason` naming the command and error), close it, then go to
-  Continue as after any close.
-- If `gc gc claim` failed, or `CLAIMED_BEAD_ID` cannot be updated or closed,
-  report the exact command and its error once and stop. Do not drain: the
-  claim may hold an assignment the controller must see.
+Never loop on an error, start a background retry loop, or schedule a wakeup to
+try again.
+
+Fail-close: if you hold `CLAIMED_BEAD_ID` and can still update it, set
+`gc.outcome=fail`, that `gc.failure_class`, and `gc.failure_reason` naming the
+command and error; close it, then go to Continue as after any close.
+
+If `gc gc claim` failed, or `CLAIMED_BEAD_ID` cannot be updated or closed,
+report the exact command and its error once and stop. Do not drain: the claim
+may hold an assignment the controller must see.
 
 ## Continue
 

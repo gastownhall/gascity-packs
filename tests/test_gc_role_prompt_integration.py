@@ -194,7 +194,9 @@ def assert_clean_worker_render(prompt: str, persona_heading: str) -> None:
     bead_errors = " ".join(
         prompt[prompt.index("## Bead Errors") : prompt.index("## Continue")].split()
     )
-    assert "Retry the same command at most twice" in bead_errors
+    assert "retry the same command at most twice" in bead_errors
+    assert "Fail-close with `gc.failure_class=hard`" in bead_errors
+    assert "fail-close with `gc.failure_class=transient`" in bead_errors
     assert "close it, then go to Continue as after any close" in bead_errors
     assert (
         "If `gc gc claim` failed, or `CLAIMED_BEAD_ID` cannot be updated or closed, "

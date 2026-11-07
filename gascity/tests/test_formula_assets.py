@@ -832,8 +832,9 @@ class FormulaAssetTests(unittest.TestCase):
 
     def test_role_worker_stops_on_non_clearing_bead_errors(self) -> None:
         # A claim whose bead read can never succeed (wrong store, missing bead)
-        # must end in one report, not an unbounded retry loop: ga-b1jo91
-        # looped ~23h on a dead store that a worktree `bd` resolved to.
+        # must end in one report or one fail-close, not an unbounded retry
+        # loop: ga-b1jo91 looped ~23h on a dead store that a worktree `bd`
+        # resolved to.
         root = pathlib.Path(__file__).resolve().parents[1]
         text = (root / "template-fragments" / "gc-role-worker.template.md").read_text(encoding="utf-8")
         raw = text[text.index("## Bead Errors") : text.index("## Continue")]
@@ -841,46 +842,56 @@ class FormulaAssetTests(unittest.TestCase):
 
         for required in (
             "never plain `bd`",
-            "from any working directory",
             "`GC_CITY_PATH` selects the city",
             "Do not `cd` elsewhere",
-            "at most twice",
+            "never re-run a failed claim",
             "background retry loop",
             "schedule a wakeup",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, section)
 
-        paragraphs = [" ".join(p.split()) for p in raw.split("\n\n")]
-        transient = next(p for p in paragraphs if p.startswith("Transient errors:"))
-        non_clearing = next(p for p in paragraphs if p.startswith("Non-clearing errors:"))
-        # A store outage or open circuit breaker (e.g. a brief Dolt restart)
-        # is retried within the cap; fail-closing on it would abort the
-        # enclosing workflow scope.
-        for transient_error in ("store unreachable", "circuit breaker open"):
-            with self.subTest(transient=transient_error):
-                self.assertIn(transient_error, transient)
-                self.assertNotIn(transient_error, non_clearing)
-        self.assertIn("at most twice", transient)
+        blocks = [" ".join(block.split()) for block in re.split(r"\n\n(?:- )?|\n- ", raw)]
+        non_clearing = next(b for b in blocks if b.startswith("Non-clearing ("))
+        transient = next(b for b in blocks if b.startswith("Transient ("))
+        fail_close = next(b for b in blocks if b.startswith("Fail-close:"))
+        unclosed = next(b for b in blocks if b.startswith("If `gc gc claim` failed"))
+
+        # The prompt's classes map 1:1 onto the controller's failure classes
+        # (internal/dispatch/retry.go): non-clearing is terminal `hard`; an
+        # exhausted transient error is `transient`, so the controller
+        # re-dispatches it within the formula's bounded max_attempts.
         for hard_error in ("bead not found", "city or store not found", "permission refused"):
             with self.subTest(non_clearing=hard_error):
                 self.assertIn(hard_error, non_clearing)
                 self.assertNotIn(hard_error, transient)
-        self.assertIn("outlasted its retries", non_clearing)
+        self.assertIn("do not retry", non_clearing)
+        self.assertIn("`gc.failure_class=hard`", non_clearing)
+        self.assertNotIn("transient", non_clearing)
 
-        bullets = [" ".join(b.split()) for b in re.split(r"\n- ", raw)[1:]]
-        self.assertEqual(len(bullets), 2, bullets)
-        closed, unclosed = bullets
+        for transient_error in (
+            "store unreachable",
+            "circuit breaker open",
+            "timeout",
+            "lock contention",
+            "connection reset",
+        ):
+            with self.subTest(transient=transient_error):
+                self.assertIn(transient_error, transient)
+                self.assertNotIn(transient_error, non_clearing)
+        self.assertIn("at most twice", transient)
+        self.assertIn("`gc.failure_class=transient`", transient)
+        self.assertNotIn("hard", transient)
+        self.assertNotIn("non-clearing", transient.lower())
+
         # After a fail-close the bead is resolved: continue normally (drain on
         # an empty continuation group, claim the next member otherwise). Only
         # a failed claim or an unwritable bead stops without draining, since
         # that claim may hold an assignment the controller must see.
-        self.assertIn("`gc.failure_class=hard`", closed)
-        self.assertIn("`gc.failure_reason`", closed)
-        self.assertIn("go to Continue", closed)
-        self.assertNotIn("drain", closed.lower())
-        self.assertNotIn("stop", closed.lower())
-        self.assertIn("`gc gc claim` failed", unclosed)
+        self.assertIn("`gc.failure_reason`", fail_close)
+        self.assertIn("go to Continue", fail_close)
+        self.assertNotIn("drain", fail_close.lower())
+        self.assertNotIn("stop", fail_close.lower())
         self.assertIn("cannot be updated or closed", unclosed)
         self.assertIn("Do not drain", unclosed)
         self.assertEqual(section.count("Do not drain"), 1)
