@@ -214,7 +214,12 @@ CLEANUP_STATE=$(printf '%s' "$META" | jq -r '.artifact_cleanup_state // empty')
 EXPECTED_ARTIFACT_SHA=$(printf '%s' "$META" |
     jq -r '.artifact_source_sha // empty')
 BRANCH=$(printf '%s' "$META" | jq -r '.branch // empty')
-TARGET=$(printf '%s' "$META" | jq -r '.merged_target // empty')
+TARGET=$(printf '%s' "$META" | jq -r --arg result "$HANDOFF_RESULT" '
+    if ($result == "merged" or $result == "already_merged") and
+       (.merged_target == null or .merged_target == "")
+    then .target // empty
+    else .merged_target // empty
+    end')
 MERGED_SHA=$(printf '%s' "$META" | jq -r '.merged_sha // empty')
 PR_HEAD_SHA=$(printf '%s' "$META" | jq -r '.pr_head_sha // empty')
 PR_NUMBER=$(printf '%s' "$META" | jq -r '.pr_number // empty')
@@ -362,20 +367,70 @@ remote_pr_source_matches() {
     return "$pr_rc"
 }
 
+# History evidence must use real objects, without replacements, grafts or
+# an implicit network request to fill a partial clone during proof.
+history_git() {
+    GIT_GRAFT_FILE=/dev/null GIT_NO_LAZY_FETCH=1 \
+        git --no-replace-objects -C "$RIG_ROOT" "$@"
+}
+
 merged_target_contains() {
     durable_target=$1
     durable_sha=$2
     git -C "$RIG_ROOT" fetch --no-tags origin \
         "+refs/heads/$durable_target:refs/remotes/origin/$durable_target" \
         >/dev/null 2>&1 || return 1
-    if GIT_GRAFT_FILE=/dev/null \
-        git --no-replace-objects -C "$RIG_ROOT" merge-base \
-            --is-ancestor "$durable_sha" \
-            "refs/remotes/origin/$durable_target" 2>/dev/null
+    # Pin this fetch once. Integration ancestry and direct source proof must
+    # agree even if another process subsequently updates the tracking ref.
+    FETCHED_TARGET_SHA=$(history_git rev-parse --verify \
+        "refs/remotes/origin/$durable_target^{commit}" 2>/dev/null) || return 2
+    valid_object_id "$FETCHED_TARGET_SHA" || return 2
+    if history_git merge-base --is-ancestor "$durable_sha" \
+        "$FETCHED_TARGET_SHA" 2>/dev/null
     then
         return 0
     fi
     return 2
+}
+
+source_patches_present() {
+    source_sha=$1
+    shallow=$(history_git rev-parse --is-shallow-repository 2>/dev/null) ||
+        return 1
+    [ "$shallow" = false ] || return 1
+    # An ancestry shortcut must not hide a missing parent elsewhere in the
+    # queried history. All reachable commits must be readable.
+    history_git rev-list "$FETCHED_TARGET_SHA" "$source_sha" \
+        >/dev/null 2>&1 || return 1
+    if history_git merge-base --is-ancestor "$source_sha" \
+        "$FETCHED_TARGET_SHA" 2>/dev/null
+    then
+        return 0
+    else
+        ancestry_rc=$?
+    fi
+    [ "$ancestry_rc" -eq 1 ] || return 1
+    source_merges=$(history_git rev-list --merges \
+        "$FETCHED_TARGET_SHA..$source_sha" 2>/dev/null) || return 1
+    [ -z "$source_merges" ] || return 1
+    # This is historical normalized patch equivalence, not current-tree or
+    # semantic equality, nor proof that later reverts are absent. Keeping the
+    # exact remote source ref above preserves the original source bytes.
+    # Keep trailing newlines so an extra blank record cannot disappear in
+    # command substitution. Append the sentinel only after a successful query.
+    cherry_records=$(history_git cherry "$FETCHED_TARGET_SHA" \
+        "$source_sha" 2>/dev/null && printf '.') || return 1
+    cherry_records=${cherry_records%.}
+    [ -n "$cherry_records" ] || return 1
+    printf '%s' "$cherry_records" | while IFS= read -r record || [ -n "$record" ]; do
+        case "$record" in
+            '- '*) patch_oid=${record#- } ;;
+            *) exit 1 ;;
+        esac
+        valid_object_id "$patch_oid" || exit 1
+        # git cherry emits full object IDs in this repository's hash format.
+        [ "${#patch_oid}" -eq "${#source_sha}" ] || exit 1
+    done
 }
 
 # Prove the handoff is durable from the remote itself. Metadata selects the
@@ -440,6 +495,11 @@ case "$HANDOFF_RESULT" in
                 record_cleanup_state blocked || true
                 echo "ARTIFACT_CLEANUP_BLOCKED merged SHA is not durable on origin/$TARGET for $WORK" >&2
             fi
+            exit 1
+        fi
+        if ! source_patches_present "$EXPECTED_ARTIFACT_SHA"; then
+            record_cleanup_state blocked || true
+            echo "ARTIFACT_CLEANUP_BLOCKED source patches are not proven on origin/$TARGET for $WORK" >&2
             exit 1
         fi
         ;;
