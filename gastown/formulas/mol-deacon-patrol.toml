@@ -397,19 +397,26 @@ may have failed), orphan databases, and zombie Dolt server processes.
 **Step 1: Run the health check and classify it — one script**
 
 `gc dolt health` is a command of the Dolt pack, not of gc itself, and it
-reports on a Dolt server that gc manages. A city with no gc-managed Dolt has
-nothing for it to report, and says so in one of three ways: a city that does
-not import the Dolt pack (for example one on an exec or other beads provider)
-answers `unknown command "dolt"`; a scope whose server bd runs behind its
-proxy answers with a `skipped` report; and a city whose server bd owns
-directly (a direct-transport city) has no gc-managed runtime state, so the
-command exits 78 with `dolt-state.json (missing)`. None of these is a Dolt
-outage. A gc-managed server that is down also exits 78, with its state file
-present but no server running, and that one is an outage. So capture the
-exit code and stderr instead of piping the output straight into a parser:
-"not applicable", "down", "the check itself failed" and "here is a report"
-must stay different answers. Do not probe with `gc dolt --help` first: it
-exits 0 whether or not `gc dolt` exists.
+reports on a Dolt server that gc manages — and, since the per-scope
+delegation fix (city-fl5), on scopes whose server bd owns. A city with no
+gc-managed Dolt still answers without a report: a city that does not import
+the Dolt pack (for example one on an exec or other beads provider) answers
+`unknown command "dolt"`, and a city whose server bd owns directly
+(a direct-transport city) has no gc-managed runtime state, so the command
+exits 78 with `dolt-state.json (missing)`. A scope whose server bd runs
+behind its proxy is NOT one of these no-report cases: gc delegates per-scope
+to bd's dolt status and emits the full evaluable report —
+`topology: "bd-proxied"`, a `server.quiesced` flag, and one `scopes[]` entry
+per bd-owned scope — and this step evaluates it like any managed report. A
+`skipped` report on a proxied scope now means an older binary ran the check;
+the classifier below still maps it to not-applicable (legacy tolerance), and
+it is no more an escalation than the other not-applicable answers. None of
+these is a Dolt outage. A gc-managed server that is down also exits 78, with
+its state file present but no server running, and that one is an outage. So
+capture the exit code and stderr instead of piping the output straight into
+a parser: "not applicable", "down", "the check itself failed" and "here is a
+report" must stay different answers. Do not probe with `gc dolt --help`
+first: it exits 0 whether or not `gc dolt` exists.
 
 ```bash
 DOLT_HEALTH_ERR=$(mktemp)
@@ -457,7 +464,10 @@ Act on the `DOLT_HEALTH:` line:
   move on to the next step. Do NOT escalate and do NOT nudge a dog. A
   not-applicable report's other fields, if any, are placeholders —
   `server.reachable` is `false` because no gc-managed Dolt server exists, not
-  because one is down.
+  because one is down. A reason of `bd-owned-proxied-scope` is a legacy
+  binary's skip document — the current binary reports a proxied scope instead
+  of skipping it (city-fl5) — so seeing it means the patrol ran an older
+  binary, not that the data plane is unowned or broken.
 - `outage (...)`: the gc-managed Dolt server is down: its runtime state file
   exists but no server is running. This is Step 2's `server.reachable ==
   false` row without a report to read; send Step 3's **Server down
@@ -467,13 +477,28 @@ Act on the `DOLT_HEALTH:` line:
   archived, not one per cycle. Health was not measured, so there is nothing to
   evaluate; move on.
 - `evaluate`: evaluate the report it printed against the table in Step 2.
+  Managed and bd-proxied reports both land here; on a
+  `topology: "bd-proxied"` report the thresholds read bd-delegated values —
+  `server.quiesced == true` is bd reporting the backend parked until its
+  next command (serviceable, NOT an outage), and `orphans[]` stays empty
+  because bd owns the data dir, so that row cannot fire on a proxied scope.
 
 The report (HealthReport schema):
-- `server`: running, reachable, pid, port, latency_ms
+- `topology`: `managed` (gc runs the sql-server this report probed) or
+  `bd-proxied` (bd owns the lifecycle; omitted only by legacy reports that
+  answered proxied scopes with a skip document)
+- `server`: running, reachable, pid, port, latency_ms; on `bd-proxied` also
+  quiesced, mode, bd_status_ok, proxy_pid, proxy_port
+- `scopes[]` (bd-proxied only): one entry per bd-owned scope — path, role
+  (city or rig), mode, bd_status_ok, its own `server` block and
+  `databases[]` — so one document covers the whole data plane
 - `databases[]`: name, commits, open_beads
-- `backups`: dolt_freshness, dolt_age_sec, dolt_stale
+- `backups`: dolt_freshness, dolt_age_sec, dolt_stale; on `bd-proxied` also
+  unreferenced[] (relic backup dirs, measured but excluded from the
+  staleness aggregate)
 - `processes`: zombie_count, zombie_pids
-- `orphans[]`: name, size
+- `orphans[]`: name, size (always empty on `bd-proxied` — bd owns the data
+  dir; `gc dolt-cleanup` still reaps host orphans)
 
 Note: `--json` exits 0 when the payload is well-formed; health state is
 signalled in-band. Key decisions off `server.reachable`, not
@@ -485,11 +510,16 @@ are wedged (the latter is what first prompted this check to exist).
 | Signal | Threshold | Meaning |
 |--------|-----------|---------|
 | `server.reachable == false` | — | Dolt server is down or unresponsive (CRITICAL) |
+| `server.quiesced == true` | — | bd-proxied only: backend parked, bd starts it on demand — serviceable, NOT an outage |
 | `server.latency_ms > 5000` | 5 s | Server may be overloaded |
 | `databases[].commits > 50000` | 50 k | Compactor dog may have stalled |
 | `backups.dolt_stale == true` | >30 min | Backup dog may have failed |
 | `processes.zombie_count > 0` | any | Zombie Dolt servers detected |
 | `orphans` non-empty | any | Advisory only — NEVER act on this count directly; verify with `gc dolt-cleanup` (hyphen, dry-run) first |
+
+On a `topology: "bd-proxied"` report, top-level `databases[]` is the city
+scope's catalog — each rig scope's databases live in its `scopes[]` entry —
+and the `orphans` row cannot fire.
 
 **Step 3: React to alerts**
 
