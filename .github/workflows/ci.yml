@@ -58,7 +58,7 @@ jobs:
           # pinning them would waive findings most contributors never see.
           # Refute: gc lint oversight-rig  (0 findings on main, 4 on v1.4.1)
           for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler \
-                      pr-pipeline slack-channel slack-full slack-mini; do
+                      pr-pipeline slack-channel slack-full slack-mini runtime-herdr-core; do
             "$GC_BIN" lint "$pack"
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest oversight-rig/tests/test_order_scopes.py -q
@@ -130,11 +130,12 @@ jobs:
 
   # runtime-herdr-core is a typed, standard-library-only Python runtime with
   # a 3.9 floor, so it is type-checked and tested on the floor and on 3.12.
-  # Blocking from its first PR. The unit tier talks only to the in-process
-  # fake-hc; nothing here downloads or runs a real herdr-core.
+  # The unit tier talks only to the in-process fake-hc; nothing here
+  # downloads or runs a real herdr-core. Merges gate on the aggregator below.
   runtime-herdr-core:
     name: runtime-herdr-core (Python ${{ matrix.target }})
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -173,3 +174,21 @@ jobs:
         env:
           GC_HC_SCHEMA_FETCH: "1"
         run: python -m pytest tests/unit/test_fakehc_schema.py -q -k pinned_tags_released_schema
+
+  # The one stable check name for the main ruleset to require: the matrix's
+  # legs are named per Python version. It runs even when a leg fails or is
+  # cancelled (a skipped required check can count as passing) and fails
+  # unless every leg succeeded.
+  runtime-herdr-core-result:
+    name: runtime-herdr-core
+    if: always()
+    needs: [runtime-herdr-core]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Every runtime-herdr-core leg passed
+        env:
+          RESULT: ${{ needs.runtime-herdr-core.result }}
+        run: |
+          echo "runtime-herdr-core legs: $RESULT"
+          test "$RESULT" = success
