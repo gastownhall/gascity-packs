@@ -15,6 +15,7 @@ import pytest
 
 from gc_runtime_herdr_core.rpp.statedir import (
     UNSCOPED_CITY_KEY,
+    MachineIdError,
     StateDirError,
     city_id,
     city_key,
@@ -90,6 +91,34 @@ def test_identity_falls_back_to_the_host_name_only_when_no_id_is_readable(tmp_pa
     assert machine_identity(darwin=False, files=files, host=lambda: "box-1") == "box-1"
 
 
+def test_a_machine_id_that_cannot_be_read_fails_rather_than_rekeys(tmp_path: Path) -> None:
+    # Missing, empty or "uninitialized" mean "no id here"; any other read
+    # failure is transient as far as we know, and falling through would key
+    # the city differently for this one op.
+    etc = tmp_path / "etc-machine-id"
+    etc.mkdir()  # reading a directory fails with EISDIR
+    dbus = tmp_path / "dbus-machine-id"
+    dbus.write_text("fedcba98\n")
+    with pytest.raises(MachineIdError, match="etc-machine-id"):
+        machine_identity(darwin=False, files=(str(etc), str(dbus)), host=unreachable_host)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+def test_a_permission_denied_machine_id_fails(tmp_path: Path) -> None:
+    etc = tmp_path / "etc-machine-id"
+    etc.write_text("0123\n")
+    etc.chmod(0)
+    with pytest.raises(MachineIdError):
+        machine_identity(darwin=False, files=(str(etc),), host=unreachable_host)
+
+
+def test_an_unreadable_dbus_machine_id_fails_too(tmp_path: Path) -> None:
+    dbus = tmp_path / "dbus-machine-id"
+    dbus.mkdir()
+    with pytest.raises(MachineIdError, match="dbus-machine-id"):
+        machine_identity(darwin=False, files=(str(tmp_path / "missing"), str(dbus)), host=unreachable_host)
+
+
 def test_a_renamed_host_keeps_its_identity(tmp_path: Path) -> None:
     # hc does not treat a host name change as a new machine; neither may the
     # city key, or every city re-keys at once (DHCP and Bonjour rename Macs).
@@ -157,6 +186,46 @@ def test_state_root_takes_gc_exec_state_dir(tmp_path: Path, home_dir: Path) -> N
 def test_state_root_refuses_a_relative_state_dir(home_dir: Path) -> None:
     with pytest.raises(StateDirError):
         state_root({"GC_EXEC_STATE_DIR": "state"}, leaf=LEAF, home=lambda: str(home_dir))
+
+
+def test_state_root_resolves_its_parents(tmp_path: Path, home_dir: Path) -> None:
+    # Every spelling of one root must name one core: the root keys the
+    # city's hc session. Doubled slashes and symlinked parents all resolve.
+    real = tmp_path / "real"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real)
+    expected = str(real / "R")
+    for spelling in (str(real / "R"), f"{real}//R/", f"{tmp_path}//real/./R", str(alias / "R"), f"{alias}/../real/R"):
+        assert state_root({"GC_EXEC_STATE_DIR": spelling}, leaf=LEAF, home=lambda: str(home_dir)) == expected, spelling
+
+
+def test_state_root_keeps_its_own_last_component(tmp_path: Path, home_dir: Path) -> None:
+    # Only the parents resolve: a root that is itself a symlink stays one,
+    # so ensure_private_dir still refuses it.
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    link = tmp_path / "R"
+    link.symlink_to(real)
+    for spelling in (str(link), f"{link}/", f"{link}/.", f"{link}//./", f"{tmp_path}/./R"):
+        root = state_root({"GC_EXEC_STATE_DIR": spelling}, leaf=LEAF, home=lambda: str(home_dir))
+        assert root == str(link), spelling
+        with pytest.raises(StateDirError, match="symlink"):
+            ensure_private_dir(root)
+
+
+def test_state_root_spellings_of_the_filesystem_root() -> None:
+    for spelling in ("/", "//", "/.", "/./"):
+        assert state_root({"GC_EXEC_STATE_DIR": spelling}, leaf=LEAF, home=lambda: "/unused") == "/", spelling
+
+
+def test_the_default_root_resolves_a_symlinked_home(tmp_path: Path) -> None:
+    real_home = tmp_path / "real-home"
+    real_home.mkdir()
+    home_link = tmp_path / "home-link"
+    home_link.symlink_to(real_home)
+    root = state_root({}, leaf=LEAF, home=lambda: str(home_link))
+    assert root == str(real_home / ".local" / "state" / LEAF)
 
 
 def test_ensure_private_dir_creates_0700(tmp_path: Path) -> None:
