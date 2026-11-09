@@ -41,7 +41,7 @@ jobs:
         run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests contributing-to-gascity/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests -q
+        run: python3 -m pytest tests contributing-to-gascity/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests runtime-herdr-core/tests/unit -q
 
       - name: Lint and exercise shared role prompt composition
         run: |
@@ -114,15 +114,62 @@ jobs:
           go vet ./...
           go test ./...
 
-      # RPP conformance gate. Non-blocking until gascity main ships the
-      # Runtime Provider Protocol (the runtime-provider-packs PoC branch
-      # merges) — `gc runtime check` does not exist on gascity main yet, so
-      # `@latest` cannot satisfy this today. Flip continue-on-error to false
-      # (and pin @<version>) once RPP lands on gascity main. The install is a
-      # tool install, not a Go import, so the pack keeps zero gascity deps.
+      # RPP smoke check for runtime-cloudflare. The Runtime Provider Protocol
+      # and `gc runtime check` are on gascity main and in every gc release
+      # since v1.4.0, so `@latest` can run this. It stays report-only
+      # (continue-on-error) because it tracks an unpinned gc: pinning
+      # @<version> and dropping continue-on-error is what makes it a gate.
+      # The install is a tool install, not a Go import, so the pack keeps
+      # zero gascity deps.
       - name: Run runtime-cloudflare RPP conformance
         working-directory: runtime-cloudflare
         continue-on-error: true
         run: |
           go install github.com/gastownhall/gascity/cmd/gc@latest
           GC_BIN="$(go env GOPATH)/bin/gc" ./conformance.sh
+
+  # runtime-herdr-core is a typed, standard-library-only Python runtime with
+  # a 3.9 floor, so it is type-checked and tested on the floor and on 3.12.
+  # Blocking from its first PR. The unit tier talks only to the in-process
+  # fake-hc; nothing here downloads or runs a real herdr-core.
+  runtime-herdr-core:
+    name: runtime-herdr-core (Python ${{ matrix.target }})
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.9.25"
+            target: "3.9"
+          - python: "3.12.16"
+            target: "3.12"
+    defaults:
+      run:
+        working-directory: runtime-herdr-core
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+
+      # Test-only tools, each pinned to its last release that still runs on
+      # Python 3.9. The runtime imports nothing outside the standard library.
+      - name: Install pinned test tools
+        run: python -m pip install mypy==1.19.1 pytest==8.4.2 jsonschema==4.25.1 types-jsonschema==4.25.1.20251009
+
+      - name: mypy --strict
+        run: python -m mypy --config-file mypy.ini --python-version "${{ matrix.target }}"
+
+      - name: Unit tests
+        run: python -m pytest tests/unit -q
+
+      # fake-hc validates every reply against the hc schema vendored at the
+      # pinned tag; this proves the vendored copy is that tag's released API.
+      - name: Vendored hc schema is the pinned tag's
+        if: matrix.target == '3.12'
+        env:
+          GC_HC_SCHEMA_FETCH: "1"
+        run: python -m pytest tests/unit/test_fakehc_schema.py -q -k pinned_tags_released_schema
