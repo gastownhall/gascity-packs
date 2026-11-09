@@ -8,19 +8,23 @@ HC_SOCKET or HC_SESSION, and an unset GC_EXEC_CITY_PATH is the fixed
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pytest
 
+from gc_runtime_herdr_core.hc import paths as paths_module
 from gc_runtime_herdr_core.hc.paths import (
     HOLDER_SOCKET_SUFFIX_LEN,
     SUN_PATH_MAX,
     HcPaths,
     ensure_dirs,
     resolve_paths,
+    session_name,
 )
 from gc_runtime_herdr_core.rpp.statedir import StateDirError, city_id
 
@@ -37,15 +41,16 @@ CALLER_NOISE = {
 }
 
 
-def resolve(env: Dict[str, str], home: Path, *, host: str = "host-a", tmp_root: str = "/tmp") -> HcPaths:
-    return resolve_paths(env, host=host, home=lambda: str(home), uid=os.getuid(), tmp_root=tmp_root)
+def resolve(env: Dict[str, str], home: Path, *, machine: str = "machine-a", tmp_root: str = "/tmp") -> HcPaths:
+    return resolve_paths(env, machine=machine, home=lambda: str(home), uid=os.getuid(), tmp_root=tmp_root)
 
 
 def test_layout_under_the_state_root(home_dir: Path, short_tmp: Path) -> None:
     root = short_tmp / "R"
     paths = resolve({"GC_EXEC_CITY_PATH": "/srv/city", "GC_EXEC_STATE_DIR": str(root)}, home_dir)
-    cid = city_id("host-a", "/srv/city")
-    session = "gc-" + cid[:10]
+    cid = city_id("machine-a", "/srv/city")
+    session = session_name(cid, str(root))
+    assert re.fullmatch(r"gc-[0-9a-f]{10}", session)
     assert paths.city_key == "/srv/city"
     assert paths.city_id == cid
     assert paths.session == session
@@ -86,24 +91,60 @@ def test_unset_city_path_is_unscoped_never_the_cwd(
     monkeypatch.chdir(city)
     paths = resolve({}, home_dir)
     assert paths.city_key == "unscoped"
-    assert paths.city_id == city_id("host-a", "unscoped")
+    assert paths.city_id == city_id("machine-a", "unscoped")
     assert paths.session != resolve({"GC_EXEC_CITY_PATH": str(city)}, home_dir).session
 
 
-def test_host_is_in_the_key(home_dir: Path) -> None:
+def test_the_machine_is_in_the_key(home_dir: Path) -> None:
+    # Two machines sharing an NFS home keep apart: their machine ids differ.
     env = {"GC_EXEC_CITY_PATH": "/srv/city"}
-    a = resolve(env, home_dir, host="host-a")
-    b = resolve(env, home_dir, host="host-b")
+    a = resolve(env, home_dir, machine="machine-a")
+    b = resolve(env, home_dir, machine="machine-b")
     assert a.session != b.session
     assert a.socket != b.socket
     assert a.state_dir != b.state_dir
+
+
+def test_the_default_machine_is_what_hc_calls_this_machine(
+    home_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(paths_module, "machine_identity", lambda: "machine-x")
+    env = {"GC_EXEC_CITY_PATH": "/srv/city"}
+    assert resolve_paths(env, home=lambda: str(home_dir), uid=os.getuid()) == resolve(env, home_dir, machine="machine-x")
+
+
+def test_the_session_names_the_city_under_its_state_root() -> None:
+    expected = "gc-" + hashlib.sha256(b"c0ffee\0/srv/R").hexdigest()[:10]
+    assert session_name("c0ffee", "/srv/R") == expected
+
+
+@pytest.mark.parametrize("long_roots", [False, True])
+def test_two_state_roots_never_share_a_core(home_dir: Path, short_tmp: Path, long_roots: bool) -> None:
+    # Conformance runs use the same city keys under scratch roots. One shared
+    # socket would let one core steal the other's (hc's bind unlinks it) and
+    # adopt its holders (every <socket>.holder.*.sock in that directory).
+    pad = "r" * (120 if long_roots else 1)
+    env = {"GC_EXEC_CITY_PATH": "/gc-rpp/city-a"}
+    a = resolve(dict(env, GC_EXEC_STATE_DIR=str(short_tmp / f"a{pad}")), home_dir, tmp_root=str(short_tmp))
+    b = resolve(dict(env, GC_EXEC_STATE_DIR=str(short_tmp / f"b{pad}")), home_dir, tmp_root=str(short_tmp))
+    assert a.city_id == b.city_id
+    assert a.session != b.session
+    assert a.socket != b.socket
+    assert a.state_dir != b.state_dir
+    assert (os.path.dirname(a.socket) == os.path.dirname(b.socket)) is long_roots  # the shared /tmp fallback dir
+
+
+def test_the_state_root_is_compared_normalized(home_dir: Path, short_tmp: Path) -> None:
+    clean = resolve({"GC_EXEC_CITY_PATH": "/c", "GC_EXEC_STATE_DIR": str(short_tmp / "R")}, home_dir)
+    messy = resolve({"GC_EXEC_CITY_PATH": "/c", "GC_EXEC_STATE_DIR": f"{short_tmp}//R/./"}, home_dir)
+    assert messy == clean
 
 
 def test_doctor_reads_gc_city_path_to_the_same_core(home_dir: Path) -> None:
     op = resolve({"GC_EXEC_CITY_PATH": "/srv/city"}, home_dir)
     doctor = resolve_paths(
         {"GC_CITY_PATH": "/srv/city"},
-        host="host-a",
+        machine="machine-a",
         home=lambda: str(home_dir),
         uid=os.getuid(),
         city_var="GC_CITY_PATH",
@@ -122,11 +163,11 @@ def test_the_socket_moves_when_only_hcs_holder_sockets_would_overflow(home_dir: 
     # hc binds <session>.holder.<8hex>.sock beside the main socket, so the
     # main path fitting in sun_path is not enough.
     root = short_tmp / ("r" * (SUN_PATH_MAX - 50 - len(str(short_tmp)) - 1))
-    session = resolve({"GC_EXEC_CITY_PATH": "/c"}, home_dir).session
+    paths = resolve({"GC_EXEC_CITY_PATH": "/c", "GC_EXEC_STATE_DIR": str(root)}, home_dir, tmp_root=str(short_tmp))
+    session = paths.session
     main = f"{root}/herdr-core/{session}/{session}.sock"
     assert len(main.encode()) < SUN_PATH_MAX
     assert len(main.encode()) - len(".sock") + HOLDER_SOCKET_SUFFIX_LEN >= SUN_PATH_MAX
-    paths = resolve({"GC_EXEC_CITY_PATH": "/c", "GC_EXEC_STATE_DIR": str(root)}, home_dir, tmp_root=str(short_tmp))
     assert paths.socket == str(short_tmp / f"gc-herdr-core-{os.getuid()}" / f"{session}.sock")
 
 

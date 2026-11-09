@@ -1,8 +1,8 @@
 """Where a city's core lives.
 
 Its hc session, socket, state and config come from the uid, the
-password-database home (or ``GC_EXEC_STATE_DIR``), the host name and the raw
-city key, and from nothing in the caller's environment: hc itself resolves
+password-database home (or ``GC_EXEC_STATE_DIR``), the machine's identity and
+the raw city key, and from nothing in the caller's environment: hc itself resolves
 its socket and state from ``HC_SOCKET``, ``HC_SESSION``, ``XDG_RUNTIME_DIR`` and
 ``XDG_STATE_HOME`` (hc ``crates/herdr-core/src/paths.rs``), which differ
 between the supervisor, cron, ssh and sudo. A process that resolved another
@@ -10,7 +10,11 @@ core would read the city's sessions as absent.
 
 The tuple a core is started with (:meth:`HcPaths.discovery_env`) is the one
 every client of that core uses: two state directories on one socket let a
-second core take the first one's holders over (hc #200).
+second core take the first one's holders over (hc #200). For the same reason
+the session, and so every socket name, is unique per city *and* state root:
+hc's bind unlinks a socket it finds, and a starting core adopts every
+``<socket>.holder.*.sock`` beside its own, so two roots that shared a socket
+directory (the ``/tmp`` fallback) would take each other's programs.
 
 Layout under the state root ``R``::
 
@@ -26,12 +30,21 @@ A socket path too long for ``sun_path`` moves to
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 from dataclasses import dataclass
 from typing import Callable, Dict, Final, Mapping, Optional
 
-from ..rpp.statedir import OP_CITY_ENV, city_id, city_key, ensure_private_dir, host_name, password_home, state_root
+from ..rpp.statedir import (
+    OP_CITY_ENV,
+    city_id,
+    city_key,
+    ensure_private_dir,
+    machine_identity,
+    password_home,
+    state_root,
+)
 
 PACK_STATE_LEAF: Final = "gc-runtime-herdr-core"
 """The default state root is ``<password home>/.local/state/<leaf>``."""
@@ -81,10 +94,16 @@ def _sockets_fit(directory: str, session: str) -> bool:
     return longest < SUN_PATH_MAX
 
 
+def session_name(city: str, root: str) -> str:
+    """The hc session of city id ``city`` under state root ``root``."""
+    digest = hashlib.sha256(os.fsencode(city) + b"\0" + os.fsencode(root)).hexdigest()
+    return SESSION_PREFIX + digest[:SESSION_ID_CHARS]
+
+
 def resolve_paths(
     env: Mapping[str, str],
     *,
-    host: Optional[str] = None,
+    machine: Optional[str] = None,
     home: Callable[[], str] = password_home,
     uid: Optional[int] = None,
     city_var: str = OP_CITY_ENV,
@@ -93,12 +112,13 @@ def resolve_paths(
     """Where the city named by ``env[city_var]`` keeps its core. Writes nothing.
 
     ``city_var`` is ``GC_EXEC_CITY_PATH`` for ops and ``GC_CITY_PATH`` for doctor
-    checks and pack commands; both carry gc's absolute city path.
+    checks and pack commands; both carry gc's absolute city path. ``machine``
+    defaults to :func:`~..rpp.statedir.machine_identity`.
     """
     key = city_key(env, city_var)
-    cid = city_id(host_name() if host is None else host, key)
-    session = SESSION_PREFIX + cid[:SESSION_ID_CHARS]
+    cid = city_id(machine_identity() if machine is None else machine, key)
     root = state_root(env, leaf=PACK_STATE_LEAF, home=home)
+    session = session_name(cid, root)
     state_dir = os.path.join(root, HC_STATE_SUBDIR, session)
     socket_dir = state_dir
     if not _sockets_fit(state_dir, session):

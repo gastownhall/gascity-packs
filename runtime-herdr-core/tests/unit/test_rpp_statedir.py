@@ -7,7 +7,9 @@ import hashlib
 import os
 import pwd
 import stat
+import sys
 from pathlib import Path
+from typing import Tuple
 
 import pytest
 
@@ -16,8 +18,11 @@ from gc_runtime_herdr_core.rpp.statedir import (
     StateDirError,
     city_id,
     city_key,
+    darwin_host_uuid,
     ensure_private_dir,
+    format_host_uuid,
     host_name,
+    machine_identity,
     password_home,
     state_root,
 )
@@ -46,11 +51,80 @@ def test_unset_city_path_never_reads_the_cwd(tmp_path: Path, monkeypatch: pytest
     assert city_id("h", city_key({})) != city_id("h", str(city))
 
 
-def test_city_id_keys_host_and_city() -> None:
-    expected = hashlib.sha256(b"host-a\0/srv/city").hexdigest()
-    assert city_id("host-a", "/srv/city") == expected
-    assert city_id("host-b", "/srv/city") != expected
-    assert city_id("host-a", "/srv/city2") != expected
+def test_city_id_keys_machine_and_city() -> None:
+    expected = hashlib.sha256(b"4f2c9a\0/srv/city").hexdigest()
+    assert city_id("4f2c9a", "/srv/city") == expected
+    assert city_id("7d01ee", "/srv/city") != expected
+    assert city_id("4f2c9a", "/srv/city2") != expected
+
+
+# --- machine identity: what hc itself calls this machine ---------------------
+
+
+def machine_files(tmp_path: Path, etc: object, dbus: object) -> Tuple[str, str]:
+    """Two machine-id files; ``None`` leaves one missing."""
+    paths = (tmp_path / "etc-machine-id", tmp_path / "dbus-machine-id")
+    for path, content in zip(paths, (etc, dbus)):
+        if isinstance(content, str):
+            path.write_text(content)
+    return str(paths[0]), str(paths[1])
+
+
+def unreachable_host() -> str:
+    raise AssertionError("the host name is only a fallback")
+
+
+def test_identity_is_etc_machine_id(tmp_path: Path) -> None:
+    files = machine_files(tmp_path, "0123456789abcdef0123456789abcdef\n", "ffff")
+    assert machine_identity(darwin=False, files=files, host=unreachable_host) == "0123456789abcdef0123456789abcdef"
+
+
+@pytest.mark.parametrize("etc", [None, "", "  \n", "uninitialized\n"])
+def test_identity_falls_back_to_the_dbus_machine_id(tmp_path: Path, etc: object) -> None:
+    files = machine_files(tmp_path, etc, "fedcba98\n")
+    assert machine_identity(darwin=False, files=files, host=unreachable_host) == "fedcba98"
+
+
+def test_identity_falls_back_to_the_host_name_only_when_no_id_is_readable(tmp_path: Path) -> None:
+    files = machine_files(tmp_path, None, "uninitialized")
+    assert machine_identity(darwin=False, files=files, host=lambda: "box-1") == "box-1"
+
+
+def test_a_renamed_host_keeps_its_identity(tmp_path: Path) -> None:
+    # hc does not treat a host name change as a new machine; neither may the
+    # city key, or every city re-keys at once (DHCP and Bonjour rename Macs).
+    files = machine_files(tmp_path, "abc123\n", None)
+    before = machine_identity(darwin=False, files=files, host=lambda: "laptop.local")
+    after = machine_identity(darwin=False, files=files, host=lambda: "laptop-2.local")
+    assert before == after == "abc123"
+
+
+def test_macos_identity_is_the_host_uuid(tmp_path: Path) -> None:
+    files = machine_files(tmp_path, "linux-id", None)
+    uuid = "564D8E2A-1B2C-3D4E-5F60-718293A4B5C6"
+    assert machine_identity(darwin=True, files=files, host_uuid=lambda: uuid, host=unreachable_host) == uuid
+    assert machine_identity(darwin=True, files=files, host_uuid=lambda: None, host=lambda: "mac") == "mac"
+
+
+def test_host_uuid_is_formatted_like_ioplatformuuid() -> None:
+    assert format_host_uuid(bytes(range(16))) == "00010203-0405-0607-0809-0A0B0C0D0E0F"
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="exercises the non-macOS path")
+def test_the_macos_source_reads_nothing_elsewhere() -> None:
+    assert darwin_host_uuid() is None
+
+
+def test_this_hosts_identity_is_stable() -> None:
+    assert machine_identity() == machine_identity()
+    if sys.platform.startswith("linux"):
+        try:
+            with open("/etc/machine-id", encoding="ascii") as fh:
+                etc = fh.read().strip()
+        except OSError:
+            etc = ""
+        if etc and etc != "uninitialized":
+            assert machine_identity() == etc
 
 
 def test_doctor_and_ops_key_the_same_city_alike() -> None:
