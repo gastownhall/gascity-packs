@@ -5,9 +5,9 @@ the pack writes there goes through a :class:`Redactor`, which replaces with
 :data:`REDACTED`:
 
 * every value of a sensitive key (the markers of gc's
-  ``execenv.IsSensitiveKey``) of at least four characters, from the op's own
+  ``execenv.IsSensitiveKey``) of at least four bytes, from the op's own
   environment and from the session's;
-* every session (start-config ``env``) value of eight characters or more,
+* every session (start-config ``env``) value of eight bytes or more,
   whatever its key: a session environment carries provider credentials under
   names no marker list predicts;
 * ``GC_INSTANCE_TOKEN`` whatever its length (observe.v1 rule 10);
@@ -24,10 +24,11 @@ from typing import Final, Mapping, Set
 REDACTED: Final = "[REDACTED]"
 
 SENSITIVE_VALUE_MIN_LEN: Final = 4
-"""gc's floor: shorter values of sensitive keys are left alone."""
+"""gc's floor, in UTF-8 bytes as gc counts (execenv ``len(value)``): shorter
+values of sensitive keys are left alone."""
 
 START_ENV_VALUE_MIN_LEN: Final = 8
-"""Session environment values this long are redacted whatever their key."""
+"""Session environment values this many UTF-8 bytes long are redacted whatever their key."""
 
 INSTANCE_TOKEN_KEY: Final = "GC_INSTANCE_TOKEN"
 
@@ -55,6 +56,10 @@ _SECRET_ASSIGNMENT: Final = re.compile(
 )
 
 
+def _byte_length(value: str) -> int:
+    return len(value.strip().encode("utf-8", "surrogateescape"))
+
+
 def is_sensitive_key(key: str) -> bool:
     """Whether an environment key likely holds a secret (gc's rule)."""
     upper = key.strip().upper()
@@ -76,13 +81,13 @@ class Redactor:
     def add_process_env(self, env: Mapping[str, str]) -> None:
         """Redact the sensitive values of the op's own environment."""
         for key, value in env.items():
-            if is_sensitive_key(key) and len(value.strip()) >= SENSITIVE_VALUE_MIN_LEN:
+            if is_sensitive_key(key) and _byte_length(value) >= SENSITIVE_VALUE_MIN_LEN:
                 self.add_secret(value)
 
     def add_start_env(self, env: Mapping[str, str]) -> None:
         """Redact a session environment (a start config's ``env``)."""
         for key, value in env.items():
-            length = len(value.strip())
+            length = _byte_length(value)
             if (
                 key == INSTANCE_TOKEN_KEY
                 or length >= START_ENV_VALUE_MIN_LEN

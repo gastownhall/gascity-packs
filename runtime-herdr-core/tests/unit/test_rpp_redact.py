@@ -77,3 +77,20 @@ def test_secret_assignments_are_redacted_even_when_unknown() -> None:
 
 def test_redaction_leaves_clean_text_alone() -> None:
     assert Redactor().redact('session "mc-mayor" already exists') == 'session "mc-mayor" already exists'
+
+
+def test_length_floors_count_utf8_bytes_like_gc() -> None:
+    # gc's execenv compares len(value) in bytes: two euro signs are 6 bytes.
+    redactor = Redactor()
+    redactor.add_process_env({"SHORT_TOKEN": "€€"})
+    redactor.add_start_env({"GC_LABEL": "äöüß"})  # 4 characters, 8 bytes
+    out = redactor.redact("token €€ label äöüß")
+    assert "€€" not in out
+    assert "äöüß" not in out
+
+
+def test_short_ascii_values_stay_below_the_floors() -> None:
+    redactor = Redactor()
+    redactor.add_process_env({"SHORT_TOKEN": "abc"})
+    redactor.add_start_env({"GC_LABEL": "abcdefg"})
+    assert redactor.redact("abc abcdefg") == "abc abcdefg"

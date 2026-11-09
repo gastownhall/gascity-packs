@@ -27,8 +27,12 @@ def loads(data: Union[str, bytes]) -> object:
 
 
 def dumps(value: object) -> str:
-    """Encode compactly, ASCII only, so any str (even an undecodable one) encodes."""
-    return json.dumps(value, separators=(",", ":"))
+    """Encode compactly, ASCII only, so any str (even an undecodable one) encodes.
+
+    NaN and the infinities raise ValueError: they are not JSON, and gc's Go
+    decoder rejects them.
+    """
+    return json.dumps(value, separators=(",", ":"), allow_nan=False)
 
 
 def _kind(value: object) -> str:
