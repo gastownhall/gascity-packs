@@ -6,15 +6,24 @@ daemon the Herdr desktop app is built on. The pack ships one executable that
 speaks the Runtime Provider Protocol (RPP v0). It is typed Python, standard
 library only, Python 3.9 or later, so it needs no binary of its own.
 
-## Status: scaffold, not released
+## Status: observe.v1 ops in, not released
 
-This is the scaffold: the layers the runtime is built on, namely the RPP
-kit, the hc client, the fake-hc test double and CI. The executable answers
-`protocol` (version 0, no capabilities, locality `local`) and `x-version`;
-**every session op answers exit 2 ("unknown operation") until the runtime
-ops land**. The pack is not in `registry.toml` yet: it is published once the
-runtime ops are in and proven on a real city. Do not select
-`provider = "herdr-core"` yet.
+The executable implements gc's lifecycle and observe.v1 ops on herdr-core
+and is v2-ready: it declares `observe.v1`, `report-attachment`,
+`report-activity`, `city-scoped` and `conformance-faults` (locality
+`local`), and passes
+`gc runtime check` and `gc runtime conformance` against fake-hc (see
+[Tests](#tests)). It cannot run a configured agent yet: the agent launcher,
+which applies the session environment, staging, setup commands and the
+first turn without handing secrets to hc, and the driving ops (`nudge`,
+`send-keys`, `interrupt`) are the next change, so `start` refuses a start
+config that needs them. The pack is not in `registry.toml` yet: it is published
+once it has run real cities on a pinned herdr-core. The doctor checks and
+the `gc herdr-core install|status|upgrade|restart-core` commands are not in
+this build: until they are, install herdr-core 0.1.19 yourself at
+`<home>/.local/share/gc-runtime-herdr-core/hc/0.1.19/herdr-core`, or name a
+binary in the city's pack config (`hc_bin` in `<R>/pack/<city id>/config.json`).
+A `herdr-core` or `hc` on `PATH` is never used.
 
 The runtime is named `herdr-core`, never `herdr`: `herdr` is a gc builtin,
 and declaring it is a composition error (RUNTIME-SEL-007).
@@ -24,22 +33,81 @@ and declaring it is a composition error (RUNTIME-SEL-007).
 ```text
 runtime-herdr-core/
   pack.toml                        [runtimes.herdr-core] -> assets/bin/gc-runtime-herdr-core
-  mypy.ini                         mypy --strict; disallow_any_expr in rpp/
+  mypy.ini                         mypy --strict; disallow_any_expr in rpp/ and herdrcore/
   assets/
     bin/gc-runtime-herdr-core      0755, #!/usr/bin/env -S python3 -I -S
     gc_runtime_herdr_core/
       main.py                      argv dispatch; the only reader of os.environ
+      handshake.py                 the capabilities this build declares
       rpp/                         provider-neutral RPP kit
         exitcodes.py wire.py ops.py perop.py cancel.py redact.py flock.py
         statedir.py jsonval.py
       hc/                          herdr-core client
         paths.py version.py client.py types.py parse.py errors.py
+      herdrcore/                   runtime semantics
+        ops_table.py context.py config.py core.py command.py naming.py
+        records.py metastore.py procs.py attach.py activity.py reads.py
+        lifecycle.py
   tests/
-    fakehc/                        in-process hc double + vendored schema
+    fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
     unit/                          the unit tier
+    conformance.sh                 gc runtime check + gc runtime conformance against fake-hc
 ```
 
-## What this scaffold fixes in place
+## How sessions run
+
+- **One core per city and state root**, started by the pack with `herdr-core
+  server start` under a minimal explicit environment: the password-database
+  user, a fixed `PATH` (the hc binary's directory, then the system's), the
+  locale, the discovery tuple, the pack-owned hc config, and the user
+  manager's runtime directory and bus when they exist. No gc token or
+  provider credential reaches the core. `start` refuses a core whose
+  environment differs (someone else started it) and names the fix; a core
+  listening on another socket for this session is refused too. A core hc
+  placed under the systemd user manager is judged by its unit's environment
+  file (hc writes the starter's environment to
+  `$RUNTIME_DIRECTORY/environment`), not by the manager's own environment
+  block. On macOS, where a process's environment is read cut at
+  whitespace, a state root with whitespace is refused. A read that
+  finds the core down answers unknown and starts it in the background, at
+  most one at a time and none for five minutes after a failed start.
+- **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
+  typed notes into agents, 16 MB history, nothing from `~/.config/herdr-core`.
+- **Names and identity.** A session is the newest terminal labelled with its
+  exact gc name (`gc.session`), in its city (`gc.city`); each start gets a new
+  incarnation nonce (`gc.obj`). The hc terminal name is a digest of the city
+  and gc name, which makes a second `terminal.run` of a live session fail.
+  Identity (`GC_SESSION_ID`, `GC_RUNTIME_EPOCH`, `GC_INSTANCE_TOKEN`,
+  `GT_PROCESS_NAMES`) is written to `R/pack/<city id>/meta/<gc.obj>.json`
+  (0600) before the terminal exists; the metadata ops read and write it.
+- **Dead boxes.** A finished record, and a live one no longer running the
+  program the pack started (a kept terminal's replacement shell, a lost
+  holder), is a dead box: `peek` still reads its screen, `kill-object corpse`
+  removes it, and a plain `start` replaces it.
+- **Start** runs the command under `sh -c` with the core's environment, in
+  `work_dir` (which must exist; the home without one); hc gets only `TERM`.
+  `terminal.run` is sent once: after a lost reply the start takes the
+  terminal its `gc.obj` names, so a command never runs twice, and a failed
+  start keeps the metadata while its terminal may still run. **Stop** and
+  **kill-object** end the program with `terminal.kill` and remove the record
+  and its metadata.
+- **Activity.** A program that never reported OSC 7501 status is active
+  when its screen changes: `inventory` and `get-last-activity` read the
+  screen of each such running agent (hc keeps no output time). `inventory`
+  reads within its deadline, and a box whose screen it did not read on that
+  pass reads as active now, never at an old time.
+- **Attachment.** hc counts no viewers; a box is attached while the pack's
+  `attach` runs (it holds a lock) or a `herdr-core|hc attach` process of this
+  user targets it on this city's core. `is-attached` exits 1 when it cannot
+  tell, including when such a process's environment cannot be read.
+  `attach` checks the core answers first and runs `hc attach` with the
+  core's allowlist environment, so it never starts a core on gc's.
+- **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
+  reading stdin); the driving ops, `watch-startup` and `copy-to` (exit 2,
+  until the launcher lands); `server-stop`, `program-status` and session
+  events.
+
+## Foundations
 
 - **One dispatch for every transport.** A handler gets an `OpRequest` (op,
   args, stdin, an env snapshot, a cancel token, a deadline, a redactor) and
@@ -109,8 +177,23 @@ python -m mypy --config-file mypy.ini --python-version 3.12
 GC_HC_SCHEMA_FETCH=1 python -m pytest tests/unit/test_fakehc_schema.py -q   # network: vendored == tag
 ```
 
-CI runs the same in the `runtime-herdr-core` job on Python 3.9 and 3.12, and
-the unit tier again in the shared pytest step.
+gc's own checks of the runtime, against fake-hc run as the hc binary (a gc
+build on `PATH` or in `GC_BIN`; `PYTHON` is an interpreter with
+`jsonschema`, for fake-hc):
+
+```bash
+GC_BIN=/path/to/gc PYTHON=python tests/conformance.sh --json
+```
+
+It runs `gc runtime check` and `gc runtime conformance` and fails unless
+every requirement passes or is skipped and the report is v2-ready. All state
+goes to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
+default state root instead. Without `--json` it reads the text report, for a
+gc that cannot encode it.
+
+CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12,
+with gc pinned to a gascity commit, and the unit tier again in the shared
+pytest step.
 
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.

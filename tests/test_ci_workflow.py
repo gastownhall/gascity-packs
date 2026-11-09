@@ -67,6 +67,27 @@ def test_runtime_herdr_core_job_is_blocking_on_its_python_floor() -> None:
     assert "runtime-herdr-core/tests/unit" in shared, "the shared pytest step must run runtime-herdr-core"
 
 
+def test_runtime_herdr_core_runs_gc_conformance_against_a_pinned_gc() -> None:
+    workflow = yaml.safe_load(
+        REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = {step.get("name"): step for step in workflow["jobs"]["runtime-herdr-core"]["steps"]}
+    step = steps.get("RPP conformance against fake-hc")
+    assert step is not None, f"runtime-herdr-core lost its conformance step; steps: {sorted(steps)}"
+    assert "continue-on-error" not in step, "conformance must block merges"
+    pin = step.get("env", {}).get("GASCITY_PIN", "")
+    assert len(pin) == 40 and all(c in "0123456789abcdef" for c in pin), "gc is pinned to a full commit SHA"
+    active = [
+        line.strip()
+        for line in step["run"].splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert 'go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_PIN}"' in active
+    runs = [line for line in active if line.startswith("tests/conformance.sh")]
+    assert runs == ["tests/conformance.sh --json", "tests/conformance.sh --json --default-root"], runs
+    assert not any("||" in line for line in active), "a conformance failure must fail the job"
+
+
 def test_runtime_herdr_core_has_a_merge_blocking_aggregator() -> None:
     # A ruleset can require one stable check name; matrix legs are named per
     # Python version. The aggregator must run even when a leg fails or is

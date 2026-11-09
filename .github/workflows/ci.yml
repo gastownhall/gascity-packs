@@ -130,12 +130,12 @@ jobs:
 
   # runtime-herdr-core is a typed, standard-library-only Python runtime with
   # a 3.9 floor, so it is type-checked and tested on the floor and on 3.12.
-  # The unit tier talks only to the in-process fake-hc; nothing here
+  # The unit tier and the conformance runs talk only to fake-hc; nothing here
   # downloads or runs a real herdr-core. Merges gate on the aggregator below.
   runtime-herdr-core:
     name: runtime-herdr-core (Python ${{ matrix.target }})
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -166,6 +166,28 @@ jobs:
 
       - name: Unit tests
         run: python -m pytest tests/unit -q
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: slack-full/adapter/go.mod
+          cache: false
+
+      # gc's own RPP checks of the runtime, against fake-hc: `gc runtime
+      # check` and `gc runtime conformance --json`, which must report
+      # v2_ready with no failed requirement. gc is pinned to a gascity commit,
+      # so a new conformance group lands here as a deliberate pin bump. Run
+      # with a scratch GC_EXEC_STATE_DIR, then without it to prove the default
+      # state root (the runner's home is ephemeral; CI=true lets it run).
+      - name: RPP conformance against fake-hc
+        env:
+          GASCITY_PIN: 862ee37e4570338d5135f3fbc761bd6221de38d4
+        run: |
+          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_PIN}"
+          export GC_BIN="$(go env GOPATH)/bin/gc"
+          export PYTHON="$(command -v python)"
+          tests/conformance.sh --json
+          tests/conformance.sh --json --default-root
 
       # fake-hc validates every reply against the hc schema vendored at the
       # pinned tag; this proves the vendored copy is that tag's released API.

@@ -86,6 +86,7 @@ class FakeTerminal:
         restart_delay_s: float = KEPT_RESTART_S,
     ) -> None:
         self.address = address
+        self.created_seq = 0  # the core's counter for this address
         self.name = name
         self.labels = labels
         self.argv = list(argv)

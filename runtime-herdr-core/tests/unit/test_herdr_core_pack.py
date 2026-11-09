@@ -17,12 +17,16 @@ from gc_runtime_herdr_core import PACK_NAME, PACK_VERSION, RUNTIME_NAME
 PACK_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = PACK_ROOT / "assets" / "gc_runtime_herdr_core"
 ENTRY = PACK_ROOT / "assets" / "bin" / "gc-runtime-herdr-core"
+SCRIPTS = (ENTRY,)
+
+
+def source_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
 def runtime_sources() -> Iterator[Tuple[Path, ast.Module]]:
-    for path in sorted(PACKAGE.rglob("*.py")):
-        yield path, ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    yield ENTRY, ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
+    for path in [*sorted(PACKAGE.rglob("*.py")), *SCRIPTS]:
+        yield path, ast.parse(source_text(path), filename=str(path))
 
 
 def test_manifest_declares_the_herdr_core_runtime() -> None:
@@ -70,13 +74,13 @@ def test_runtime_imports_only_the_standard_library() -> None:
 
 def test_runtime_parses_as_python_3_9() -> None:
     for path, _ in runtime_sources():
-        ast.parse(path.read_text(encoding="utf-8"), filename=str(path), feature_version=(3, 9))
+        ast.parse(source_text(path), filename=str(path), feature_version=(3, 9))
 
 
 def test_every_module_postpones_annotations() -> None:
     missing = []
     for path, tree in runtime_sources():
-        if path == ENTRY:
+        if path in SCRIPTS:
             continue
         futures = {
             alias.name

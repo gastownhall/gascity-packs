@@ -5,8 +5,9 @@
 
 This is the only module that reads the process environment: it hands a
 snapshot to the per-op runner, which builds each op's request from it.
-The handshake is static and reads no state; an op missing
-from :data:`OPS` answers exit 2, the RPP "unknown operation".
+The handshake is static, reads no state and loads no backend code; every
+other op loads the op table (:mod:`.herdrcore.ops_table`). An op missing
+from it answers exit 2, the RPP "unknown operation", without reading stdin.
 """
 
 from __future__ import annotations
@@ -19,16 +20,22 @@ from . import PACK_NAME, PACK_VERSION
 from .rpp.jsonval import dumps
 from .rpp.ops import OpTable, handshake_op
 from .rpp.perop import run_per_op
-from .rpp.wire import Handshake
+from .handshake import HANDSHAKE
 
 DEBUG_ENV: Final = "GC_HERDR_CORE_DEBUG"
 """``1`` adds a redacted traceback to unexpected failures on stderr."""
 
-HANDSHAKE: Final = Handshake(capabilities=(), locality="local")
-"""What this build declares. A capability token is declared only together
-with the ops that implement it and the tests that prove them."""
+PROTOCOL_ONLY: Final[OpTable] = {"protocol": handshake_op(HANDSHAKE)}
 
-OPS: Final[OpTable] = {"protocol": handshake_op(HANDSHAKE)}
+
+def ops_for(op: str) -> OpTable:
+    """The op table ``op`` needs: the static handshake alone, or every op."""
+    if op == "protocol":
+        return PROTOCOL_ONLY
+    from .herdrcore.context import live_host
+    from .herdrcore.ops_table import build_ops
+
+    return build_ops(live_host(sys.executable))
 
 
 def _version() -> int:
@@ -46,7 +53,7 @@ def main(argv: Sequence[str], *, started: float) -> int:
     return run_per_op(
         argv,
         os.environ,
-        OPS,
+        ops_for(argv[1] if len(argv) > 1 else ""),
         started=started,
         stdin=sys.stdin.buffer,
         stdout=sys.stdout.buffer,

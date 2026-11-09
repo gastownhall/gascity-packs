@@ -54,7 +54,22 @@ FEATURES: Tuple[str, ...] = ("framed", "attach", "events", "status", "shell", "r
 """hello's ``features`` at v0.1.19 (hc ``src/api.rs``)."""
 
 _NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,31}")
-_ID_SHAPED = re.compile(r"t[0-9]+")
+_ID_SHAPED = re.compile(r"t[1-9][0-9bcdfghjkmnpqrstvwxyz]*")
+_SYMBOLS = "0123456789bcdfghjkmnpqrstvwxyz"
+
+
+def hc_address(n: int) -> str:
+    """hc ``terminals.rs`` ``address``: t1..t9, t10..t9z (30 symbols after the first digit)."""
+    rest, size, length = n - 1, 9, 0
+    while rest >= size:
+        rest -= size
+        size *= 30
+        length += 1
+    tail = ""
+    for _ in range(length):
+        tail = _SYMBOLS[rest % 30] + tail
+        rest //= 30
+    return f"t{rest + 1}{tail}"
 _STRIPPED_FROM_CORE_ENV = ("TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "COLORTERM", "HC_TERMINAL_ID", "HC_SCOPE", "HC_RUNTIME")
 
 Params = Dict[str, Any]
@@ -80,11 +95,12 @@ class RpcFailure(Exception):
 
 @dataclass(frozen=True)
 class _Fault:
-    action: str  # error | drop | delay | garble
+    action: str  # error | lose | drop | delay | garble
     kind: str = ""
     message: str = ""
     code: int = -32000
     seconds: float = 0.0
+    after_exit: bool = False
 
 
 class _Server(socketserver.ThreadingUnixStreamServer):
@@ -147,6 +163,8 @@ class FakeHc:
         self._started_at = time.monotonic()
         self._server: Optional[_Server] = None
         self._thread: Optional[threading.Thread] = None
+        # Set once server.stop has answered: a standalone core then exits.
+        self.stopped = threading.Event()
         # Requests or results that left the vendored schema (must stay empty),
         # and the methods whose results the guard has checked.
         self.schema_violations: List[str] = []
@@ -261,9 +279,14 @@ class FakeHc:
         """Answer the next ``count`` calls of ``method`` with an hc error, doing nothing."""
         self._queue(method, _Fault("error", kind=kind, message=message or kind, code=code), count)
 
-    def drop_reply(self, method: str, *, count: int = 1) -> None:
-        """Do the next ``count`` calls of ``method``, then close the connection unanswered."""
-        self._queue(method, _Fault("drop"), count)
+    def lose_request(self, method: str, *, count: int = 1) -> None:
+        """Close the connection on the next ``count`` calls of ``method`` unanswered, doing nothing."""
+        self._queue(method, _Fault("lose"), count)
+
+    def drop_reply(self, method: str, *, count: int = 1, after_exit: bool = False) -> None:
+        """Do the next ``count`` calls of ``method``, then close the connection
+        unanswered; ``after_exit``: once the terminal the call started has exited."""
+        self._queue(method, _Fault("drop", after_exit=after_exit), count)
 
     def delay_reply(self, method: str, seconds: float, *, count: int = 1) -> None:
         self._queue(method, _Fault("delay", seconds=seconds), count)
@@ -354,6 +377,8 @@ class FakeHc:
             self._violations(self._guard.check_params(method, params))
         if fault is not None and fault.action == "error":
             return self._reply(request_id, error=(fault.code, fault.message, fault.kind)), None
+        if fault is not None and fault.action == "lose":
+            return None, None
         handler = self._handlers().get(method)
         if handler is None:
             return self._reply(request_id, error=(-32601, f"no method {method}", "invalid_params")), None
@@ -367,12 +392,22 @@ class FakeHc:
         after = self._drop_connections if method == "server.stop" else None
         if fault is not None:
             if fault.action == "drop":
+                self._await_exit(fault, result)
                 return None, after
             if fault.action == "delay":
                 time.sleep(fault.seconds)
             if fault.action == "garble":
                 return b'{"jsonrpc":"2.0","id":' + json.dumps(request_id).encode() + b',"result":{\n', after
         return self._reply(request_id, result=result), after
+
+    def _await_exit(self, fault: _Fault, result: Dict[str, Any]) -> None:
+        if not fault.after_exit:
+            return
+        with self._lock:
+            terminal = self._terminals.get(str(result.get("address")))
+        if terminal is not None:
+            with terminal.lock:
+                terminal.changed.wait_for(lambda: terminal.state != "live", timeout=10.0)
 
     def _violations(self, found: List[str]) -> None:
         if found:
@@ -451,6 +486,7 @@ class FakeHc:
         # The core is gone once it answers: nothing accepts a connection
         # after the reply. The reply's own connection closes after it.
         self._close_listener()
+        self.stopped.set()
         return {"stopped": True}
 
     def _run(self, params: Params) -> Dict[str, Any]:
@@ -468,7 +504,7 @@ class FakeHc:
                     raise RpcFailure("invalid_params", f"bad terminal name {name!r}", code=-32602)
                 if any(t.name == name and t.state == "live" for t in self._terminals.values()):
                     raise RpcFailure("name_taken", f"a live terminal is named {name}")
-            address = f"t{self._next_id}"
+            address = hc_address(self._next_id)
             self._next_id += 1
             cwd = str(params.get("cwd") or "/")
             env = dict(self._base_env)
@@ -496,6 +532,7 @@ class FakeHc:
                 )
             except OSError as err:
                 raise RpcFailure("spawn_failed", f"cannot start {argv[0]}: {err.strerror}") from None
+            terminal.created_seq = self._next_id - 1
             self._terminals[address] = terminal
         return terminal.record()
 
@@ -508,7 +545,7 @@ class FakeHc:
                 return self._terminals[target]
             named = sorted(
                 (t for t in self._terminals.values() if t.name == target),
-                key=lambda t: int(t.address[1:]),
+                key=lambda t: t.created_seq,
                 reverse=True,
             )
         for terminal in named:
@@ -522,7 +559,7 @@ class FakeHc:
         wanted = {str(k): str(v) for k, v in (params.get("labels") or {}).items()}
         include_finished = bool(params.get("all"))
         with self._lock:
-            terminals = sorted(self._terminals.values(), key=lambda t: int(t.address[1:]))
+            terminals = sorted(self._terminals.values(), key=lambda t: t.created_seq)
         listed, hidden = [], 0
         for terminal in terminals:
             record = terminal.record()
