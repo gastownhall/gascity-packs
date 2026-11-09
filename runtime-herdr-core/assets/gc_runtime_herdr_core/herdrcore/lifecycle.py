@@ -10,10 +10,12 @@
    first, or gc would read "already exists" every pass while the broken
    record stays.
 3. Still under the lock: write the incarnation's metadata (identity first,
-   observe.v1 rule 5), then ``terminal.run`` the command and label the pid. A
-   reply lost after hc started the terminal is retried; ``name_taken`` by this
-   incarnation's own terminal is success. A cancel or failure from here on
-   removes the terminal and the metadata.
+   observe.v1 rule 5), then ``terminal.run`` the command and label the pid.
+   The run is sent once: hc may have run a request whose reply was lost, so
+   the start looks that terminal up by its ``gc.obj`` and never runs the
+   command twice. A cancel or failure from here on removes the terminal and
+   then the metadata; the metadata stays while the terminal may outlive the
+   start, as one without it reads ``identity: {}``.
 
 A ``work_dir`` that is not an existing directory fails the start; without
 one the program starts in the user's home.
@@ -37,8 +39,9 @@ import time
 from typing import Callable, Final, List, Optional, Union
 
 from ..hc.client import HcClient
-from ..hc.errors import HcConnectionLost, HcError, HcRpcError, HcTimeout
+from ..hc.errors import HcCancelled, HcError, HcProtocolError, HcRpcError
 from ..hc.types import RunSpec, Terminal
+from ..rpp.cancel import Cancelled
 from ..rpp.exitcodes import ExitCode
 from ..rpp.ops import OpError, OpResult
 from ..rpp.statedir import StateDirError
@@ -49,8 +52,8 @@ from .context import OpContext
 from .core import ensure_core
 from .metastore import MetaError, seed
 from .naming import LABEL_OBJ, LABEL_PID, LABEL_SESSION, new_object_nonce, session_labels, terminal_name
-from .procs import ProcError, expand_names, find_agent
-from .reads import list_city, meta_store, session_arg, unreachable
+from .procs import ProcError
+from .reads import agent_state, list_city, meta_store, session_arg, unreachable
 from .records import box_object, is_intact, newest, object_of
 
 TERM_ENV: Final = {"TERM": "xterm-256color"}
@@ -77,15 +80,18 @@ def _remove_record(client: HcClient, record: Terminal, pause: Callable[[float], 
         pause(0.1)
 
 
-def end_incarnation(ctx: OpContext, client: HcClient, record: Terminal) -> None:
-    """Kill ``record``'s program (when live) and remove the record."""
+def end_incarnation(
+    ctx: OpContext, client: HcClient, record: Terminal, *, pause: Optional[Callable[[float], None]] = None
+) -> None:
+    """Kill ``record``'s program (when live) and remove the record; ``pause``
+    waits between removes (default: the op's, which a cancel ends)."""
     if record.is_live:
         try:
             client.kill(record.address)
         except HcRpcError as err:
             if err.kind not in ("not_found", "finished"):
                 raise
-    _remove_record(client, record, ctx.request.cancel.pause)
+    _remove_record(client, record, ctx.request.cancel.pause if pause is None else pause)
 
 
 def _forget(ctx: OpContext, obj: Optional[str]) -> None:
@@ -168,8 +174,8 @@ def _kill_object(ctx: OpContext, client: HcClient, name: str, address: str, crea
     else:
         if not is_intact(record) or is_attached or snapshot is None or meta is None or record.pid is None:
             return "changed"
-        names = meta.process_names()
-        if not names or find_agent(snapshot, record.pid, expand_names(names, meta.gc_bin)) is not None:
+        state, _ = agent_state(snapshot, record, meta.process_names(), meta)
+        if state != "dead":
             return "changed"
     end_incarnation(ctx, client, record)
     _forget(ctx, obj)
@@ -192,6 +198,7 @@ def unsupported_fields(cfg: StartConfig) -> List[str]:
         ("session_setup", bool(cfg.session_setup)),
         ("session_setup_script", bool(cfg.session_setup_script)),
         ("nudge", bool(cfg.nudge)),
+        ("session_live", bool(cfg.session_live)),
     ):
         if value:
             fields.append(field_name)
@@ -207,22 +214,35 @@ def _check_name(records: List[Terminal], name: str, fresh_only: bool) -> Optiona
     return None
 
 
-def _run_terminal(ctx: OpContext, client: HcClient, spec: RunSpec, obj: str) -> Terminal:
-    """``terminal.run``, retried once after a lost reply; our own ``name_taken`` is success."""
-    for attempt in (1, 2):
+def _launch(ctx: OpContext, client: HcClient, spec: RunSpec, obj: str) -> None:
+    """``terminal.run`` the incarnation once and label its pid; a failure or
+    cancel rolls the start back (:func:`_undo`).
+
+    A run whose reply was lost or timed out may have started the program, so
+    its terminal is looked up by ``gc.obj`` (finished too: a quick command may
+    be done) rather than run again."""
+    created: Optional[Terminal] = None
+    pending = False  # written and never answered: hc may still start it
+    try:
         try:
-            return client.run(spec)
+            created = client.run(spec)
         except HcRpcError as err:
-            if err.kind != "name_taken":
+            if err.kind == "name_taken":
+                raise OpError(f'session "{spec.labels[LABEL_SESSION]}" already exists') from None
+            raise
+        except HcError as err:
+            pending = err.written and not isinstance(err, HcProtocolError)
+            if not pending or isinstance(err, HcCancelled):
                 raise
-            for record in list_city(client, ctx, spec.labels[LABEL_SESSION], finished=False):
-                if object_of(record) == obj:
-                    return record
-            raise OpError(f'session "{spec.labels[LABEL_SESSION]}" already exists') from None
-        except (HcConnectionLost, HcTimeout) as err:
-            if not err.written or attempt == 2:
+            found = client.list_terminals(labels={LABEL_OBJ: obj}, include_finished=True).terminals
+            if not found:
                 raise
-    raise OpError("terminal.run did not answer")
+            created = found[0]
+        if created.pid is not None:
+            client.label(created.address, {LABEL_PID: str(created.pid)})
+    except BaseException:
+        _undo(ctx, created, obj, pending=pending)
+        raise
 
 
 def op_start(ctx: OpContext) -> OpResult:
@@ -239,53 +259,60 @@ def op_start(ctx: OpContext) -> OpResult:
         )
     if cfg.work_dir and not os.path.isdir(cfg.work_dir):
         raise OpError("work_dir is not an existing directory")
-    ensure_core(ctx)
-    client = ctx.client()
-    with ctx.name_lock(name, shared=False):
-        records = list_city(client, ctx, name)
-        collision = _check_name(records, name, cfg.fresh_only)
-        if collision is not None:
-            return collision
-        _recycle(ctx, client, records)
-        obj = new_object_nonce()
-        meta_store(ctx).write(obj, seed(name, cfg.env, work_dir=cfg.work_dir))
-        created: Optional[Terminal] = None
-        try:
-            created = _run_terminal(
-                ctx,
-                client,
-                RunSpec(
-                    argv=("/bin/sh", "-c", cfg.command) if cfg.command else ("/bin/sh",),
-                    cwd=cfg.work_dir or ctx.host.home(),
-                    env=TERM_ENV,
-                    labels=session_labels(ctx.paths.city_id, name, obj),
-                    name=terminal_name(ctx.paths.city_id, name),
-                ),
-                obj,
-            )
-            if created.pid is not None:
-                client.label(created.address, {LABEL_PID: str(created.pid)})
-        except BaseException:
-            _undo(ctx, created, obj)
+    try:
+        ensure_core(ctx)
+        with ctx.name_lock(name, shared=False):
+            return _start(ctx, ctx.client(), name, cfg)
+    except HcError as err:
+        if isinstance(err, Cancelled):
             raise
+        raise OpError(f"cannot start {name!r}: {err}") from None
+
+
+def _start(ctx: OpContext, client: HcClient, name: str, cfg: StartConfig) -> OpResult:
+    """Steps 2 and 3, under the name's lock."""
+    records = list_city(client, ctx, name)
+    collision = _check_name(records, name, cfg.fresh_only)
+    if collision is not None:
+        return collision
+    _recycle(ctx, client, records)
+    obj = new_object_nonce()
+    meta_store(ctx).write(obj, seed(name, cfg.env, work_dir=cfg.work_dir))
+    _launch(
+        ctx,
+        client,
+        RunSpec(
+            argv=("/bin/sh", "-c", cfg.command) if cfg.command else ("/bin/sh",),
+            cwd=cfg.work_dir or ctx.host.home(),
+            env=TERM_ENV,
+            labels=session_labels(ctx.paths.city_id, name, obj),
+            name=terminal_name(ctx.paths.city_id, name),
+        ),
+        obj,
+    )
     return OpResult.ok()
 
 
-def _undo(ctx: OpContext, created: Optional[Terminal], obj: str) -> None:
+def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: bool) -> None:
     """Remove what a failed or canceled start left: the incarnation's
-    terminal (found by its ``gc.obj`` when ``run``'s reply never came) and
-    its metadata."""
+    terminal (found by its ``gc.obj`` when ``run`` gave none), then its
+    metadata. The metadata stays when the terminal may outlive the start: a
+    rollback call failed, or none was found for a ``pending`` run (one hc
+    never answered). Inventory removes metadata that no record carries once
+    it is old."""
     rollback = ctx.rollback_client(ROLLBACK_S + 1.0)
     try:
-        targets = [created] if created is not None else []
-        if not targets:
+        if created is not None:
+            targets = [created]
+        else:
             targets = list(rollback.list_terminals(labels={LABEL_OBJ: obj}, include_finished=True).terminals)
         for record in targets:
-            if record.is_live:
-                rollback.kill(record.address)
-            rollback.remove(record.address)
+            # The op's pause ends at its cancel; the rollback's own deadline bounds this one.
+            end_incarnation(ctx, rollback, record, pause=time.sleep)
     except HcError:
-        pass
+        return
+    if pending and not targets:
+        return
     try:
         _forget(ctx, obj)
     except (OSError, StateDirError):

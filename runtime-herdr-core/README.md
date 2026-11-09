@@ -85,11 +85,17 @@ runtime-herdr-core/
   holder), is a dead box: `peek` still reads its screen, `kill-object corpse`
   removes it, and a plain `start` replaces it.
 - **Start** runs the command under `sh -c` with the core's environment, in
-  `work_dir` (which must exist; the home without one); hc gets only `TERM`. **Stop** and **kill-object** end the program with
-  `terminal.kill` and remove the record and its metadata.
+  `work_dir` (which must exist; the home without one); hc gets only `TERM`.
+  `terminal.run` is sent once: after a lost reply the start takes the
+  terminal its `gc.obj` names, so a command never runs twice, and a failed
+  start keeps the metadata while its terminal may still run. **Stop** and
+  **kill-object** end the program with `terminal.kill` and remove the record
+  and its metadata.
 - **Activity.** A program that never reported OSC 7501 status is active
   when its screen changes: `inventory` and `get-last-activity` read the
-  screen of each such running agent (hc keeps no output time).
+  screen of each such running agent (hc keeps no output time). `inventory`
+  reads within its deadline, and a box whose screen it did not read on that
+  pass reads as active now, never at an old time.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's
   `attach` runs (it holds a lock) or a `herdr-core|hc attach` process of this
   user targets it on this city's core. `is-attached` exits 1 when it cannot

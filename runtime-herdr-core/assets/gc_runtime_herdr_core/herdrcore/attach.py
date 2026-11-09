@@ -9,7 +9,9 @@ from the host, in one process snapshot. A box is attached when either:
 2. one of this user's processes runs ``herdr-core attach`` or ``hc attach``
    on the box's terminal (by address or name) against this city's core: its
    environment names this core's socket or session. An attach process whose
-   environment cannot be read makes the answer "cannot tell".
+   environment cannot be read makes the answer "cannot tell". A process the
+   snapshot cannot read at all is none: ``/proc`` refuses only a
+   non-dumpable one of this user's, and ``hc attach`` is an ordinary one.
 
 The city's core is private (a session no person's ``hc`` uses by default),
 so these are its only viewers short of a client that bypasses the CLI.

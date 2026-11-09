@@ -89,6 +89,13 @@ def test_systemds_service_variables_are_not_the_starters() -> None:
     assert core.foreign_reason(actual, _expected()) is None
 
 
+def test_a_core_hcs_cli_starts_for_attach_is_the_packs() -> None:
+    # attach gives hc's CLI the allowlist and the viewer's terminal settings;
+    # a core the CLI starts in a race carries both.
+    terminal = {"TERM": "xterm-256color", "COLORTERM": "truecolor", "TERM_PROGRAM": "WezTerm", "TERM_PROGRAM_VERSION": "1"}
+    assert core.foreign_reason(dict(_expected(), **terminal), _expected()) is None
+
+
 def test_start_refuses_a_core_the_pack_did_not_start(city: City) -> None:
     assert city.procs.core_environ is not None
     city.procs.core_environ = dict(city.procs.core_environ, GC_CONTROLLER_TOKEN="leaked-token-1234")

@@ -4,8 +4,10 @@ an in-process fake-hc: the observe.v1 promises (exec-session-provider.md
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -77,6 +79,7 @@ def test_terminal_carries_labels_name_and_no_environment(city: City) -> None:
         {"nudge": "first task"},
         {"pre_start": ["true"]},
         {"overlay_dir": "/tmp/overlay"},
+        {"session_live": ["true"]},
     ],
 )
 def test_what_only_the_launcher_can_apply_is_refused(city: City, extra: Dict[str, Any]) -> None:
@@ -309,16 +312,80 @@ def test_inventory_refreshes_activity_of_agents_that_never_report(city: City) ->
     assert last() > first, "a changing screen is activity, read by inventory itself"
 
 
-def test_a_lost_run_reply_is_retried_and_not_doubled(city: City) -> None:
+@pytest.mark.parametrize("miss", ["failed", "deadline"])
+def test_inventory_reads_a_screen_it_did_not_read_as_active_now(
+    city: City, monkeypatch: pytest.MonkeyPatch, miss: str
+) -> None:
+    from gc_runtime_herdr_core.herdrcore import reads
+    from gc_runtime_herdr_core.rpp.wire import rfc3339_ms
+
+    clock = [int(time.time() * 1000)]
+    city.host = dataclasses.replace(city.host, now_ms=lambda: clock[0])
+    assert city.start("mc-a", start_config()).code == 0
+    assert city.start("mc-b", start_config()).code == 0
+
+    def last() -> Dict[str, str]:
+        doc = json.loads(city.run("inventory").stdout)
+        return {entry["name"]: str(entry["last_activity"]) for entry in doc["sessions"]}
+
+    still = last()  # cat's screens stay as they are from here on
+    assert still == {"mc-a": rfc3339_ms(clock[0]), "mc-b": rfc3339_ms(clock[0])}
+    clock[0] += 3_600_000
+    read_before = city.fake.call_count("terminal.read")  # type: ignore[union-attr]
+    with monkeypatch.context() as patch:
+        if miss == "failed":
+            city.fake.fail_next("terminal.read", "unavailable", count=2)  # type: ignore[union-attr]
+        else:
+            patch.setattr(reads, "SCREEN_READ_RESERVE_S", 1e9)  # no time left for any read
+        now = rfc3339_ms(clock[0])
+        assert last() == {"mc-a": now, "mc-b": now}, "an hour-old time could let gc's idle arm stop a busy box"
+    assert city.fake.call_count("terminal.read") == read_before + (2 if miss == "failed" else 0)  # type: ignore[union-attr]
+    # The stored entries stay: reading the same screens again gives back their time.
+    assert last() == still
+
+
+def test_a_lost_run_reply_is_found_by_its_object_never_sent_again(city: City) -> None:
     city.fake.drop_reply("terminal.run")  # type: ignore[union-attr]
     done = city.start("mc-a", start_config())
     assert done.code == 0, done.stderr
+    assert city.fake.call_count("terminal.run") == 1  # type: ignore[union-attr]
     live = [t for t in city.terminals() if t["state"] == "live"]
     assert len(live) == 1
     assert observe(city, "mc-a")["state"] == "running"
 
 
-def test_a_canceled_start_leaves_no_terminal_or_metadata(city: City) -> None:
+def test_a_quick_command_whose_run_reply_was_lost_runs_once(city: City) -> None:
+    marker = city.root / "ran"
+    city.fake.drop_reply("terminal.run", after_exit=True)  # type: ignore[union-attr]
+    done = city.start("mc-a", start_config(command=f"echo once >> {marker}"))
+    assert done.code == 0, done.stderr
+    assert marker.read_text() == "once\n"
+    assert observe(city, "mc-a")["state"] == "dead"
+
+
+def test_a_lost_run_that_started_nothing_fails_and_keeps_the_metadata(city: City) -> None:
+    city.fake.lose_request("terminal.run")  # type: ignore[union-attr]
+    done = city.start("mc-a", start_config())
+    assert done.code == 1 and "cannot start 'mc-a'" in done.stderr
+    assert city.fake.call_count("terminal.run") == 1  # type: ignore[union-attr]
+    assert city.terminals() == []
+    # hc never answered, so it may still start the terminal: the metadata stays
+    # (inventory removes it once it is old and no record carries it).
+    assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
+    assert city.start("mc-a", start_config()).code == 0
+
+
+def test_a_failed_rollback_keeps_the_metadata_of_the_terminal_it_left(city: City) -> None:
+    city.fake.drop_reply("terminal.label")  # type: ignore[union-attr]
+    city.fake.fail_next("terminal.kill", "unavailable")  # type: ignore[union-attr]
+    done = city.start("mc-a", start_config())
+    assert done.code == 1 and "cannot start 'mc-a'" in done.stderr
+    answer = observe(city, "mc-a")
+    assert answer["state"] == "running" and answer["identity"] == IDENTITY
+
+
+def cancel_a_start(city: City) -> None:
+    """Cancel a start while hc runs its terminal; the start exits 1."""
     from cityharness import in_thread
 
     from gc_runtime_herdr_core.rpp.cancel import CancelToken
@@ -331,7 +398,20 @@ def test_a_canceled_start_leaves_no_terminal_or_metadata(city: City) -> None:
     cancel.cancel("terminated")
     thread.join(timeout=20)
     assert results and results[0].code == 1
+
+
+def test_a_canceled_start_leaves_no_terminal_or_metadata(city: City) -> None:
+    cancel_a_start(city)
     wait_for(lambda: all(t["state"] != "live" for t in city.terminals()))
+    assert city.terminals() == []
+    assert list(Path(city.context().state_dir("meta")).iterdir()) == []
+
+
+def test_a_canceled_starts_rollback_waits_out_a_record_still_live(city: City) -> None:
+    # The op's pause ends at the cancel, so the rollback waits with its own.
+    city.fake.fail_next("terminal.rm", "live")  # type: ignore[union-attr]
+    cancel_a_start(city)
+    assert city.fake.call_count("terminal.rm") == 2  # type: ignore[union-attr]
     assert city.terminals() == []
     assert list(Path(city.context().state_dir("meta")).iterdir()) == []
 
@@ -353,6 +433,61 @@ def test_a_work_dir_that_does_not_exist_fails_the_start(city: City) -> None:
     done = city.start("mc-a", start_config(work_dir=str(city.root / "missing")))
     assert done.code == 1 and "work_dir" in done.stderr
     assert city.terminals() == []
+
+
+def test_an_unreadable_process_is_cannot_tell_never_dead(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs
+
+    assert city.start("mc-a", start_config(command="cat; true")).code == 0
+    box = int(str(city.terminals()[0]["pid"]))
+    agent = int(observe(city, "mc-a", "cat")["agent_pid"])
+    assert agent != box, "cat runs under the box's sh, whose children list places it"
+
+    class Unreadable(LinuxProcs):
+        def _read(self, at: int, leaf: str) -> bytes:
+            if at == agent and leaf == "cmdline":
+                raise PermissionError(13, "Permission denied")
+            return super()._read(at, leaf)
+
+    city.procs.inner = Unreadable()
+    assert "agent" not in observe(city, "mc-a", "cat")
+    done = city.run("process-alive", "mc-a", stdin=b"cat\n")
+    assert done.code == 0 and done.stdout == b"", "empty: gc reads it as alive, never dead"
+    obj = observe(city, "mc-a")["object"]
+    done = city.run("kill-object", "mc-a", stdin=json.dumps({"object": obj, "mode": "zombie"}).encode())
+    assert done.code == 0 and done.text.strip() == "changed"
+    assert observe(city, "mc-a")["state"] == "running"
+
+
+@pytest.mark.skipif(
+    not os.path.exists(f"/proc/{os.getpid()}/task/{os.getpid()}/children"),
+    reason="this kernel keeps no children lists, so an unreadable process fails every snapshot",
+)
+def test_an_unreadable_process_outside_the_box_leaves_its_answers(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs
+
+    assert city.start("mc-a", start_config()).code == 0
+    other = subprocess.Popen(["sleep", "60"])  # as ssh-agent reads under hidepid=1
+
+    class Unreadable(LinuxProcs):
+        def _read(self, at: int, leaf: str) -> bytes:
+            if at == other.pid and leaf in ("stat", "cmdline"):
+                raise PermissionError(13, "Permission denied")
+            return super()._read(at, leaf)
+
+    try:
+        city.procs.inner = Unreadable()
+        assert observe(city, "mc-a", "cat")["agent"] == "alive"
+        assert observe(city, "mc-a", "vim")["agent"] == "dead"
+        assert city.run("process-alive", "mc-a", stdin=b"vim\n").text.strip() == "false"
+        assert city.run("is-attached", "mc-a").text.strip() == "false"
+        obj = observe(city, "mc-a")["object"]
+        assert city.run("set-meta", "mc-a", "GT_PROCESS_NAMES", stdin=b"not-running").code == 0
+        done = city.run("kill-object", "mc-a", stdin=json.dumps({"object": obj, "mode": "zombie"}).encode())
+        assert done.code == 0 and done.text.strip() == "killed"
+    finally:
+        other.kill()
+        other.wait()
 
 
 def test_process_alive_without_a_process_table_cannot_tell(city: City) -> None:

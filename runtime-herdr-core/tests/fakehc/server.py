@@ -95,11 +95,12 @@ class RpcFailure(Exception):
 
 @dataclass(frozen=True)
 class _Fault:
-    action: str  # error | drop | delay | garble
+    action: str  # error | lose | drop | delay | garble
     kind: str = ""
     message: str = ""
     code: int = -32000
     seconds: float = 0.0
+    after_exit: bool = False
 
 
 class _Server(socketserver.ThreadingUnixStreamServer):
@@ -278,9 +279,14 @@ class FakeHc:
         """Answer the next ``count`` calls of ``method`` with an hc error, doing nothing."""
         self._queue(method, _Fault("error", kind=kind, message=message or kind, code=code), count)
 
-    def drop_reply(self, method: str, *, count: int = 1) -> None:
-        """Do the next ``count`` calls of ``method``, then close the connection unanswered."""
-        self._queue(method, _Fault("drop"), count)
+    def lose_request(self, method: str, *, count: int = 1) -> None:
+        """Close the connection on the next ``count`` calls of ``method`` unanswered, doing nothing."""
+        self._queue(method, _Fault("lose"), count)
+
+    def drop_reply(self, method: str, *, count: int = 1, after_exit: bool = False) -> None:
+        """Do the next ``count`` calls of ``method``, then close the connection
+        unanswered; ``after_exit``: once the terminal the call started has exited."""
+        self._queue(method, _Fault("drop", after_exit=after_exit), count)
 
     def delay_reply(self, method: str, seconds: float, *, count: int = 1) -> None:
         self._queue(method, _Fault("delay", seconds=seconds), count)
@@ -371,6 +377,8 @@ class FakeHc:
             self._violations(self._guard.check_params(method, params))
         if fault is not None and fault.action == "error":
             return self._reply(request_id, error=(fault.code, fault.message, fault.kind)), None
+        if fault is not None and fault.action == "lose":
+            return None, None
         handler = self._handlers().get(method)
         if handler is None:
             return self._reply(request_id, error=(-32601, f"no method {method}", "invalid_params")), None
@@ -384,12 +392,22 @@ class FakeHc:
         after = self._drop_connections if method == "server.stop" else None
         if fault is not None:
             if fault.action == "drop":
+                self._await_exit(fault, result)
                 return None, after
             if fault.action == "delay":
                 time.sleep(fault.seconds)
             if fault.action == "garble":
                 return b'{"jsonrpc":"2.0","id":' + json.dumps(request_id).encode() + b',"result":{\n', after
         return self._reply(request_id, result=result), after
+
+    def _await_exit(self, fault: _Fault, result: Dict[str, Any]) -> None:
+        if not fault.after_exit:
+            return
+        with self._lock:
+            terminal = self._terminals.get(str(result.get("address")))
+        if terminal is not None:
+            with terminal.lock:
+                terminal.changed.wait_for(lambda: terminal.state != "live", timeout=10.0)
 
     def _violations(self, found: List[str]) -> None:
         if found:

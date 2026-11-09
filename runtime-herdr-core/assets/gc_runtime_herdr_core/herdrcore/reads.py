@@ -35,7 +35,7 @@ from .context import Host, OpContext
 from .core import kick
 from .metastore import Meta, MetaError, MetaStore
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
-from .procs import ProcError, Snapshot, expand_names, find_agent
+from .procs import ProcError, Snapshot, expand_names, find_agent, opaque_under
 from .records import box_object, group_by_session, is_intact, newest, object_of
 
 META_GC_AGE_S: Final = 600.0
@@ -86,14 +86,18 @@ def unreachable(ctx: OpContext, err: HcError) -> None:
 def agent_state(
     snapshot: Optional[Snapshot], record: Terminal, names: Sequence[str], meta: Optional[Meta]
 ) -> Tuple[Optional[AgentState], Optional[str]]:
-    """``alive``/``dead`` with the agent's pid, or (None, None) when it cannot be told."""
+    """``alive``/``dead`` with the agent's pid, or (None, None) when it cannot
+    be told, as when no agent is found but the box runs a process that cannot
+    be read."""
     if snapshot is None or record.pid is None or not names:
         return None, None
     wanted = expand_names(names, "" if meta is None else meta.gc_bin)
     found = find_agent(snapshot, record.pid, wanted)
-    if found is None:
-        return "dead", None
-    return "alive", str(found.pid)
+    if found is not None:
+        return "alive", str(found.pid)
+    if opaque_under(snapshot, record.pid):
+        return None, None  # the agent may be the process that cannot be read
+    return "dead", None
 
 
 def try_snapshot(host: Host) -> Optional[Snapshot]:
@@ -148,16 +152,18 @@ SCREEN_READ_RESERVE_S: Final = 2.0
 
 def refresh_screens(ctx: OpContext, client: HcClient, records: Sequence[Terminal]) -> Dict[str, activity.Seen]:
     """Read the screen of every running agent that has never reported OSC 7501
-    status (its only activity signal) and update the activity cache; returns
-    the cache. One read per such box, while the op's deadline allows; a box
-    not read this pass keeps its cached entry."""
+    status (its only activity signal) and update the activity cache, one read
+    per such box while the op's deadline allows. Returns the cache without
+    the boxes this pass did not read, so they read as active now, never at a
+    stale time; their stored entries stay for the next comparison."""
     seen = activity.cached(ctx)
     for record in records:
         obj = object_of(record)
         if obj is None or record.reported or not is_intact(record):
             continue
+        seen.pop(obj, None)
         if ctx.request.deadline.remaining() <= SCREEN_READ_RESERVE_S:
-            break
+            continue
         try:
             screen = client.read_screen(record.address).text
         except HcError:
@@ -183,39 +189,48 @@ def op_inventory(ctx: OpContext) -> OpResult:
     complete = True
     entries: List[InventoryEntry] = []
     for name, found in sorted(group_by_session(records).items()):
-        if not readable_name(name):
+        if readable_name(name):
+            entries.append(_inventory_entry(ctx, name, found[0], snapshot, viewers, seen))
+        else:
             complete = False
-            continue
-        record = found[0]
-        meta, readable = read_meta(ctx, record)
-        running = is_intact(record)
-        agent: Optional[AgentState] = None
-        if running and meta is not None:
-            agent, _ = agent_state(snapshot, record, meta.process_names(), meta)
-        is_attached: Optional[bool] = None
-        if viewers is not None:
-            try:
-                is_attached = attached(ctx, record, viewers, object_of(record))
-            except LockFileError:
-                is_attached = None
-        last = rfc3339_ms(activity.last_activity_ms(ctx, record, activity.object_seen(record, seen))) if running else None
-        entries.append(
-            InventoryEntry(
-                name=name,
-                state="running" if running else "dead",
-                box=box_object(record),
-                agent=agent,
-                attached=is_attached,
-                last_activity=last,
-                restart_requested=None if not readable else bool(meta is not None and meta.values.get("GC_RESTART_REQUESTED")),
-                identity=None if not readable else ({} if meta is None else meta.identity()),
-            )
-        )
     try:
         _collect_garbage(ctx, frozenset(obj for obj in (object_of(r) for r in records) if obj is not None))
     except (OSError, StateDirError):
         pass  # housekeeping only; the next inventory tries again
     return OpResult.answer(InventoryAnswer(complete=complete, sessions=tuple(entries)).encode())
+
+
+def _inventory_entry(
+    ctx: OpContext,
+    name: str,
+    record: Terminal,
+    snapshot: Optional[Snapshot],
+    viewers: Optional[FrozenSet[str]],
+    seen: Dict[str, activity.Seen],
+) -> InventoryEntry:
+    """The inventory entry of ``name``, whose newest record is ``record``."""
+    meta, readable = read_meta(ctx, record)
+    running = is_intact(record)
+    agent: Optional[AgentState] = None
+    if running and meta is not None:
+        agent, _ = agent_state(snapshot, record, meta.process_names(), meta)
+    is_attached: Optional[bool] = None
+    if viewers is not None:
+        try:
+            is_attached = attached(ctx, record, viewers, object_of(record))
+        except LockFileError:
+            is_attached = None
+    last = rfc3339_ms(activity.last_activity_ms(ctx, record, activity.object_seen(record, seen))) if running else None
+    return InventoryEntry(
+        name=name,
+        state="running" if running else "dead",
+        box=box_object(record),
+        agent=agent,
+        attached=is_attached,
+        last_activity=last,
+        restart_requested=None if not readable else bool(meta is not None and meta.values.get("GC_RESTART_REQUESTED")),
+        identity=None if not readable else ({} if meta is None else meta.identity()),
+    )
 
 
 # --- liveness --------------------------------------------------------------------------------
@@ -249,12 +264,10 @@ def op_process_alive(ctx: OpContext) -> OpResult:
         return OpResult.answer("false")
     if not names:
         return OpResult.answer("true")
-    try:
-        snapshot = ctx.host.procs.snapshot()
-    except ProcError:
-        return OpResult.ok()  # cannot tell: empty, which gc reads as alive, never dead
     meta, _ = read_meta(ctx, record)
-    state, _ = agent_state(snapshot, record, names, meta)
+    state, _ = agent_state(try_snapshot(ctx.host), record, names, meta)
+    if state is None:
+        return OpResult.ok()  # cannot tell: empty, which gc reads as alive, never dead
     return OpResult.answer(encode_bool(state == "alive"))
 
 

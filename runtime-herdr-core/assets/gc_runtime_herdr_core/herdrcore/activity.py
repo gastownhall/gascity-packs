@@ -11,8 +11,10 @@
 
 ``inventory`` refreshes the same cache with one screen read per running
 agent that never reported (tmux's ``window_activity`` is read the same way,
-per window), within its deadline; an incarnation it could not read keeps its
-cached entry, and one with none reads as active at its start.
+per window), within its deadline. An incarnation whose screen that pass did
+not read (a failed read, the deadline, a terminal the pack did not start)
+reads as active now, as a stale time could let gc's idle arm stop a busy
+box; its stored entry stays for the next comparison.
 """
 
 from __future__ import annotations
@@ -125,7 +127,7 @@ def last_activity_ms(ctx: OpContext, record: Terminal, seen: Optional[Seen]) -> 
     if record.reported:
         return max(record.status_ms or record.created_ms, input_ms)
     if seen is None or not seen.changed_ms:
-        return max(record.created_ms, input_ms)
+        return now  # its screen was not read
     return max(seen.changed_ms, input_ms)
 
 

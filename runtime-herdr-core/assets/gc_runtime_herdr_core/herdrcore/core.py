@@ -37,6 +37,7 @@ from ..rpp.flock import LockTimeout
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError
 from ..rpp.statedir import StateDirError
+from .attach import ATTACH_TERMINAL_KEYS
 from .command import run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
@@ -126,7 +127,10 @@ def core_env(
 
 
 def allowed_core_keys(env: Mapping[str, str]) -> FrozenSet[str]:
-    return frozenset(env) | {"LANG", HC_RUNTIME_KEY, "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}
+    """The variables a core started with ``env`` may carry. A core hc's CLI
+    starts while ``attach`` races a core's exit has the viewer's terminal
+    settings too (:data:`.attach.ATTACH_TERMINAL_KEYS`)."""
+    return frozenset(env) | {"LANG", HC_RUNTIME_KEY, "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", *ATTACH_TERMINAL_KEYS}
 
 
 def format_environment_file(env: Mapping[str, str]) -> str:

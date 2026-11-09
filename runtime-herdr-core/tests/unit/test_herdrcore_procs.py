@@ -10,9 +10,12 @@ from typing import Dict, Tuple
 
 import pytest
 from cityharness import City
-from fakehc.procfs import add_proc
+from fakehc.procfs import add_proc, add_thread
 
+from gc_runtime_herdr_core.hc.parse import parse_terminal
+from gc_runtime_herdr_core.hc.types import Terminal
 from gc_runtime_herdr_core.herdrcore import attach
+from gc_runtime_herdr_core.herdrcore.reads import agent_state
 from gc_runtime_herdr_core.herdrcore.procs import (
     LinuxProcs,
     Proc,
@@ -25,8 +28,37 @@ from gc_runtime_herdr_core.herdrcore.procs import (
 )
 
 
+needs_file_modes = pytest.mark.skipif(os.getuid() == 0, reason="root reads any file")
+
+
 def proc(pid: int, argv: Tuple[str, ...], *, comm: str = "", ppid: int = 1, start: str = "1") -> Proc:
     return Proc(pid=pid, ppid=ppid, uid=os.getuid(), start=start, comm=comm or os.path.basename(argv[0]), argv=argv)
+
+
+def hide(root: Path, pid: int) -> None:
+    """Make ``pid`` read as ``hidepid=1`` shows a non-dumpable process of this user's."""
+    for leaf in ("stat", "cmdline", "environ"):
+        (root / str(pid) / leaf).chmod(0)
+
+
+def box(pid: int) -> Terminal:
+    """A live record whose program runs as ``pid``."""
+    return parse_terminal(
+        {
+            "address": "t1",
+            "labels": {"gc.session": "mc-a", "gc.pid": str(pid)},
+            "argv": ["/bin/sh"],
+            "cwd": "/",
+            "state": "live",
+            "created_ms": 1_700_000_000_000,
+            "screen": "exact",
+            "cols": 80,
+            "rows": 24,
+            "pid": pid,
+            "reason": None,
+            "keep": False,
+        }
+    )
 
 
 def test_linux_snapshot_reads_stat_cmdline_and_environ(tmp_path: Path) -> None:
@@ -49,6 +81,71 @@ def test_comm_with_spaces_and_parens_parses(tmp_path: Path) -> None:
 def test_an_empty_proc_root_is_an_error(tmp_path: Path) -> None:
     with pytest.raises(ProcError):
         LinuxProcs(str(tmp_path)).snapshot()
+
+
+@needs_file_modes
+def test_an_unreadable_process_of_this_user_is_opaque_under_the_parent_listing_it(tmp_path: Path) -> None:
+    add_proc(tmp_path, 10, ppid=1, argv=["node"], children=[])
+    add_thread(tmp_path, 10, 13, [11])  # a child is listed by the thread that forked it
+    add_proc(tmp_path, 11, ppid=10, argv=["claude"])
+    (tmp_path / "12").mkdir()  # exited between the listing and the read
+    hide(tmp_path, 11)
+    snap = LinuxProcs(str(tmp_path)).snapshot()
+    assert set(snap) == {10, 11} and not snap[10].opaque
+    assert snap[11].opaque and snap[11].ppid == 10 and snap[11].argv == () and snap[11].comm == ""
+    # Another user's is left out, as hidepid=1 hides every one.
+    assert set(LinuxProcs(str(tmp_path), uid=os.getuid() + 1).snapshot()) == {10}
+
+
+@needs_file_modes
+def test_without_children_lists_an_unreadable_process_fails_the_snapshot(tmp_path: Path) -> None:
+    add_proc(tmp_path, 10, ppid=1, argv=["/bin/sh"])
+    add_proc(tmp_path, 11, ppid=10, argv=["claude"])
+    hide(tmp_path, 11)
+    # It cannot be placed, and a snapshot without it could judge a live agent dead.
+    with pytest.raises(ProcError, match="cannot place pid 11"):
+        LinuxProcs(str(tmp_path)).snapshot()
+
+
+@needs_file_modes
+def test_a_process_whose_children_cannot_be_read_is_opaque(tmp_path: Path) -> None:
+    add_proc(tmp_path, 10, ppid=1, argv=["/bin/sh"], children=[11])
+    add_proc(tmp_path, 11, ppid=10, argv=["ssh-agent"])
+    add_proc(tmp_path, 20, ppid=1, argv=["/bin/sh"], children=[])
+    hide(tmp_path, 11)
+    (tmp_path / "20" / "task" / "20" / "children").chmod(0)
+    snap = LinuxProcs(str(tmp_path)).snapshot()
+    assert snap[20].opaque and snap[20].ppid == 1 and snap[20].argv == ("/bin/sh",)
+    assert snap[11].ppid == 10 and not snap[10].opaque
+
+
+@needs_file_modes
+def test_an_opaque_process_outside_a_box_leaves_its_agent_answers(tmp_path: Path) -> None:
+    add_proc(tmp_path, 5, ppid=1, argv=["systemd", "--user"], children=[20])
+    add_proc(tmp_path, 20, ppid=5, argv=["ssh-agent"])
+    add_proc(tmp_path, 10, ppid=1, argv=["/bin/sh"], children=[11])
+    add_proc(tmp_path, 11, ppid=10, argv=["claude"])
+    add_proc(tmp_path, 30, ppid=1, argv=["/bin/sh"], children=[])
+    hide(tmp_path, 20)
+    snap = LinuxProcs(str(tmp_path)).snapshot()
+    assert agent_state(snap, box(10), ["claude"], None) == ("alive", "11")
+    assert agent_state(snap, box(30), ["claude"], None) == ("dead", None)
+
+
+@needs_file_modes
+def test_an_opaque_process_in_a_box_makes_its_agent_cannot_tell_never_dead(tmp_path: Path) -> None:
+    add_proc(tmp_path, 10, ppid=1, argv=["/bin/sh"], children=[20])
+    add_proc(tmp_path, 20, ppid=10, argv=["claude"])
+    add_proc(tmp_path, 30, ppid=1, argv=["/bin/sh"], children=[31])
+    add_proc(tmp_path, 31, ppid=30, argv=["sudo-like"])
+    add_proc(tmp_path, 32, ppid=31, argv=["claude"])
+    hide(tmp_path, 20)
+    hide(tmp_path, 31)
+    snap = LinuxProcs(str(tmp_path)).snapshot()
+    # The process that cannot be read may be the agent.
+    assert agent_state(snap, box(10), ["claude"], None) == (None, None)
+    # An agent below one is still found.
+    assert agent_state(snap, box(30), ["claude"], None) == ("alive", "32")
 
 
 def test_parse_environ() -> None:
