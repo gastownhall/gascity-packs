@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
+from ..hc.address import parse_address
 from ..hc.types import Terminal
 from ..rpp.wire import BoxObject, rfc3339_ms
 from .naming import LABEL_OBJ, LABEL_PID, LABEL_SESSION
@@ -26,8 +27,8 @@ BROKEN_REASONS: Final[FrozenSet[str]] = frozenset({"holder_lost", "stopped_by_re
 
 
 def _address_number(address: str) -> int:
-    digits = address[1:] if address.startswith("t") else ""
-    return int(digits) if digits.isdigit() else -1
+    counter = parse_address(address)
+    return -1 if counter is None else counter
 
 
 def _age_key(terminal: Terminal) -> Tuple[int, int]:

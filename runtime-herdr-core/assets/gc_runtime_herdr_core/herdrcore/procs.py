@@ -50,11 +50,17 @@ Snapshot = Mapping[int, Proc]
 class ProcSource:
     """Reads processes."""
 
+    lossy_environ = False
+    """Whether :meth:`environ` cuts values at whitespace (``ps -E``)."""
+
     def snapshot(self) -> Dict[int, Proc]:
         raise NotImplementedError
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
-        """``pid``'s environment; None when it cannot be read."""
+        """``pid``'s environment; None when the process is gone.
+
+        Raises :class:`ProcError` when it runs but cannot be read: that is
+        "cannot tell", never "nothing there"."""
         raise NotImplementedError
 
 
@@ -114,13 +120,17 @@ class LinuxProcs(ProcSource):
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         try:
             raw = self._read(pid, "environ")
-        except OSError:
+        except (FileNotFoundError, ProcessLookupError):
             return None
+        except OSError as err:
+            raise ProcError(f"cannot read the environment of pid {pid}: {err.strerror}") from None
         return parse_environ(raw)
 
 
 class PsProcs(ProcSource):
     """``ps`` on hosts without ``/proc`` (macOS)."""
+
+    lossy_environ = True
 
     def _ps(self, *args: str) -> str:
         try:
@@ -168,7 +178,13 @@ class PsProcs(ProcSource):
         try:
             text = self._ps("-E", "-ww", "-o", "command=", "-p", str(pid))
         except ProcError:
-            return None
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return None
+            except PermissionError:
+                pass
+            raise
         env: Dict[str, str] = {}
         for word in text.split():
             key, sep, value = word.partition("=")

@@ -294,3 +294,75 @@ def test_reads_with_the_core_down_kick_a_start(city: City, op: str) -> None:
     from fakehc.rawclient import raw_call as call
 
     call(city.paths.socket, "server.stop", {})
+
+
+def test_inventory_refreshes_activity_of_agents_that_never_report(city: City) -> None:
+    command = "while :; do date +%s%N; sleep 0.2; done"
+    assert city.start("mc-a", start_config(command=command)).code == 0
+
+    def last() -> str:
+        doc = json.loads(city.run("inventory").stdout)
+        return str(doc["sessions"][0]["last_activity"])
+
+    first = last()
+    time.sleep(1.2)
+    assert last() > first, "a changing screen is activity, read by inventory itself"
+
+
+def test_a_lost_run_reply_is_retried_and_not_doubled(city: City) -> None:
+    city.fake.drop_reply("terminal.run")  # type: ignore[union-attr]
+    done = city.start("mc-a", start_config())
+    assert done.code == 0, done.stderr
+    live = [t for t in city.terminals() if t["state"] == "live"]
+    assert len(live) == 1
+    assert observe(city, "mc-a")["state"] == "running"
+
+
+def test_a_canceled_start_leaves_no_terminal_or_metadata(city: City) -> None:
+    from cityharness import in_thread
+
+    from gc_runtime_herdr_core.rpp.cancel import CancelToken
+
+    city.fake.delay_reply("terminal.run", 1.0)  # type: ignore[union-attr]
+    cancel = CancelToken()
+    results = []
+    thread = in_thread(lambda: results.append(city.run("start", "mc-a", stdin=start_config().encode(), cancel=cancel)))
+    wait_for(lambda: city.fake.call_count("terminal.run") == 1)  # type: ignore[union-attr]
+    cancel.cancel("terminated")
+    thread.join(timeout=20)
+    assert results and results[0].code == 1
+    wait_for(lambda: all(t["state"] != "live" for t in city.terminals()))
+    assert city.terminals() == []
+    assert list(Path(city.context().state_dir("meta")).iterdir()) == []
+
+
+def test_observe_answers_within_4s_while_a_start_holds_the_name(city: City) -> None:
+    from cityharness import in_thread
+
+    city.fake.delay_reply("terminal.run", 5.0)  # type: ignore[union-attr]
+    thread = in_thread(lambda: city.start("mc-a", start_config()))
+    wait_for(lambda: city.fake.call_count("terminal.run") == 1)  # type: ignore[union-attr]
+    began = time.monotonic()
+    answer = observe(city, "mc-a")
+    assert time.monotonic() - began < 4.0
+    assert answer["state"] in ("unknown", "running")
+    thread.join(timeout=20)
+
+
+def test_a_work_dir_that_does_not_exist_fails_the_start(city: City) -> None:
+    done = city.start("mc-a", start_config(work_dir=str(city.root / "missing")))
+    assert done.code == 1 and "work_dir" in done.stderr
+    assert city.terminals() == []
+
+
+def test_process_alive_without_a_process_table_cannot_tell(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, ProcError
+
+    class Broken(LinuxProcs):
+        def snapshot(self) -> Dict[int, Any]:
+            raise ProcError("no /proc")
+
+    assert city.start("mc-a", start_config()).code == 0
+    city.procs.inner = Broken()
+    done = city.run("process-alive", "mc-a", stdin=b"cat\n")
+    assert done.code == 0 and done.stdout == b"", "empty: gc reads it as alive, never dead"

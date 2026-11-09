@@ -33,6 +33,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 if __package__ in (None, ""):
@@ -79,13 +80,72 @@ def _print_status(sock: str) -> int:
     return 0
 
 
+SYSTEMD_ENV = "FAKEHC_SYSTEMD"
+"""Set by :func:`write_launcher`: place the core as hc does under a user
+manager, in the core's ``XDG_RUNTIME_DIR`` (a test's stand-in for
+``/run/user/<uid>``)."""
+
+SERVICE = (
+    "INVOCATION_ID", "RUNTIME_DIRECTORY", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "MANAGERPID", "MANAGERPIDFDID",
+    "MEMORY_PRESSURE_WATCH", "MEMORY_PRESSURE_WRITE", "NOTIFY_SOCKET", "WATCHDOG_PID", "WATCHDOG_USEC",
+    "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES",
+)
+"""hc ``platform/systemd.rs`` ``SERVICE``: never written to a unit's environment file."""
+
+MANAGER_BLOCK = {
+    "SHELL": "/bin/bash",
+    "XDG_DATA_DIRS": "/usr/share",
+    "SSH_AUTH_SOCK": "/run/user/agent.sock",
+    "TMPDIR": "/tmp",
+    "GOCACHE": "/home/u/.cache/go",
+}
+"""Keys a real user manager's environment block carried (recorded, values synthetic)."""
+
+
+def _quoted(value: str) -> str:
+    return "".join("\\" + ch if ch in '\\"$`' else ch for ch in value)
+
+
+def systemd_child_env(env: Dict[str, str], root: str) -> Dict[str, str]:  # root: the runtime dir
+    """A systemd-placed core's environ, built as hc's ``platform::systemd::spawn``
+    does: the starter's environment (no service variables) plus the runtime
+    dir and HC_RUNTIME goes to ``<RuntimeDirectory>/environment`` (0600 in a
+    0700 dir); the unit then runs with the manager's block, that file, and
+    systemd's own service variables."""
+    starter = {k: v for k, v in env.items() if k not in SERVICE and k != "HC_SCOPE" and k != SYSTEMD_ENV}
+    starter["XDG_RUNTIME_DIR"] = root
+    starter["HC_RUNTIME"] = "1"
+    unit_dir = os.path.join(root, f"hc-serve-{uuid.uuid4().hex[:8]}")
+    os.makedirs(unit_dir, mode=0o700)
+    fd = os.open(os.path.join(unit_dir, "environment"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("".join(f'{k}="{_quoted(v)}"\n' for k, v in sorted(starter.items())))
+    child = dict(MANAGER_BLOCK)
+    child.update(starter)
+    child.update(
+        {
+            "INVOCATION_ID": uuid.uuid4().hex,
+            "MANAGERPID": "1234",
+            "MEMORY_PRESSURE_WATCH": "/sys/fs/cgroup/user.slice/memory.pressure",
+            "MEMORY_PRESSURE_WRITE": "c29tZQ==",
+            "RUNTIME_DIRECTORY": unit_dir,
+            "SYSTEMD_EXEC_PID": "4321",
+        }
+    )
+    return child
+
+
 def server_start(env: Dict[str, str]) -> int:
     paths = _paths(env)
     if _answers(paths["socket"]):
         return _print_status(paths["socket"])
     os.makedirs(paths["state"], mode=0o700, exist_ok=True)
-    child_env = {k: v for k, v in env.items() if k != "HC_SCOPE"}
-    child_env["HC_RUNTIME"] = "1"
+    runtime_dir = env.get("XDG_RUNTIME_DIR", "")
+    if env.get(SYSTEMD_ENV) == "1" and runtime_dir:
+        child_env = systemd_child_env(env, runtime_dir)
+    else:
+        child_env = {k: v for k, v in env.items() if k not in ("HC_SCOPE", SYSTEMD_ENV)}
+        child_env["HC_RUNTIME"] = "1"
     with open(os.path.join(paths["state"], "core.log"), "ab") as log:
         subprocess.Popen(
             [sys.executable, os.path.abspath(__file__), "serve"],
@@ -193,19 +253,23 @@ def main(argv: List[str], env: Dict[str, str]) -> int:
         return 2
 
 
-def write_launcher(path: str, *, python: Optional[str] = None) -> str:
+def write_launcher(path: str, *, python: Optional[str] = None, systemd: bool = False) -> str:
     """A ``herdr-core``-named executable at ``path`` that runs this CLI under
     ``python`` (default: this interpreter, which has the schema tooling).
 
     It is a Python script, not a shell wrapper: a shell would add ``PWD`` to
     the environment, and a real hc binary is exec'd with exactly the
-    environment its caller gave it."""
+    environment its caller gave it. With ``systemd`` the core it starts is
+    placed as hc places one under a user manager (:func:`systemd_child_env`),
+    in the starter's ``XDG_RUNTIME_DIR``."""
     interpreter = python or sys.executable
     if any(ch.isspace() for ch in interpreter):
         raise ValueError("the interpreter path must not contain whitespace (it goes in a shebang)")
     script = (
         f"#!{interpreter}\n"
-        "import runpy, sys\n"
+        "import os, runpy, sys\n"
+        + (f"os.environ[{SYSTEMD_ENV!r}] = '1'\n" if systemd else "")
+        +
         f"sys.argv[0] = {os.path.abspath(__file__)!r}\n"
         f"runpy.run_path({os.path.abspath(__file__)!r}, run_name='__main__')\n"
     )

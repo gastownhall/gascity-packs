@@ -36,9 +36,11 @@ from ..hc.paths import ensure_dirs
 from ..rpp.flock import LockTimeout
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError
+from ..rpp.statedir import StateDirError
 from .command import run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
+from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0
 """hc's own wait for a starting core (``client.rs`` START_WAIT)."""
@@ -51,23 +53,36 @@ BASE_PATH: Final = "/usr/local/bin:/usr/bin:/bin"
 
 DISCOVERY_KEYS: Final = ("HC_SESSION", "HC_SOCKET", "XDG_STATE_HOME", "XDG_CONFIG_HOME")
 
-SYSTEMD_UNIT_KEYS: Final[FrozenSet[str]] = frozenset(
+SERVICE_KEYS: Final[FrozenSet[str]] = frozenset(
     {
         "INVOCATION_ID",
+        "RUNTIME_DIRECTORY",
         "JOURNAL_STREAM",
         "SYSTEMD_EXEC_PID",
         "MANAGERPID",
+        "MANAGERPIDFDID",
         "MEMORY_PRESSURE_WATCH",
         "MEMORY_PRESSURE_WRITE",
         "NOTIFY_SOCKET",
         "WATCHDOG_PID",
         "WATCHDOG_USEC",
+        "LISTEN_PID",
+        "LISTEN_FDS",
+        "LISTEN_FDNAMES",
     }
 )
-"""What systemd adds to a unit's environment, beside the user manager's own block."""
+"""What systemd sets for a service (hc ``platform/systemd.rs`` ``SERVICE``)."""
+
+UNIT_ENVIRONMENT_FILE: Final = "environment"
+"""hc writes the starter's environment, 0600, to ``$RUNTIME_DIRECTORY/environment``
+and starts its unit with ``EnvironmentFile=`` it (``platform/systemd.rs``)."""
 
 HC_RUNTIME_KEY: Final = "HC_RUNTIME"
 """hc marks its own cores and holders with ``HC_RUNTIME=1`` (sweep exemption)."""
+
+TEST_RUNTIME_DIR_ENV: Final = "GC_HC_TEST_RUNTIME_DIR"
+"""Test-only (``GC_HC_TEST=1``): the runtime directory handed to the core
+instead of ``/run/user/<uid>``."""
 
 FOREIGN_FIX: Final = "city core was started outside the pack: run `gc herdr-core restart-core`"
 
@@ -96,7 +111,12 @@ def core_env(
     }
     env.update(_locale(ctx.env))
     env.update(ctx.paths.discovery_env())
-    runtime_dir = run_user if run_user is not None else f"/run/user/{uid}"
+    if run_user is not None:
+        runtime_dir = run_user
+    elif ctx.test and ctx.env.get(TEST_RUNTIME_DIR_ENV, ""):
+        runtime_dir = ctx.env[TEST_RUNTIME_DIR_ENV]
+    else:
+        runtime_dir = f"/run/user/{uid}"
     if os.path.isdir(runtime_dir):
         env["XDG_RUNTIME_DIR"] = runtime_dir
         bus = os.path.join(runtime_dir, "bus")
@@ -109,49 +129,108 @@ def allowed_core_keys(env: Mapping[str, str]) -> FrozenSet[str]:
     return frozenset(env) | {"LANG", HC_RUNTIME_KEY, "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}
 
 
-def manager_env_keys() -> Optional[FrozenSet[str]]:
-    """The keys of the systemd user manager's environment block; None when unreadable."""
+def format_environment_file(env: Mapping[str, str]) -> str:
+    """``env`` as hc writes a unit's EnvironmentFile: ``KEY="value"`` lines,
+    with backslash, double quote, dollar and backtick escaped."""
+    out = []
+    for key in sorted(env):
+        value = "".join("\\" + ch if ch in '\\"$`' else ch for ch in env[key])
+        out.append(f'{key}="{value}"\n')
+    return "".join(out)
+
+
+def parse_environment_file(text: str) -> Optional[Dict[str, str]]:
+    """A unit EnvironmentFile as hc writes it; None when it is not that shape."""
+    env: Dict[str, str] = {}
+    at = 0
+    while at < len(text):
+        if text[at] == "\n":
+            at += 1
+            continue
+        eq = text.find('="', at)
+        if eq <= at:
+            return None
+        key = text[at:eq]
+        if not (key[0].isalpha() or key[0] == "_") or not all(c.isalnum() or c == "_" for c in key):
+            return None
+        at = eq + 2
+        value = []
+        while True:
+            if at >= len(text):
+                return None
+            ch = text[at]
+            if ch == "\\" and at + 1 < len(text):
+                value.append(text[at + 1])
+                at += 2
+            elif ch == '"':
+                at += 1
+                break
+            else:
+                value.append(ch)
+                at += 1
+        env[key] = "".join(value)
+    return env
+
+
+def read_unit_environment(runtime_directory: str) -> Optional[Dict[str, str]]:
+    """The environment a systemd-placed core's unit was started with; None when unreadable."""
     try:
-        done = subprocess.run(
-            ["systemctl", "--user", "show-environment"],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            timeout=1.0,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        raw = read_private_file(os.path.join(runtime_directory, UNIT_ENVIRONMENT_FILE))
+    except StateDirError:
         return None
-    if done.returncode != 0:
+    if raw is None:
         return None
-    return frozenset(
-        line.split("=", 1)[0] for line in done.stdout.decode("utf-8", "replace").splitlines() if "=" in line
-    )
+    return parse_environment_file(raw.decode("utf-8", "surrogateescape"))
 
 
 def foreign_reason(
     actual: Mapping[str, str],
     expected: Mapping[str, str],
     *,
-    manager_keys: Callable[[], Optional[FrozenSet[str]]] = manager_env_keys,
+    unit_environment: Callable[[str], Optional[Dict[str, str]]] = read_unit_environment,
 ) -> Optional[str]:
-    """Why a core started with environment ``actual`` is not the pack's, or None.
+    """Why a core running with environment ``actual`` is not the pack's, or None.
 
-    Only key names are reported, never values.
+    A core hc placed under systemd runs with the user manager's environment
+    block, systemd's service variables and its unit's EnvironmentFile (the
+    starter's environment): the starter is judged by that file, never by the
+    manager's block, which the pack does not control and which changes. A
+    core spawned without systemd is judged by its own environment. Only key
+    names are reported, never values.
     """
     for key in DISCOVERY_KEYS:
         if actual.get(key) != expected.get(key):
             return f"its {key} differs from the pack's"
-    allowed = set(allowed_core_keys(expected))
-    if "INVOCATION_ID" in actual:
-        allowed |= SYSTEMD_UNIT_KEYS
-        extra = manager_keys()
-        if extra is None:
-            return "it runs as a systemd unit whose manager environment cannot be read"
-        allowed |= extra
-    stray = sorted(key for key in actual if key not in allowed and not key.startswith("LC_"))
+    allowed = set(allowed_core_keys(expected)) | SERVICE_KEYS
+    started = actual
+    runtime_directory = actual.get("RUNTIME_DIRECTORY")
+    if runtime_directory is not None:
+        run_user = expected.get("XDG_RUNTIME_DIR", "")
+        if not run_user or os.path.dirname(os.path.normpath(runtime_directory)) != os.path.normpath(run_user):
+            return "it runs as a systemd unit outside the user's runtime directory"
+        unit_env = unit_environment(runtime_directory)
+        if unit_env is None:
+            return "it runs as a systemd unit whose environment file cannot be read"
+        for key in DISCOVERY_KEYS:
+            if unit_env.get(key) != expected.get(key):
+                return f"its unit was started with another {key}"
+        started = unit_env
+        allowed = set(allowed_core_keys(expected))
+    stray = sorted(key for key in started if key not in allowed and not key.startswith("LC_"))
     if stray:
         return "it carries variables the pack never sets: " + ", ".join(stray[:8])
     return None
+
+
+def check_discovery_paths(env: Mapping[str, str], *, lossy: bool) -> None:
+    """Where a core's environment can only be read cut at whitespace (macOS
+    ``ps -E``), a discovery value with whitespace could never be matched, and
+    the pack would refuse its own core: refuse that state root up front."""
+    if not lossy:
+        return
+    for key in DISCOVERY_KEYS:
+        if any(ch.isspace() for ch in env.get(key, "")):
+            raise OpError(f"{key} holds whitespace, which this host's process table cannot read back: choose a GC_EXEC_STATE_DIR without it")
 
 
 def check_core_lock(ctx: OpContext) -> None:
@@ -205,13 +284,16 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
             ctx.request.cancel.pause(0.05)
 
 
-def check_foreign(ctx: OpContext, hc_bin: str, *, manager_keys: Callable[[], Optional[FrozenSet[str]]] = manager_env_keys) -> None:
+def check_foreign(ctx: OpContext, hc_bin: str) -> None:
     """Refuse the running core unless the pack started it with its allowlist."""
     status = ctx.client().server_status()
-    actual = ctx.host.procs.environ(status.pid)
+    try:
+        actual = ctx.host.procs.environ(status.pid)
+    except ProcError as err:
+        raise OpError(f"cannot read the city core's environment ({err}); {FOREIGN_FIX}") from None
     if actual is None:
         raise OpError(f"cannot read the city core's environment (pid {status.pid}); {FOREIGN_FIX}")
-    reason = foreign_reason(actual, core_env(ctx, hc_bin), manager_keys=manager_keys)
+    reason = foreign_reason(actual, core_env(ctx, hc_bin))
     if reason is not None:
         raise OpError(f"{FOREIGN_FIX} ({reason})")
 
@@ -223,6 +305,7 @@ def ensure_core(ctx: OpContext) -> str:
         hc_bin = ctx.hc_binary()
     except ConfigError as err:
         raise OpError(str(err)) from None
+    check_discovery_paths(ctx.paths.discovery_env(), lossy=ctx.host.procs.lossy_environ)
     check_core_lock(ctx)
     try:
         ctx.client().hello()

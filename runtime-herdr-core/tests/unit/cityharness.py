@@ -19,6 +19,7 @@ from typing import Dict, List, Mapping, Optional
 
 from fakehc import FakeHc
 from fakehc.cli import write_launcher
+from gc_runtime_herdr_core.hc.address import parse_address
 from gc_runtime_herdr_core.hc.paths import HcPaths, ensure_dirs, resolve_paths
 from gc_runtime_herdr_core.herdrcore.context import Host, OpContext
 from gc_runtime_herdr_core.herdrcore.core import core_env
@@ -152,7 +153,7 @@ class City:
         return found
 
     def address(self, name: str) -> str:
-        for record in sorted(self.terminals(), key=lambda r: int(str(r["address"])[1:]), reverse=True):
+        for record in sorted(self.terminals(), key=lambda r: parse_address(str(r["address"])) or 0, reverse=True):
             labels = record["labels"]
             assert isinstance(labels, dict)
             if labels.get("gc.session") == name:

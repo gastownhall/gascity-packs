@@ -93,3 +93,22 @@ def test_terminal_names_fit_hc_and_never_look_like_an_address() -> None:
         assert set(name[1:]) <= set("abcdefghijklmnopqrstuvwxyz234567")
     assert terminal_name("a" * 64, "x") != terminal_name("b" * 64, "x")
     assert is_object_nonce("0" * 32) and not is_object_nonce("../x") and not is_object_nonce("A" * 32)
+
+
+@pytest.mark.parametrize(
+    "address, n",
+    [("t1", 1), ("t9", 9), ("t10", 10), ("t19", 19), ("t1b", 20), ("t1z", 39), ("t20", 40), ("t9z", 279), ("t100", 280), ("t9zz", 8379), ("t1000", 8380), ("t65jk", 148377)],
+)
+def test_hc_addresses_parse_as_hc_writes_them(address: str, n: int) -> None:
+    # hc's own vectors (terminals.rs address tests).
+    from gc_runtime_herdr_core.hc.address import address_of, parse_address
+
+    assert parse_address(address) == n
+    assert address_of(n) == address
+
+
+def test_ties_break_on_the_address_counter() -> None:
+    older = record("t19", created_ms=5)
+    newer = record("t1b", created_ms=5)  # 20, after t19
+    assert newest([newer, older], "mc-a") is newer
+    assert newest([older, newer], "mc-a") is newer

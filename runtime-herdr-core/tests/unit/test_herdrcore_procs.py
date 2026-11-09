@@ -153,3 +153,33 @@ def test_is_attached_cannot_tell_without_a_process_table(city: City) -> None:
     city.procs.inner = Broken()
     done = city.run("is-attached", "mc-a")
     assert done.code == 1 and "cannot tell" in done.stderr
+
+
+def test_an_attach_viewer_whose_environment_cannot_be_read_cannot_tell(city: City, tmp_path: Path) -> None:
+    root = tmp_path / "proc"
+    add_proc(root, 41, ppid=1, argv=["hc", "attach", "t3"])
+    (root / "41" / "environ").chmod(0)
+    snapshot = LinuxProcs(str(root)).snapshot()
+    saved = city.procs.inner
+    city.procs.inner = LinuxProcs(str(root))
+    try:
+        if os.getuid() == 0:
+            pytest.skip("root reads any file")
+        with pytest.raises(ProcError):
+            attach.viewer_targets(city.context(), snapshot)
+    finally:
+        city.procs.inner = saved
+        (root / "41" / "environ").chmod(0o600)
+
+
+def test_a_viewer_that_exited_is_not_a_viewer(city: City, tmp_path: Path) -> None:
+    root = tmp_path / "proc"
+    add_proc(root, 41, ppid=1, argv=["hc", "attach", "t3"])
+    snapshot = LinuxProcs(str(root)).snapshot()
+    (root / "41" / "environ").unlink()
+    saved = city.procs.inner
+    city.procs.inner = LinuxProcs(str(root))
+    try:
+        assert attach.viewer_targets(city.context(), snapshot) == frozenset()
+    finally:
+        city.procs.inner = saved

@@ -11,7 +11,7 @@ core, reachable, holds no record of the name, live or finished (rule 7).
 
 from __future__ import annotations
 
-from typing import Final, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Dict, Final, FrozenSet, List, Optional, Sequence, Tuple
 
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcRpcError, HcUnreachable
@@ -142,15 +142,44 @@ def _collect_garbage(ctx: OpContext, live_objects: FrozenSet[str]) -> None:
     activity.forget(ctx, stale)
 
 
+SCREEN_READ_RESERVE_S: Final = 2.0
+"""inventory stops reading screens once this little of its deadline is left."""
+
+
+def refresh_screens(ctx: OpContext, client: HcClient, records: Sequence[Terminal]) -> Dict[str, activity.Seen]:
+    """Read the screen of every running agent that has never reported OSC 7501
+    status (its only activity signal) and update the activity cache; returns
+    the cache. One read per such box, while the op's deadline allows; a box
+    not read this pass keeps its cached entry."""
+    seen = activity.cached(ctx)
+    for record in records:
+        obj = object_of(record)
+        if obj is None or record.reported or not is_intact(record):
+            continue
+        if ctx.request.deadline.remaining() <= SCREEN_READ_RESERVE_S:
+            break
+        try:
+            screen = client.read_screen(record.address).text
+        except HcError:
+            continue
+        seen[obj] = activity.note_screen(ctx, obj, screen)
+    return seen
+
+
 def op_inventory(ctx: OpContext) -> OpResult:
+    client = ctx.client(read=True)
     try:
-        records = list_city(ctx.client(read=True), ctx)
+        records = list_city(client, ctx)
     except HcError as err:
         unreachable(ctx, err)
         return OpResult.answer(InventoryAnswer(complete=False, sessions=()).encode())
     snapshot = try_snapshot(ctx.host)
-    viewers = None if snapshot is None else viewer_targets(ctx, snapshot)
-    seen = activity.cached(ctx)
+    try:
+        viewers = None if snapshot is None else viewer_targets(ctx, snapshot)
+    except ProcError:
+        viewers = None  # attachment cannot be told this pass
+    newest_records = [found[0] for found in group_by_session(records).values()]
+    seen = refresh_screens(ctx, client, newest_records)
     complete = True
     entries: List[InventoryEntry] = []
     for name, found in sorted(group_by_session(records).items()):
@@ -222,8 +251,8 @@ def op_process_alive(ctx: OpContext) -> OpResult:
         return OpResult.answer("true")
     try:
         snapshot = ctx.host.procs.snapshot()
-    except ProcError as err:
-        raise OpError(f"cannot read the process table: {err}") from None
+    except ProcError:
+        return OpResult.ok()  # cannot tell: empty, which gc reads as alive, never dead
     meta, _ = read_meta(ctx, record)
     state, _ = agent_state(snapshot, record, names, meta)
     return OpResult.answer(encode_bool(state == "alive"))

@@ -15,6 +15,9 @@
    incarnation's own terminal is success. A cancel or failure from here on
    removes the terminal and the metadata.
 
+A ``work_dir`` that is not an existing directory fails the start; without
+one the program starts in the user's home.
+
 hc persists every ``terminal.run`` environment in plaintext for a day, so
 this build gives hc nothing but ``TERM`` and runs the command with the
 core's own minimal environment. A start config that carries what only the
@@ -234,6 +237,8 @@ def op_start(ctx: OpContext) -> OpResult:
         raise OpError(
             "this build cannot apply " + ", ".join(refused) + " yet (the agent launcher that carries them is not in it)"
         )
+    if cfg.work_dir and not os.path.isdir(cfg.work_dir):
+        raise OpError("work_dir is not an existing directory")
     ensure_core(ctx)
     client = ctx.client()
     with ctx.name_lock(name, shared=False):
@@ -251,7 +256,7 @@ def op_start(ctx: OpContext) -> OpResult:
                 client,
                 RunSpec(
                     argv=("/bin/sh", "-c", cfg.command) if cfg.command else ("/bin/sh",),
-                    cwd=cfg.work_dir if cfg.work_dir and os.path.isdir(cfg.work_dir) else ctx.host.home(),
+                    cwd=cfg.work_dir or ctx.host.home(),
                     env=TERM_ENV,
                     labels=session_labels(ctx.paths.city_id, name, obj),
                     name=terminal_name(ctx.paths.city_id, name),

@@ -9,9 +9,10 @@
   hash and when it last changed in ``activity.json``, written only when
   something changed. A missing or unreadable entry reads as "changed now".
 
-``inventory`` answers from the same cache with no screen reads (one backend
-query per city); an incarnation it has no entry for reads as active at its
-start.
+``inventory`` refreshes the same cache with one screen read per running
+agent that never reported (tmux's ``window_activity`` is read the same way,
+per window), within its deadline; an incarnation it could not read keeps its
+cached entry, and one with none reads as active at its start.
 """
 
 from __future__ import annotations

@@ -8,7 +8,8 @@ from the host, in one process snapshot. A box is attached when either:
    so a lock that cannot be taken is a viewer; or
 2. one of this user's processes runs ``herdr-core attach`` or ``hc attach``
    on the box's terminal (by address or name) against this city's core: its
-   environment names this core's socket or session.
+   environment names this core's socket or session. An attach process whose
+   environment cannot be read makes the answer "cannot tell".
 
 The city's core is private (a session no person's ``hc`` uses by default),
 so these are its only viewers short of a client that bypasses the CLI.
@@ -22,6 +23,7 @@ import fcntl
 import os
 from typing import FrozenSet, Optional, Set, Tuple
 
+from ..hc.errors import HcError
 from ..hc.types import Terminal
 from ..rpp.flock import LockFileError
 from ..rpp.ops import OpError, OpResult
@@ -31,6 +33,8 @@ from .procs import ProcError, Snapshot
 from .records import object_of
 
 ATTACH_COMMANDS = frozenset({"herdr-core", "hc"})
+ATTACH_TERMINAL_KEYS = ("TERM", "COLORTERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION")
+"""What the viewer's terminal tells ``hc attach`` about itself."""
 
 
 def lock_held(path: str) -> bool:
@@ -69,9 +73,9 @@ def viewer_targets(ctx: OpContext, snapshot: Snapshot) -> FrozenSet[str]:
         target = _attach_target(proc.argv)
         if target is None:
             continue
-        env = ctx.host.procs.environ(proc.pid)
+        env = ctx.host.procs.environ(proc.pid)  # ProcError: cannot tell
         if env is None:
-            continue
+            continue  # it exited since the snapshot
         if env.get("HC_SOCKET") == ctx.paths.socket or env.get("HC_SESSION") == ctx.paths.session:
             targets.add(target)
     return frozenset(targets)
@@ -93,7 +97,8 @@ def snapshot_viewers(ctx: OpContext) -> FrozenSet[str]:
 
 def op_attach(ctx: OpContext) -> OpResult:
     """Exec ``herdr-core attach`` on the box, holding its attach lock."""
-    from .reads import live_record, session_arg  # reads uses this module's rule
+    from .core import core_env
+    from .reads import live_record, session_arg  # both use this module's rule
 
     name = session_arg(ctx.request)
     record = live_record(ctx, name)
@@ -104,8 +109,16 @@ def op_attach(ctx: OpContext) -> OpResult:
         hc_bin = ctx.hc_binary()
     except ConfigError as err:
         raise OpError(str(err)) from None
-    env = {k: v for k, v in ctx.env.items() if k != "HC_SCOPE"}
-    env.update(ctx.paths.discovery_env())
+    # The core must answer now: hc's CLI starts a core when none does, and
+    # one started here would run its programs on this process's environment.
+    # The CLI gets the core's own allowlist environment (and the terminal's
+    # settings), so even a core it starts in a race is the pack's.
+    try:
+        ctx.client(read=True).hello()
+    except HcError as err:
+        raise OpError(f"the city's core is down ({err}); gc restarts it") from None
+    env = core_env(ctx, hc_bin)
+    env.update({key: ctx.env[key] for key in ATTACH_TERMINAL_KEYS if ctx.env.get(key)})
     if obj is not None:
         fd = os.open(ctx.attach_lock_path(obj), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         fcntl.flock(fd, fcntl.LOCK_SH)

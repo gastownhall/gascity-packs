@@ -63,7 +63,12 @@ runtime-herdr-core/
   manager's runtime directory and bus when they exist. No gc token or
   provider credential reaches the core. `start` refuses a core whose
   environment differs (someone else started it) and names the fix; a core
-  listening on another socket for this session is refused too. A read that
+  listening on another socket for this session is refused too. A core hc
+  placed under the systemd user manager is judged by its unit's environment
+  file (hc writes the starter's environment to
+  `$RUNTIME_DIRECTORY/environment`), not by the manager's own environment
+  block. On macOS, where a process's environment is read cut at
+  whitespace, a state root with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
   most one at a time and none for five minutes after a failed start.
 - **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
@@ -79,13 +84,18 @@ runtime-herdr-core/
   program the pack started (a kept terminal's replacement shell, a lost
   holder), is a dead box: `peek` still reads its screen, `kill-object corpse`
   removes it, and a plain `start` replaces it.
-- **Start** runs the command under `sh -c` with the core's environment; hc
-  gets only `TERM`. **Stop** and **kill-object** end the program with
+- **Start** runs the command under `sh -c` with the core's environment, in
+  `work_dir` (which must exist; the home without one); hc gets only `TERM`. **Stop** and **kill-object** end the program with
   `terminal.kill` and remove the record and its metadata.
+- **Activity.** A program that never reported OSC 7501 status is active
+  when its screen changes: `inventory` and `get-last-activity` read the
+  screen of each such running agent (hc keeps no output time).
 - **Attachment.** hc counts no viewers; a box is attached while the pack's
   `attach` runs (it holds a lock) or a `herdr-core|hc attach` process of this
   user targets it on this city's core. `is-attached` exits 1 when it cannot
-  tell.
+  tell, including when such a process's environment cannot be read.
+  `attach` checks the core answers first and runs `hc attach` with the
+  core's allowlist environment, so it never starts a core on gc's.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
   reading stdin); the driving ops, `watch-startup` and `copy-to` (exit 2,
   until the launcher lands); `server-stop`, `program-status` and session

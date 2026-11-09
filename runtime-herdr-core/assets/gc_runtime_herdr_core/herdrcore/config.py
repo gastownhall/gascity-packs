@@ -78,16 +78,16 @@ class PackConfig:
 
 
 def read_pack_config(pack_state: str) -> PackConfig:
-    """The city's pack config; an absent file is the default config."""
+    """The city's pack config; an absent file is the default config. It names
+    the binary the pack executes, so it must be a regular file of this user,
+    never a symlink."""
     path = os.path.join(pack_state, PACK_CONFIG_FILE)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    except FileNotFoundError:
+        data = read_private_file(path, limit=1 << 16)
+    except StateDirError as err:
+        raise ConfigError(str(err)) from None
+    if data is None:
         return PackConfig()
-    except OSError as err:
-        raise ConfigError(f"cannot read {path}: {err.strerror}") from None
-    with os.fdopen(fd, "rb") as handle:
-        data = handle.read(1 << 16)
     try:
         doc = JsonObject.of(loads(data))
         hc_bin = doc.opt_str("hc_bin")

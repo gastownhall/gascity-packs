@@ -54,7 +54,22 @@ FEATURES: Tuple[str, ...] = ("framed", "attach", "events", "status", "shell", "r
 """hello's ``features`` at v0.1.19 (hc ``src/api.rs``)."""
 
 _NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,31}")
-_ID_SHAPED = re.compile(r"t[0-9]+")
+_ID_SHAPED = re.compile(r"t[1-9][0-9bcdfghjkmnpqrstvwxyz]*")
+_SYMBOLS = "0123456789bcdfghjkmnpqrstvwxyz"
+
+
+def hc_address(n: int) -> str:
+    """hc ``terminals.rs`` ``address``: t1..t9, t10..t9z (30 symbols after the first digit)."""
+    rest, size, length = n - 1, 9, 0
+    while rest >= size:
+        rest -= size
+        size *= 30
+        length += 1
+    tail = ""
+    for _ in range(length):
+        tail = _SYMBOLS[rest % 30] + tail
+        rest //= 30
+    return f"t{rest + 1}{tail}"
 _STRIPPED_FROM_CORE_ENV = ("TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "COLORTERM", "HC_TERMINAL_ID", "HC_SCOPE", "HC_RUNTIME")
 
 Params = Dict[str, Any]
@@ -471,7 +486,7 @@ class FakeHc:
                     raise RpcFailure("invalid_params", f"bad terminal name {name!r}", code=-32602)
                 if any(t.name == name and t.state == "live" for t in self._terminals.values()):
                     raise RpcFailure("name_taken", f"a live terminal is named {name}")
-            address = f"t{self._next_id}"
+            address = hc_address(self._next_id)
             self._next_id += 1
             cwd = str(params.get("cwd") or "/")
             env = dict(self._base_env)
@@ -499,6 +514,7 @@ class FakeHc:
                 )
             except OSError as err:
                 raise RpcFailure("spawn_failed", f"cannot start {argv[0]}: {err.strerror}") from None
+            terminal.created_seq = self._next_id - 1
             self._terminals[address] = terminal
         return terminal.record()
 
@@ -511,7 +527,7 @@ class FakeHc:
                 return self._terminals[target]
             named = sorted(
                 (t for t in self._terminals.values() if t.name == target),
-                key=lambda t: int(t.address[1:]),
+                key=lambda t: t.created_seq,
                 reverse=True,
             )
         for terminal in named:
@@ -525,7 +541,7 @@ class FakeHc:
         wanted = {str(k): str(v) for k, v in (params.get("labels") or {}).items()}
         include_finished = bool(params.get("all"))
         with self._lock:
-            terminals = sorted(self._terminals.values(), key=lambda t: int(t.address[1:]))
+            terminals = sorted(self._terminals.values(), key=lambda t: t.created_seq)
         listed, hidden = [], 0
         for terminal in terminals:
             record = terminal.record()
