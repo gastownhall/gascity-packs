@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/herdrdev/herdr-core",
+  "tag": "v0.1.19",
+  "commit": "06793ede1bedb1fed8d22d3cae476d3eb239edf0",
+  "path": "schema/hc.openrpc.json",
+  "released_path": "schema/released.openrpc.json",
+  "sha256": "4971afc264ee191fd2897654d3b80118e1a2460346a72a24e855ac3a8c7fe8b5"
+}

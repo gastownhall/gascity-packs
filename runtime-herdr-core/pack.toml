@@ -1,0 +1,17 @@
+[pack]
+name = "runtime-herdr-core"
+version = "0.1.0"
+schema = 2
+
+# Pack-declared runtime (Gas City RUNTIME-SEL-011): `[session] provider =
+# "herdr-core"` selects it. Never `herdr`: that name is a gc builtin, and a
+# collision is a composition error (RUNTIME-SEL-007).
+#
+# The command is pack-relative, anchored at the pack directory when gc loads
+# the pack, and exec'd directly with no shell: the shebang runs it under the
+# python3 on gc's PATH (3.9 or later, standard library only).
+[runtimes.herdr-core]
+command = "assets/bin/gc-runtime-herdr-core"
+protocol = 0
+# Oversized startup prompts reroute through the runtime's nudge op.
+prompt_delivery = "nudge-fallback"

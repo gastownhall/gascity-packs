@@ -1,0 +1,17 @@
+#!/usr/bin/env -S python3 -I -S
+"""gc-runtime-herdr-core: the RPP executable for gc runtime ``herdr-core``.
+
+gc execs it directly, with no shell ([runtimes.herdr-core] in pack.toml).
+``-I`` ignores PYTHON* variables, the user site and the script's directory;
+``-S`` skips site-packages: only the standard library and this pack load.
+"""
+import os
+import sys
+import time
+
+_STARTED = time.monotonic()
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+from gc_runtime_herdr_core.main import main  # noqa: E402
+
+sys.exit(main(sys.argv, started=_STARTED))
