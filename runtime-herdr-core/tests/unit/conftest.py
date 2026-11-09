@@ -89,7 +89,7 @@ def make_client(fake_hc: FakeHc) -> ClientFactory:
 
 @pytest.fixture
 def home_dir(tmp_path: Path) -> Path:
-    """Stands in for the password-database home: tests never write the real one."""
+    """Stands in for the user's home: tests never write the real one."""
     home = tmp_path / "pwhome"
     home.mkdir(mode=0o755)
     return home

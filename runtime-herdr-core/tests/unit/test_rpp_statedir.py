@@ -23,8 +23,8 @@ from gc_runtime_herdr_core.rpp.statedir import (
     format_host_uuid,
     host_name,
     machine_identity,
-    password_home,
     state_root,
+    user_home,
 )
 
 LEAF = "gc-runtime-herdr-core"
@@ -138,12 +138,12 @@ def test_host_name_is_uname_n() -> None:
     assert host_name() == os.uname().nodename
 
 
-def test_password_home_comes_from_the_password_database(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_user_home_comes_from_the_user_database(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", "/nonexistent-home")
-    assert password_home() == pwd.getpwuid(os.getuid()).pw_dir
+    assert user_home() == pwd.getpwuid(os.getuid()).pw_dir
 
 
-def test_state_root_defaults_under_the_password_home(home_dir: Path) -> None:
+def test_state_root_defaults_under_the_user_home(home_dir: Path) -> None:
     env = {"HOME": "/elsewhere", "XDG_STATE_HOME": "/xdg/state", "XDG_RUNTIME_DIR": "/run/x"}
     root = state_root(env, leaf=LEAF, home=lambda: str(home_dir))
     assert root == str(home_dir / ".local" / "state" / LEAF)

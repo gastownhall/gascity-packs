@@ -1,7 +1,7 @@
 """Where a city's core lives.
 
 Its hc session, socket, state and config come from the uid, the
-password-database home (or ``GC_EXEC_STATE_DIR``), the machine's identity and
+user's home (or ``GC_EXEC_STATE_DIR``), the machine's identity and
 the raw city key, and from nothing in the caller's environment: hc itself resolves
 its socket and state from ``HC_SOCKET``, ``HC_SESSION``, ``XDG_RUNTIME_DIR`` and
 ``XDG_STATE_HOME`` (hc ``crates/herdr-core/src/paths.rs``), which differ
@@ -42,12 +42,12 @@ from ..rpp.statedir import (
     city_key,
     ensure_private_dir,
     machine_identity,
-    password_home,
     state_root,
+    user_home,
 )
 
 PACK_STATE_LEAF: Final = "gc-runtime-herdr-core"
-"""The default state root is ``<password home>/.local/state/<leaf>``."""
+"""The default state root is ``<user home>/.local/state/<leaf>``."""
 
 HC_STATE_SUBDIR: Final = "herdr-core"
 HC_CONFIG_SUBDIR: Final = "hc-config"
@@ -104,7 +104,7 @@ def resolve_paths(
     env: Mapping[str, str],
     *,
     machine: Optional[str] = None,
-    home: Callable[[], str] = password_home,
+    home: Callable[[], str] = user_home,
     uid: Optional[int] = None,
     city_var: str = OP_CITY_ENV,
     tmp_root: str = "/tmp",

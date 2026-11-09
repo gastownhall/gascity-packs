@@ -7,7 +7,7 @@ of them cannot find reads absent, so reconciler v2 starts a twin. Therefore:
 
 * the state root ``R`` is ``GC_EXEC_STATE_DIR`` when set (an operator sets it
   alike for every gc process of the city), else a directory under the home
-  from the password database, never ``$HOME``;
+  from the user database (getpwuid), never ``$HOME``;
 * the city key is the raw ``GC_EXEC_CITY_PATH`` (``GC_CITY_PATH`` for doctor
   checks and pack commands, which gc runs without the exec variables), and
   the fixed bucket :data:`UNSCOPED_CITY_KEY` when that is unset: never the
@@ -133,20 +133,20 @@ def machine_identity(
     return host()
 
 
-def password_home(uid: Optional[int] = None) -> str:
-    """The home directory the password database gives ``uid`` (default: this user)."""
+def user_home(uid: Optional[int] = None) -> str:
+    """The home directory the user database (getpwuid) gives ``uid`` (default: this user)."""
     who = os.getuid() if uid is None else uid
     try:
         home = pwd.getpwuid(who).pw_dir
     except KeyError:
-        raise StateDirError(f"uid {who} has no entry in the password database") from None
+        raise StateDirError(f"uid {who} has no entry in the user database") from None
     if not os.path.isabs(home):
-        raise StateDirError(f"the password database gives uid {who} no absolute home")
+        raise StateDirError(f"the user database gives uid {who} no absolute home")
     return home
 
 
-def state_root(env: Mapping[str, str], *, leaf: str, home: Callable[[], str] = password_home) -> str:
-    """``R``: ``GC_EXEC_STATE_DIR``, else ``<password home>/.local/state/<leaf>``.
+def state_root(env: Mapping[str, str], *, leaf: str, home: Callable[[], str] = user_home) -> str:
+    """``R``: ``GC_EXEC_STATE_DIR``, else ``<user home>/.local/state/<leaf>``.
 
     Normalized (``//`` and trailing ``/`` dropped), because the root keys the
     city's hc session: two spellings of one root must name one core.
