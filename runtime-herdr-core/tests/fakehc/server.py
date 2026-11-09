@@ -147,6 +147,8 @@ class FakeHc:
         self._started_at = time.monotonic()
         self._server: Optional[_Server] = None
         self._thread: Optional[threading.Thread] = None
+        # Set once server.stop has answered: a standalone core then exits.
+        self.stopped = threading.Event()
         # Requests or results that left the vendored schema (must stay empty),
         # and the methods whose results the guard has checked.
         self.schema_violations: List[str] = []
@@ -451,6 +453,7 @@ class FakeHc:
         # The core is gone once it answers: nothing accepts a connection
         # after the reply. The reply's own connection closes after it.
         self._close_listener()
+        self.stopped.set()
         return {"stopped": True}
 
     def _run(self, params: Params) -> Dict[str, Any]:

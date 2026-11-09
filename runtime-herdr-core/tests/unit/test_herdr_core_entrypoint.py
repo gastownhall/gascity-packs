@@ -62,11 +62,25 @@ def test_entry_point_ships_executable() -> None:
     assert listed.stdout.split()[0] == "100755"
 
 
-def test_protocol_answers_the_p1_handshake(tmp_path: Path) -> None:
+HANDSHAKE = {
+    "version": 0,
+    "capabilities": ["observe.v1", "report-attachment", "report-activity", "city-scoped", "conformance-faults"],
+    "locality": "local",
+}
+
+
+def test_protocol_answers_the_v2_ready_handshake(tmp_path: Path) -> None:
     done = invoke("protocol", cwd=tmp_path)
     assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout) == {"version": 0, "capabilities": [], "locality": "local"}
+    assert json.loads(done.stdout) == HANDSHAKE
     assert done.stderr == b""
+
+
+def test_the_handshake_never_declares_exec_or_provision(tmp_path: Path) -> None:
+    # Under proc.exec gc would pipe tmux commands to `exec`; this runtime
+    # declares only what it implements.
+    caps = set(json.loads(invoke("protocol", cwd=tmp_path).stdout)["capabilities"])
+    assert not caps & {"proc.exec", "proc.provision", "input-fence", "tty.attach", "proc.stream"}
 
 
 def test_protocol_reads_no_state_and_ignores_the_callers_python_environment(tmp_path: Path) -> None:
@@ -140,7 +154,7 @@ def test_the_shebang_runs_without_an_explicit_interpreter(tmp_path: Path) -> Non
         check=False,
     )
     assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["capabilities"] == []
+    assert json.loads(done.stdout) == HANDSHAKE
 
 
 def test_usage_without_an_op(tmp_path: Path) -> None:

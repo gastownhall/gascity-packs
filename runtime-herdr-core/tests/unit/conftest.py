@@ -17,12 +17,12 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import TYPE_CHECKING, Callable, Iterator, Optional
 
 import pytest
 
 PACK_ROOT = Path(__file__).resolve().parents[2]
-for _entry in (PACK_ROOT / "assets", PACK_ROOT / "tests"):
+for _entry in (PACK_ROOT / "assets", PACK_ROOT / "tests", PACK_ROOT / "tests" / "unit"):
     if str(_entry) not in sys.path:
         sys.path.insert(0, str(_entry))
 
@@ -94,3 +94,53 @@ def home_dir(tmp_path: Path) -> Path:
     home = tmp_path / "pwhome"
     home.mkdir(mode=0o755)
     return home
+
+
+@pytest.fixture
+def city(short_tmp: Path, home_dir: Path) -> Iterator["City"]:
+    """An in-process city with its fake-hc core running (see cityharness)."""
+    from cityharness import make_city
+
+    made = make_city(short_tmp, home_dir)
+    made.start_core()
+    try:
+        yield made
+    finally:
+        await_kicks(made)
+        stop_cores(made.root / "R")
+        if made.fake is not None:
+            made.fake.close()
+            assert made.fake.schema_violations == [], "fake-hc schema guard:\n" + "\n".join(made.fake.schema_violations)
+
+
+def await_kicks(made: "City", timeout: float = 20.0) -> None:
+    """Wait until no background core start a test's read kicked is in flight:
+    one leaves its lock file before it writes its record."""
+    import time
+
+    from gc_runtime_herdr_core.herdrcore.attach import lock_held
+    from gc_runtime_herdr_core.herdrcore.core import KICK_FILE
+
+    ctx = made.context()
+    lock_path = ctx.lock_path("misc", "kick")
+    record = os.path.join(ctx.pack_state, KICK_FILE)
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if not os.path.exists(lock_path) or (os.path.exists(record) and not lock_held(lock_path)):
+            return
+        time.sleep(0.05)
+
+
+def stop_cores(root: Path) -> None:
+    """Stop every standalone core a test's ops started under state root ``root``."""
+    from fakehc.rawclient import raw_call
+
+    for lock in root.glob("herdr-core/*/core.lock"):
+        try:
+            raw_call(lock.read_text(), "server.stop", {}, timeout=10.0)
+        except (OSError, ValueError):
+            continue
+
+
+if TYPE_CHECKING:
+    from cityharness import City
