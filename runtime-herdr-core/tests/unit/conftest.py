@@ -12,6 +12,7 @@ client request is checked against the vendored hc schema.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
@@ -38,7 +39,7 @@ ClientFactory = Callable[..., HcClient]
 @pytest.fixture
 def short_tmp() -> Iterator[Path]:
     """A short private directory: a Unix socket path must fit in sun_path."""
-    path = tempfile.mkdtemp(prefix="hcrt-", dir="/tmp")
+    path = os.path.realpath(tempfile.mkdtemp(prefix="hcrt-", dir="/tmp"))  # /tmp is a symlink on macOS
     try:
         yield Path(path)
     finally:

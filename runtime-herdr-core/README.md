@@ -58,9 +58,10 @@ runtime-herdr-core/
   is readable, because machines get renamed. The hc session is `gc-` plus 10
   hex digits of `sha256(city id + "\0" + R)`, so every state root gets its own
   core and sockets. All state lives under `R`: `GC_EXEC_STATE_DIR`, else
-  `<password-database home>/.local/state/gc-runtime-herdr-core`, a 0700
-  directory owned by the user (a symlink or another owner's directory is
-  refused). The caller's `XDG_*`, `HOME`, `TMPDIR`, `HC_SOCKET` and
+  `<user home>/.local/state/gc-runtime-herdr-core` (the home the user
+  database gives, never `$HOME`), with its parents resolved so every spelling
+  of one root names one core. `R` is a 0700 directory owned by the user (a
+  symlink or another owner's directory is refused). The caller's `XDG_*`, `HOME`, `TMPDIR`, `HC_SOCKET` and
   `HC_SESSION` are ignored, and nothing is written under the city path. A
   socket path too long for `sun_path`, counting the
   `<session>.holder.<8hex>.sock` sockets hc binds beside it

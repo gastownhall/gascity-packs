@@ -48,6 +48,10 @@ class StateDirError(Exception):
     """The state root or a directory under it cannot be used safely."""
 
 
+class MachineIdError(Exception):
+    """A machine id file exists but could not be read."""
+
+
 def city_key(env: Mapping[str, str], var: str = OP_CITY_ENV) -> str:
     """The raw city path from ``var``, or :data:`UNSCOPED_CITY_KEY` when unset or empty."""
     raw = env.get(var, "")
@@ -71,12 +75,19 @@ def host_name() -> str:
 
 
 def read_machine_id_file(path: str) -> Optional[str]:
-    """The id in a machine-id file; None when missing, empty or ``uninitialized``."""
+    """The id in a machine-id file; None when it is missing, empty or ``uninitialized``.
+
+    Any other failure raises :class:`MachineIdError`: as far as anyone can
+    tell it is transient, and going on to the next source would key the city
+    differently for this one call.
+    """
     try:
         with open(path, encoding="ascii", errors="replace") as handle:
             value = handle.read(256).strip()
-    except OSError:
+    except (FileNotFoundError, NotADirectoryError):
         return None
+    except OSError as err:
+        raise MachineIdError(f"cannot read the machine id from {path}: {err.strerror}") from None
     return value if value and value != "uninitialized" else None
 
 
@@ -118,8 +129,10 @@ def machine_identity(
 ) -> str:
     """What identifies this machine: what herdr-core keys a machine on.
 
-    macOS: the hardware UUID. Elsewhere: the machine id, ``/etc/machine-id``
-    then D-Bus's. The host name only when no id can be read.
+    macOS: the hardware UUID. Elsewhere: the machine id, ``/etc/machine-id``,
+    then D-Bus's when that one is missing, empty or ``uninitialized``. The
+    host name only when there is no id at all; an id file that exists but
+    cannot be read raises :class:`MachineIdError`.
     """
     if darwin:
         uuid = host_uuid()
@@ -145,18 +158,38 @@ def user_home(uid: Optional[int] = None) -> str:
     return home
 
 
+def _canonical(path: str) -> str:
+    # Resolve the parents (doubled slashes, ".", "..", symlinks) and keep the
+    # last component as given, so a root that is itself a symlink is still
+    # one, and ensure_private_dir still refuses it. Trailing "/" and "/."
+    # name the same last component; a final ".." names a parent, resolved.
+    trimmed = path
+    while True:
+        trimmed = trimmed.rstrip("/")
+        if not trimmed.endswith("/."):
+            break
+        trimmed = trimmed[: -len("/.")]
+    if not trimmed:
+        return "/"
+    parent, last = os.path.split(trimmed)
+    if last == "..":
+        return os.path.realpath(trimmed)
+    return os.path.join(os.path.realpath(parent or "/"), last)
+
+
 def state_root(env: Mapping[str, str], *, leaf: str, home: Callable[[], str] = user_home) -> str:
     """``R``: ``GC_EXEC_STATE_DIR``, else ``<user home>/.local/state/<leaf>``.
 
-    Normalized (``//`` and trailing ``/`` dropped), because the root keys the
-    city's hc session: two spellings of one root must name one core.
+    Its parents are resolved (doubled slashes, ``..``, symlinks), because the
+    root keys the city's hc session: every spelling of one root must name
+    one core.
     """
     configured = env.get(STATE_DIR_ENV, "")
     if configured:
         if not os.path.isabs(configured):
             raise StateDirError(f"{STATE_DIR_ENV} must be an absolute path")
-        return os.path.normpath(configured)
-    return os.path.normpath(os.path.join(home(), ".local", "state", leaf))
+        return _canonical(configured)
+    return _canonical(os.path.join(home(), ".local", "state", leaf))
 
 
 def ensure_private_dir(path: str, *, uid: Optional[int] = None) -> None:

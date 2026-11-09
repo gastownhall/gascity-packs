@@ -140,6 +140,16 @@ def test_the_state_root_is_compared_normalized(home_dir: Path, short_tmp: Path) 
     assert messy == clean
 
 
+def test_a_symlinked_spelling_of_the_root_names_the_same_core(home_dir: Path, short_tmp: Path) -> None:
+    real = short_tmp / "real"
+    real.mkdir()
+    alias = short_tmp / "alias"
+    alias.symlink_to(real)
+    direct = resolve({"GC_EXEC_CITY_PATH": "/c", "GC_EXEC_STATE_DIR": str(real / "R")}, home_dir)
+    aliased = resolve({"GC_EXEC_CITY_PATH": "/c", "GC_EXEC_STATE_DIR": str(alias / "R")}, home_dir)
+    assert aliased == direct
+
+
 def test_doctor_reads_gc_city_path_to_the_same_core(home_dir: Path) -> None:
     op = resolve({"GC_EXEC_CITY_PATH": "/srv/city"}, home_dir)
     doctor = resolve_paths(
