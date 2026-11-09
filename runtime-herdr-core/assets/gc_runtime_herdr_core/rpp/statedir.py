@@ -133,7 +133,7 @@ def machine_identity(
     return host()
 
 
-def password_home(uid: Optional[int] = None) -> str:
+def user_home(uid: Optional[int] = None) -> str:
     """The home directory the password database gives ``uid`` (default: this user)."""
     who = os.getuid() if uid is None else uid
     try:
@@ -145,8 +145,8 @@ def password_home(uid: Optional[int] = None) -> str:
     return home
 
 
-def state_root(env: Mapping[str, str], *, leaf: str, home: Callable[[], str] = password_home) -> str:
-    """``R``: ``GC_EXEC_STATE_DIR``, else ``<password home>/.local/state/<leaf>``.
+def state_root(env: Mapping[str, str], *, leaf: str, home: Callable[[], str] = user_home) -> str:
+    """``R``: ``GC_EXEC_STATE_DIR``, else ``<password-database home>/.local/state/<leaf>``.
 
     Normalized (``//`` and trailing ``/`` dropped), because the root keys the
     city's hc session: two spellings of one root must name one core.

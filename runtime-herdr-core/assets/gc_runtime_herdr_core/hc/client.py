@@ -5,17 +5,22 @@ per line; hc ``schema/README.md`` "Connecting").
   at a time (hc ``crates/herdr-core/src/server.rs``, ``connection``), and a
   ``send`` waits until nobody has typed for about 3 s (hc.openrpc.json
   ``terminal.send``), so concurrent calls never share a connection.
+* Every connection opens with the core's ``hello``, gated
+  (:func:`.version.gate`) before the call is written on that same
+  connection. A connection ends with the core that accepted it, so a core
+  restarted, upgraded or replaced between two calls, idle or not, is gated
+  before it is sent anything, and a core the gate refuses is never sent the
+  call.
 * A call's timeout is its table value (:class:`CallTimeouts`) cut to end one
   second before the op's deadline (:meth:`~..rpp.cancel.Deadline.budget`);
   ``send`` gets the deadline less two seconds. A call with no time left is
   not sent at all.
-* ``hello``, ``terminal.get``, ``terminal.list`` and ``terminal.read`` are
-  retried once, on a fresh connection, when the core drops the first before
-  replying. Nothing else is: ``run``, ``send``, ``keys``, ``interrupt`` and
-  ``kill`` are not idempotent, and hc has no request ids to dedupe them.
-* The core is gated by its ``hello`` (:func:`.version.gate`) before the first
-  call and again after any lost or refused connection: that is how an
-  out-of-band restart or upgrade of the core shows itself.
+* A connection the core drops during the hello is replaced once, gated
+  again. ``terminal.get``, ``terminal.list`` and ``terminal.read`` are also
+  retried once, on a fresh gated connection, when the core drops the first
+  before replying. Nothing else is: ``run``, ``send``, ``keys``,
+  ``interrupt`` and ``kill`` are not idempotent, and hc has no request ids to
+  dedupe them.
 * Every failure is an :class:`~.errors.HcError` that says whether the request
   may have reached the core.
 """
@@ -71,7 +76,8 @@ from .version import GENERATION, GateResult, VersionPolicy, gate
 T = TypeVar("T")
 
 IDEMPOTENT_METHODS: Final = frozenset({"hello", "terminal.get", "terminal.list", "terminal.read"})
-"""The only methods retried, once, when a connection drops before the reply."""
+"""The only methods retried, once, when a connection drops before the reply
+(any call is, when the connection drops during its hello)."""
 
 INTERRUPT_WAIT_S: Final = 3.0
 """hc's own wait for an interrupted program to settle (``interrupt {timeout:3}``)."""
@@ -123,48 +129,23 @@ class CallTimeouts:
 
 
 class CoreEndpoint:
-    """One core as this process sees it: its socket and its gate.
+    """One core as this process sees it: its socket and its version policy.
 
     Every client of the core in the process shares the endpoint (a
-    long-lived process may run many at once), so the core is gated once per
-    connection generation. The generation moves on whenever a connection is
-    lost or refused.
+    long-lived process may run many at once), and with it the request ids.
+    It keeps no gate: a gate holds only for the connection it was passed on,
+    and every call gates its own.
     """
 
     def __init__(self, socket_path: str, *, policy: VersionPolicy) -> None:
         self.socket_path = socket_path
         self.policy = policy
         self._lock = threading.Lock()
-        self._generation = 0
-        self._gate: Optional[Tuple[int, GateResult]] = None
         self._ids = itertools.count(1)
 
     def next_id(self) -> int:
         with self._lock:
             return next(self._ids)
-
-    @property
-    def generation(self) -> int:
-        with self._lock:
-            return self._generation
-
-    def current_gate(self) -> Optional[GateResult]:
-        """The gate passed in the current generation, if any."""
-        with self._lock:
-            if self._gate is not None and self._gate[0] == self._generation:
-                return self._gate[1]
-            return None
-
-    def record_gate(self, generation: int, result: GateResult) -> None:
-        with self._lock:
-            if generation == self._generation:
-                self._gate = (generation, result)
-
-    def connection_lost(self, generation: int) -> None:
-        """A connection made in ``generation`` failed: the next call gates again."""
-        with self._lock:
-            if generation == self._generation:
-                self._generation += 1
 
 
 class HcClient:
@@ -187,18 +168,18 @@ class HcClient:
         self._cancel = cancel
         self._timeouts = timeouts
         self._inject_unavailable = inject_unavailable
+        self._last_gate: Optional[GateResult] = None
 
     @property
     def gate_warnings(self) -> Tuple[str, ...]:
-        """Warnings from the current gate (a newer core outside the tested list)."""
-        result = self._endpoint.current_gate()
-        return () if result is None else result.warnings
+        """Warnings from the last gate passed (a newer core outside the tested list)."""
+        return () if self._last_gate is None else self._last_gate.warnings
 
     # --- typed methods ------------------------------------------------------
 
     def hello(self) -> HelloResult:
-        """The gated core's hello (sent only when the generation has none)."""
-        return self._gate().hello
+        """The core's hello, gated, on a connection that carries nothing else."""
+        return self._typed("hello", {}, _Budget(self._timeouts.hello), parse_hello)
 
     def server_status(self) -> StatusResult:
         return self._typed("server.status", {}, _Budget(self._timeouts.query), parse_status)
@@ -273,71 +254,77 @@ class HcClient:
     # --- machinery ------------------------------------------------------------
 
     def _typed(self, method: str, params: Dict[str, object], budget: _Budget, parser: Callable[[object], T]) -> T:
-        try:
-            self._gate()
-        except HcError as err:
-            err.written = False  # the caller's own request was never sent
-            raise
-        raw, _ = self._call(method, params, budget)
+        raw = self._call(method, params, budget)
         try:
             return parser(raw)
         except JsonShapeError as err:
             raise HcProtocolError(method, f"malformed result: {err}", written=True) from None
 
-    def _gate(self) -> GateResult:
-        cached = self._endpoint.current_gate()
-        if cached is not None:
-            return cached
+    def _call(self, method: str, params: Dict[str, object], budget: _Budget) -> object:
+        """One gated connection, plus one more when the first drops during its
+        hello or, for an idempotent method, before the reply."""
         try:
-            raw, generation = self._call("hello", {"generation": GENERATION}, _Budget(self._timeouts.hello))
+            return self._gated_call(method, params, budget)
+        except HcConnectionLost as err:
+            # A drop during the hello wrote nothing of the call; after it, the
+            # call may have reached the core, and only a read is sent twice.
+            if err.method != "hello" and method not in IDEMPOTENT_METHODS:
+                raise
+        return self._gated_call(method, params, budget)
+
+    def _gated_call(self, method: str, params: Dict[str, object], budget: _Budget) -> object:
+        """Connect, gate the core on its hello, then send ``method`` on the same
+        connection (a ``hello`` call is the gate alone)."""
+        if self._inject_unavailable:
+            raise HcUnreachable(method, "the backend is unavailable (GC_RPP_FAULT=unavailable)")
+        self._timeout(method, budget)  # a call with no time left opens no connection
+        hello_timeout = self._timeout("hello", _Budget(self._timeouts.hello))
+        hello_ends = time.monotonic() + hello_timeout
+        conn = self._connect(method, min(self._timeouts.connect, hello_timeout))
+        try:
+            try:
+                hello = self._gate(conn, hello_ends, hello_timeout)
+            except HcError as err:
+                if method != "hello":
+                    err.written = False  # the call itself was never sent
+                raise
+            if method == "hello":
+                return hello
+            timeout = self._timeout(method, budget)
+            return self._exchange(conn, method, params, time.monotonic() + timeout, timeout)
+        finally:
+            conn.close()
+
+    def _gate(self, conn: socket.socket, ends: float, timeout: float) -> object:
+        """The core's hello on ``conn``, once the gate has passed it."""
+        try:
+            raw = self._exchange(conn, "hello", {"generation": GENERATION}, ends, timeout)
         except HcRpcError as err:
             raise HcGateError("hello", f"hc version unsupported: the core refused hello ({err.kind}) (run gc doctor)") from None
         try:
             hello = parse_hello(raw)
         except JsonShapeError as err:
             raise HcProtocolError("hello", f"malformed result: {err}", written=True) from None
-        result = gate(hello, self._endpoint.policy)
-        self._endpoint.record_gate(generation, result)
-        return result
+        self._last_gate = gate(hello, self._endpoint.policy)
+        return raw
 
-    def _call(self, method: str, params: Dict[str, object], budget: _Budget) -> Tuple[object, int]:
-        """One exchange, plus one retry of an idempotent read whose connection dropped."""
-        generation = self._endpoint.generation
-        try:
-            return self._exchange(method, params, budget), generation
-        except HcUnreachable:
-            self._endpoint.connection_lost(generation)
-            raise
-        except HcConnectionLost:
-            self._endpoint.connection_lost(generation)
-            if method not in IDEMPOTENT_METHODS:
-                raise
-        if method != "hello":
-            self._gate()  # the drop may have been a core restart: gate the new core first
-        generation = self._endpoint.generation
-        try:
-            return self._exchange(method, params, budget), generation
-        except (HcUnreachable, HcConnectionLost):
-            self._endpoint.connection_lost(generation)
-            raise
-
-    def _exchange(self, method: str, params: Dict[str, object], budget: _Budget) -> object:
-        if self._inject_unavailable:
-            raise HcUnreachable(method, "the backend is unavailable (GC_RPP_FAULT=unavailable)")
+    def _timeout(self, method: str, budget: _Budget) -> float:
+        """``budget`` from now; a call that is canceled or has no time left is not sent."""
         if self._cancel.cancelled:
             raise HcCancelled(method, self._cancel.reason, written=False)
         timeout = self._deadline.budget(budget.cap, margin=budget.margin)
         if timeout <= 0:
             raise HcTimeout(method, "no time left before the op's deadline", written=False)
-        ends = time.monotonic() + timeout
+        return timeout
+
+    def _exchange(
+        self, conn: socket.socket, method: str, params: Dict[str, object], ends: float, timeout: float
+    ) -> object:
+        """One request and its reply on ``conn``."""
         request_id = self._endpoint.next_id()
         line = dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}) + "\n"
-        conn = self._connect(method, min(self._timeouts.connect, timeout))
-        try:
-            self._send_line(conn, method, line.encode("ascii"), ends, timeout)
-            reply = self._read_line(conn, method, ends, timeout)
-        finally:
-            conn.close()
+        self._send_line(conn, method, line.encode("ascii"), ends, timeout)
+        reply = self._read_line(conn, method, ends, timeout)
         return self._result(method, request_id, reply)
 
     def _connect(self, method: str, timeout: float) -> socket.socket:

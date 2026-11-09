@@ -6,18 +6,24 @@ the RPP table. :func:`run_per_op` builds the op's :class:`~.ops.OpRequest`,
 runs its handler, and maps every way a handler can end onto an exit code and
 a redacted stderr line. Nothing reaches stdout unless the op succeeded within
 its cap.
+
+Reading stdin waits in :data:`~.cancel.POLL_INTERVAL_S` steps, so a SIGTERM
+or the op's deadline ends it, and no handler starts once its op is canceled
+or out of time.
 """
 
 from __future__ import annotations
 
+import io
 import os
 import re
+import select
 import signal
 import time
 import traceback
-from typing import BinaryIO, Final, Mapping, Optional, Sequence, TextIO
+from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO
 
-from .cancel import CancelToken, Cancelled, Clock
+from .cancel import POLL_INTERVAL_S, CancelToken, Cancelled, Clock, Deadline
 from .exitcodes import ExitCode
 from .ops import OpError, OpRequest, OpResult, OpTable, deadline_for
 from .redact import Redactor
@@ -27,6 +33,7 @@ DEADLINE_ENV: Final = "GC_EXEC_DEADLINE_MS"
 gc release sends it yet; the op then has gc's own timeout for it."""
 
 _DEADLINE_MS: Final = re.compile(r"[0-9]{1,12}")
+_STDIN_CHUNK: Final = 1 << 16
 
 
 def parse_deadline_ms(raw: Optional[str]) -> Optional[int]:
@@ -48,6 +55,29 @@ def _install_sigterm(cancel: CancelToken) -> None:
 
     previous: object = signal.signal(signal.SIGTERM, on_sigterm)
     del previous
+
+
+def _read_stdin(stdin: BinaryIO, cancel: CancelToken, deadline: Deadline) -> bytes:
+    """All of stdin. A blocking read would sit out a SIGTERM and the deadline
+    alike, so each wait is a poll interval long, and stdin still open within
+    the deadline margin fails the op."""
+    try:
+        fd = stdin.fileno()
+    except io.UnsupportedOperation:  # an in-memory stream never blocks
+        return stdin.read()
+    poller = select.poll()
+    poller.register(fd, select.POLLIN)
+    chunks: List[bytes] = []
+    while True:
+        cancel.check()
+        timeout = deadline.budget(POLL_INTERVAL_S)
+        if timeout <= 0:
+            raise OpError("stdin was still open at the op's deadline")
+        if poller.poll(timeout * 1000.0):
+            chunk = os.read(fd, _STDIN_CHUNK)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
 
 
 def _emit(stderr: TextIO, text: str) -> None:
@@ -98,12 +128,16 @@ def run_per_op(
         request = OpRequest(
             op=op,
             args=tuple(argv[2:]),
-            stdin=stdin.read() if spec.reads_stdin else b"",
+            stdin=_read_stdin(stdin, cancel, deadline) if spec.reads_stdin else b"",
             env=env,
             cancel=cancel,
             deadline=deadline,
             redactor=redactor,
         )
+        # gc may have canceled, or given up waiting, while the op read stdin or started up.
+        cancel.check()
+        if deadline.expired():
+            raise OpError("no time left before the op's deadline")
         result = spec.handler(request)
     except OpError as err:
         result = OpResult.fail(err.message, err.code)

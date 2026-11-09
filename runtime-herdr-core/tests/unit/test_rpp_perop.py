@@ -7,9 +7,10 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional
+from typing import Dict, List, Mapping, Optional, Tuple
 
 import pytest
 
@@ -90,6 +91,81 @@ def test_stdin_is_read_only_for_ops_that_take_it() -> None:
     assert run({"nudge": spec(handler, reads_stdin=True)}, "nudge", "mc-a", stdin=b"hi").code == 0
     assert run({"stop": spec(handler)}, "stop", "mc-a", stdin=b"ignored").stdin_pos == 0
     assert seen == [b"hi", b""]
+
+
+def run_on_pipe(handler: Handler, read_end: int, env: Optional[Mapping[str, str]] = None) -> Tuple[int, str]:
+    """An op that takes stdin, run with stdin on ``read_end``: its exit code and stderr."""
+    stderr = io.StringIO()
+    with os.fdopen(read_end, "rb") as stdin:
+        code = run_per_op(
+            ["gc-runtime-herdr-core", "nudge"],
+            dict(env or {}),
+            {"nudge": spec(handler, reads_stdin=True)},
+            started=time.monotonic(),
+            stdin=stdin,
+            stdout=io.BytesIO(),
+            stderr=stderr,
+            install_signals=False,
+        )
+    return code, stderr.getvalue()
+
+
+def test_stdin_from_a_pipe_is_read_to_its_end() -> None:
+    seen: List[bytes] = []
+
+    def handler(req: OpRequest) -> OpResult:
+        seen.append(req.stdin)
+        return OpResult.ok()
+
+    payload = bytes(range(256)) * 1024  # several pipe buffers, several reads
+    read_end, write_end = os.pipe()
+
+    def feed() -> None:
+        with os.fdopen(write_end, "wb") as pipe:
+            pipe.write(payload)
+
+    writer = threading.Thread(target=feed)
+    writer.start()
+    code, _ = run_on_pipe(handler, read_end)
+    writer.join()
+    assert code == 0
+    assert seen == [payload]
+
+
+def test_stdin_still_open_at_the_deadline_fails_the_op_unrun() -> None:
+    seen: List[bytes] = []
+
+    def handler(req: OpRequest) -> OpResult:
+        seen.append(req.stdin)
+        return OpResult.ok()
+
+    read_end, write_end = os.pipe()
+    writer = os.fdopen(write_end, "wb")  # held open: no EOF ever comes
+    backstop = threading.Timer(5.0, writer.close)  # ends a read that ignores the deadline
+    backstop.start()
+    begun = time.monotonic()
+    try:
+        code, stderr = run_on_pipe(handler, read_end, env={"GC_EXEC_DEADLINE_MS": "1500"})
+    finally:
+        backstop.cancel()
+        writer.close()
+    assert time.monotonic() - begun < 1.0  # the read gives up 1 s before the deadline
+    assert code == ExitCode.FAIL
+    assert seen == []
+    assert stderr == "nudge: stdin was still open at the op's deadline\n"
+
+
+def test_an_op_out_of_time_before_its_handler_fails_unrun() -> None:
+    seen: List[str] = []
+
+    def handler(req: OpRequest) -> OpResult:
+        seen.append(req.op)
+        return OpResult.ok()
+
+    result = run({"stop": spec(handler)}, "stop", "mc-a", env={"GC_EXEC_DEADLINE_MS": "0"})
+    assert result.code == ExitCode.FAIL
+    assert seen == []
+    assert result.stderr == "stop: no time left before the op's deadline\n"
 
 
 def test_handlers_see_args_and_an_env_snapshot() -> None:
@@ -255,3 +331,80 @@ def test_sigterm_cancels_the_op_promptly() -> None:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+STDIN_HARNESS = """
+import io, os, signal, sys, time
+sys.path.insert(0, sys.argv[1])
+from gc_runtime_herdr_core.rpp.ops import OpResult, OpSpec
+from gc_runtime_herdr_core.rpp.perop import run_per_op
+
+class Announced:
+    # stdin, saying on stderr when the runner starts on it
+    def __init__(self, raw):
+        self.raw = raw
+    def fileno(self):
+        print("reading", file=sys.stderr, flush=True)
+        return self.raw.fileno()
+    def read(self, *size):
+        print("reading", file=sys.stderr, flush=True)
+        return self.raw.read(*size)
+
+class TermAtEof(io.BytesIO):
+    # stdin that ends just as gc sends SIGTERM
+    def read(self, *size):
+        data = io.BytesIO.read(self, *size)
+        os.kill(os.getpid(), signal.SIGTERM)
+        return data
+
+def nudge(req):
+    print("handler called", flush=True)
+    return OpResult.ok()
+
+stdin = Announced(sys.stdin.buffer) if sys.argv[2] == "held" else TermAtEof(b"hi")
+ops = {"nudge": OpSpec(handler=nudge, reads_stdin=True, deadline="default", stdout_cap=1024)}
+sys.exit(run_per_op(["x", "nudge"], {}, ops, started=time.monotonic(), stdin=stdin,
+                    stdout=sys.stdout.buffer, stderr=sys.stderr))
+"""
+
+
+def test_sigterm_ends_a_stdin_read_and_the_op_never_runs() -> None:
+    read_end, write_end = os.pipe()
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-I", "-S", "-c", STDIN_HARNESS, str(ASSETS), "held"],
+            stdin=read_end,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+    finally:
+        os.close(read_end)
+    try:
+        assert proc.stderr is not None
+        assert proc.stderr.readline() == b"reading\n"
+        started = time.monotonic()
+        os.kill(proc.pid, signal.SIGTERM)
+        out, err = proc.communicate(timeout=5)  # stdin stays open: only the signal ends the read
+        assert time.monotonic() - started < 1.5
+        assert proc.returncode == ExitCode.FAIL
+        assert out == b""
+        assert err.decode().strip() == "nudge: canceled (terminated)"
+    finally:
+        os.close(write_end)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def test_a_sigterm_as_stdin_ends_stops_the_op_before_its_handler() -> None:
+    proc = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", STDIN_HARNESS, str(ASSETS), "term-at-eof"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=10,
+        start_new_session=True,
+    )
+    assert proc.returncode == ExitCode.FAIL
+    assert proc.stdout == b""
+    assert proc.stderr.decode().strip() == "nudge: canceled (terminated)"

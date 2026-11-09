@@ -119,12 +119,13 @@ def test_send_read_and_interrupt_send_only_their_fixed_params(
 # --- the gate ----------------------------------------------------------------
 
 
-def test_hello_is_sent_once_per_endpoint(make_client: ClientFactory, fake_hc: FakeHc) -> None:
+def test_every_call_gates_the_connection_it_is_sent_on(make_client: ClientFactory, fake_hc: FakeHc) -> None:
     client = make_client()
     client.list_terminals()
     client.list_terminals()
-    assert fake_hc.call_count("hello") == 1
-    assert [p for p in (c.params for c in fake_hc.calls if c.method == "hello")] == [{"generation": 1}]
+    assert [c.method for c in fake_hc.calls] == ["hello", "terminal.list", "hello", "terminal.list"]
+    assert [c.params for c in fake_hc.calls if c.method == "hello"] == [{"generation": 1}] * 2
+    assert fake_hc.connections == 2  # each hello shares its call's connection
 
 
 def test_an_old_core_is_refused_before_any_call(make_client: ClientFactory, fake_hc: FakeHc) -> None:
@@ -137,8 +138,10 @@ def test_an_old_core_is_refused_before_any_call(make_client: ClientFactory, fake
 
 def test_another_generation_is_refused(make_client: ClientFactory, fake_hc: FakeHc) -> None:
     fake_hc.set_generation(2)
-    with pytest.raises(HcGateError):
+    with pytest.raises(HcGateError) as caught:
         make_client().list_terminals()
+    assert caught.value.written is False
+    assert fake_hc.call_count("terminal.list") == 0
 
 
 def test_a_newer_untested_core_passes_with_a_warning(make_client: ClientFactory, fake_hc: FakeHc) -> None:
@@ -148,17 +151,57 @@ def test_a_newer_untested_core_passes_with_a_warning(make_client: ClientFactory,
     assert any("0.1.20" in w for w in client.gate_warnings)
 
 
-def test_a_lost_connection_regates_the_next_call(
-    make_client: ClientFactory, fake_hc: FakeHc, gate_policy: VersionPolicy
+@pytest.mark.parametrize("same_client", [True, False], ids=["same-client", "new-client"])
+@pytest.mark.parametrize("method", ["terminal.list", "terminal.run"])
+def test_a_core_restarted_while_idle_is_gated_before_the_next_call(
+    make_client: ClientFactory,
+    fake_hc: FakeHc,
+    gate_policy: VersionPolicy,
+    short_tmp: Path,
+    method: str,
+    same_client: bool,
 ) -> None:
     endpoint = CoreEndpoint(fake_hc.socket_path, policy=gate_policy)
-    make_client(endpoint=endpoint).list_terminals()
-    # An out-of-band downgrade, noticed through a reconnect: the retry re-gates.
-    fake_hc.set_version("0.1.18")
+    first = make_client(endpoint=endpoint)
+    first.list_terminals()  # gated at 0.1.19
+    # Downgraded with no connection open: no call sees the old core go.
+    fake_hc.restart_core(version="0.1.18")
+    client = first if same_client else make_client(endpoint=endpoint)
+    before = fake_hc.call_count(method)
+    with pytest.raises(HcGateError) as caught:
+        if method == "terminal.run":
+            client.run(spec("ga", short_tmp))
+        else:
+            client.list_terminals()
+    assert caught.value.written is False
+    assert fake_hc.call_count(method) == before
+
+
+def test_a_core_that_changed_generation_while_idle_is_refused(make_client: ClientFactory, fake_hc: FakeHc) -> None:
+    client = make_client()
+    client.list_terminals()
+    fake_hc.set_generation(2)
+    with pytest.raises(HcGateError) as caught:
+        client.list_terminals()
+    assert caught.value.written is False
+    assert fake_hc.call_count("terminal.list") == 1
+
+
+def test_a_retried_read_gates_its_fresh_connection(make_client: ClientFactory, fake_hc: FakeHc) -> None:
     fake_hc.drop_reply("terminal.list")
+    make_client().list_terminals()
+    assert [c.method for c in fake_hc.calls] == ["hello", "terminal.list", "hello", "terminal.list"]
+    assert fake_hc.connections == 2
+
+
+def test_a_core_restarted_under_a_read_is_gated_before_the_retry(make_client: ClientFactory, fake_hc: FakeHc) -> None:
+    client = make_client()
+    fake_hc.delay_reply("terminal.list", 1.0)
+    # The core goes down with the read in flight and comes back downgraded.
+    threading.Timer(0.3, fake_hc.restart_core, kwargs={"version": "0.1.18"}).start()
     with pytest.raises(HcGateError):
-        make_client(endpoint=endpoint).list_terminals()
-    assert fake_hc.call_count("hello") == 2
+        client.list_terminals()
+    assert [c.method for c in fake_hc.calls] == ["hello", "terminal.list", "hello"]
 
 
 # --- the budget table ----------------------------------------------------------
@@ -261,6 +304,21 @@ def test_an_idempotent_retry_happens_only_once(make_client: ClientFactory, fake_
         client.list_terminals()
     assert caught.value.written is True
     assert fake_hc.call_count("terminal.list") == 3
+
+
+def test_a_hello_dropped_before_a_mutation_is_retried_once(
+    make_client: ClientFactory, fake_hc: FakeHc, short_tmp: Path
+) -> None:
+    client = make_client()
+    term = started(client, "ga", short_tmp)
+    fake_hc.drop_reply("hello")
+    client.send(term.address, "once")  # nothing of the send went out on the dropped connection
+    fake_hc.drop_reply("hello", count=2)
+    with pytest.raises(HcConnectionLost) as caught:
+        client.send(term.address, "never")
+    assert caught.value.written is False
+    assert fake_hc.call_count("terminal.send") == 1
+    assert fake_hc.input_log(term.address) == ["once"]
 
 
 @pytest.mark.parametrize(

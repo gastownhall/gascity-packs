@@ -42,12 +42,12 @@ from ..rpp.statedir import (
     city_key,
     ensure_private_dir,
     machine_identity,
-    password_home,
     state_root,
+    user_home,
 )
 
 PACK_STATE_LEAF: Final = "gc-runtime-herdr-core"
-"""The default state root is ``<password home>/.local/state/<leaf>``."""
+"""The default state root is ``<password-database home>/.local/state/<leaf>``."""
 
 HC_STATE_SUBDIR: Final = "herdr-core"
 HC_CONFIG_SUBDIR: Final = "hc-config"
@@ -104,7 +104,7 @@ def resolve_paths(
     env: Mapping[str, str],
     *,
     machine: Optional[str] = None,
-    home: Callable[[], str] = password_home,
+    home: Callable[[], str] = user_home,
     uid: Optional[int] = None,
     city_var: str = OP_CITY_ENV,
     tmp_root: str = "/tmp",

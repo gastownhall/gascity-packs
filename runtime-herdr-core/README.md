@@ -70,17 +70,21 @@ runtime-herdr-core/
   (no gc release does yet), else gc's own timeout for the op (30 s; 120 s for
   start; 4 s for observe and is-attached). Every inner wait ends at least
   1 s before it.
-- **The hc client.** One plain-mode connection per call; a fixed per-call
-  timeout table, cut by the deadline (`send` gets the deadline less 2 s);
-  `hello`, `get`, `list` and `read` retried once when a connection drops,
-  nothing else ever; the core gated on its hello (generation 1, at least the
-  policy's minimum version) and re-gated after any lost connection. Every
-  failure carries `written`: whether the request may have reached the core,
-  which tells a driving op whether hc may still type what it sent.
+- **The hc client.** One plain-mode connection per call, and every
+  connection opens with the core's hello, gated (generation 1, at least the
+  policy's minimum version) before the call is written on it: a core
+  restarted or upgraded between two calls, idle or not, is gated before it
+  is sent anything. A fixed per-call timeout table, cut by the deadline
+  (`send` gets the deadline less 2 s). A connection dropped during the
+  hello is retried once, as are `get`, `list` and `read` when it drops
+  before the reply; nothing else ever. Every failure carries `written`:
+  whether the request may have reached the core, which tells a driving op
+  whether hc may still type what it sent.
 - **stderr** is `"<op>: <message>"`, redacted: sensitive-key values (gc's
-  markers), every session-env value of 8 characters or more,
-  `GC_INSTANCE_TOKEN` always, and secret-looking assignments. Tracebacks
-  appear only under `GC_HERDR_CORE_DEBUG=1`, redacted too.
+  markers) of 4 bytes (UTF-8) or more, every session-env value of 8 bytes
+  (UTF-8) or more, `GC_INSTANCE_TOKEN` always, and secret-looking
+  assignments. Tracebacks appear only under `GC_HERDR_CORE_DEBUG=1`,
+  redacted too.
 
 ## Tests
 
