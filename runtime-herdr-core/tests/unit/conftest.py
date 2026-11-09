@@ -17,7 +17,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Iterator, Optional
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 
 import pytest
 
@@ -106,29 +106,54 @@ def city(short_tmp: Path, home_dir: Path) -> Iterator["City"]:
     try:
         yield made
     finally:
-        await_kicks(made)
-        stop_cores(made.root / "R")
+        teardown_cores(made.root / "R")
         if made.fake is not None:
             made.fake.close()
             assert made.fake.schema_violations == [], "fake-hc schema guard:\n" + "\n".join(made.fake.schema_violations)
 
 
-def await_kicks(made: "City", timeout: float = 20.0) -> None:
-    """Wait until no background core start a test's read kicked is in flight:
-    one leaves its lock file before it writes its record."""
+def _processes_for(root: Path, marker: str) -> List[int]:
+    """Pids of this user's processes whose argv holds ``marker`` and whose
+    environment points at state root ``root`` (``GC_EXEC_STATE_DIR`` or ``XDG_STATE_HOME``)."""
+    found: List[int] = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            argv = Path(f"/proc/{entry}/cmdline").read_bytes()
+            if marker.encode() not in argv:
+                continue
+            env = Path(f"/proc/{entry}/environ").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        wanted = {f"GC_EXEC_STATE_DIR={root}".encode(), f"XDG_STATE_HOME={root}".encode()}
+        if wanted & set(env):
+            found.append(int(entry))
+    return found
+
+
+def teardown_cores(root: Path, timeout: float = 30.0) -> None:
+    """Wait out every background core start a test's ops kicked, stop every
+    core under ``root``, and fail the test if one survives (killing it)."""
+    import signal
     import time
 
-    from gc_runtime_herdr_core.herdrcore.attach import lock_held
-    from gc_runtime_herdr_core.herdrcore.core import KICK_FILE
-
-    ctx = made.context()
-    lock_path = ctx.lock_path("misc", "kick")
-    record = os.path.join(ctx.pack_state, KICK_FILE)
+    if not sys.platform.startswith("linux"):
+        stop_cores(root)
+        return
     end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if not os.path.exists(lock_path) or (os.path.exists(record) and not lock_held(lock_path)):
-            return
+    while _processes_for(root, "x-kick-core") and time.monotonic() < end:
         time.sleep(0.05)
+    stop_cores(root)
+    while _processes_for(root, "cli.py") and time.monotonic() < end:
+        time.sleep(0.05)
+    leaked = _processes_for(root, "cli.py") + _processes_for(root, "x-kick-core")
+    for pid in leaked:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    assert not leaked, f"standalone fake cores or kicks outlived the test: {leaked}"
 
 
 def stop_cores(root: Path) -> None:

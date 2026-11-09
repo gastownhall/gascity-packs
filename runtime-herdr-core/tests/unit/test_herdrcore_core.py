@@ -16,7 +16,7 @@ from typing import Dict
 
 import pytest
 from cityharness import City
-from conftest import stop_cores
+from conftest import teardown_cores
 from fakehc.cli import write_launcher
 from fakehc.rawclient import raw_call
 
@@ -192,7 +192,7 @@ def test_start_starts_the_core_with_the_allowlist_and_the_packs_config(short_tmp
         again = invoke(env, "start", "mc-b", stdin=b'{"command":"cat"}')
         assert again.returncode == 0, again.stderr
     finally:
-        stop_cores(Path(paths.state_root))
+        teardown_cores(Path(paths.state_root))
 
 
 def test_unscoped_ops_use_the_unscoped_bucket_never_the_cwd(short_tmp: Path, home_dir: Path) -> None:
@@ -205,7 +205,7 @@ def test_unscoped_ops_use_the_unscoped_bucket_never_the_cwd(short_tmp: Path, hom
         assert done.returncode == 0, done.stderr
         assert invoke(env, "is-running", "mc-a").stdout.strip() == b"true"
     finally:
-        stop_cores(Path(paths.state_root))
+        teardown_cores(Path(paths.state_root))
 
 
 def test_a_failed_kick_backs_off(city: City) -> None:
@@ -251,7 +251,7 @@ def test_attach_execs_hc_attach_and_reads_as_attached(short_tmp: Path, home_dir:
         if viewer is not None:
             viewer.terminate()
             viewer.wait(timeout=10)
-        stop_cores(Path(paths.state_root))
+        teardown_cores(Path(paths.state_root))
 
 
 # --- a systemd-placed core ---------------------------------------------------------------
@@ -341,7 +341,7 @@ def test_start_accepts_its_own_core_when_fake_hc_places_it_like_systemd(short_tm
         refused = invoke(env, "start", "mc-b", stdin=b'{"command":"cat"}')
         assert refused.returncode == 1 and b"OPENAI_API_KEY" in refused.stderr and b"sk-x" not in refused.stderr
     finally:
-        stop_cores(Path(paths.state_root))
+        teardown_cores(Path(paths.state_root))
 
 
 def test_the_pack_config_must_be_a_private_regular_file(tmp_path: Path) -> None:
@@ -371,7 +371,7 @@ def test_attach_refuses_while_the_core_is_down(short_tmp: Path, home_dir: Path) 
         ok_before = invoke(env, "is-running", "mc-a").stdout.strip()
         assert ok_before == b"true"
     finally:
-        stop_cores(Path(paths.state_root))
+        teardown_cores(Path(paths.state_root))
     done = invoke(env, "attach", "mc-a")
     assert done.returncode == 1 and b"core" in done.stderr
     # Finding the core down kicks the pack's own start, never hc's CLI
@@ -383,5 +383,4 @@ def test_attach_refuses_while_the_core_is_down(short_tmp: Path, home_dir: Path) 
         if os.path.exists(paths.socket):
             assert "ANTHROPIC_API_KEY" not in core_environ(paths.socket)
     finally:
-        time.sleep(0.5)
-        stop_cores(Path(paths.state_root))
+        teardown_cores(Path(paths.state_root))
