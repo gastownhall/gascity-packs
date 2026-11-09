@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, cast
 
 from .schema import SchemaGuard
-from .terminal import FakeTerminal, key_bytes
+from .terminal import KEPT_RESTART_S, FakeTerminal, key_bytes
 
 METHODS: Tuple[str, ...] = (
     "hello",
@@ -115,6 +115,7 @@ class FakeHc:
         core_name: str = "fakehost",
         started_window_s: float = 0.3,
         kill_grace_s: float = 0.05,
+        kept_restart_s: float = KEPT_RESTART_S,
         base_env: Optional[Mapping[str, str]] = None,
     ) -> None:
         self.socket_path = socket_path
@@ -123,6 +124,7 @@ class FakeHc:
         self._core = {"id": uuid.uuid4().hex, "name": core_name}
         self._started_window_s = started_window_s
         self._kill_grace_s = kill_grace_s
+        self._kept_restart_s = kept_restart_s
         self._base_env = {
             key: value
             for key, value in (
@@ -490,6 +492,7 @@ class FakeHc:
                     cwd=cwd,
                     env=env,
                     keep=bool(params.get("keep")),
+                    restart_delay_s=self._kept_restart_s,
                 )
             except OSError as err:
                 raise RpcFailure("spawn_failed", f"cannot start {argv[0]}: {err.strerror}") from None
@@ -497,13 +500,22 @@ class FakeHc:
         return terminal.record()
 
     def _lookup(self, params: Params) -> FakeTerminal:
+        # hc terminals.rs resolve: an address is that terminal forever; a name
+        # is whoever holds it now, else the most recent finished one that had it.
         target = str(params.get("terminal", ""))
         with self._lock:
             if target in self._terminals:
                 return self._terminals[target]
-            for terminal in self._terminals.values():
-                if terminal.name == target and terminal.state == "live":
-                    return terminal
+            named = sorted(
+                (t for t in self._terminals.values() if t.name == target),
+                key=lambda t: int(t.address[1:]),
+                reverse=True,
+            )
+        for terminal in named:
+            if terminal.state == "live":
+                return terminal
+        if named:
+            return named[0]
         raise RpcFailure("not_found", f"no terminal {target}")
 
     def _list(self, params: Params) -> Dict[str, Any]:
@@ -524,9 +536,18 @@ class FakeHc:
 
     def _live(self, params: Params) -> FakeTerminal:
         terminal = self._lookup(params)
-        if terminal.state != "live":
-            raise RpcFailure("finished", f"{terminal.address} has finished")
+        self._check_program(terminal)
         return terminal
+
+    @staticmethod
+    def _check_program(terminal: FakeTerminal) -> None:
+        # hc input.rs / terminals.rs check_program: input needs a live record
+        # with a program; a kept terminal waiting for its new shell has none.
+        with terminal.lock:
+            if terminal.state != "live":
+                raise RpcFailure("finished", f"{terminal.address} has finished")
+            if terminal.lost:
+                raise RpcFailure("unavailable", f"{terminal.address} is lost, waiting for its new shell")
 
     def _wait_quiet(self, terminal: FakeTerminal) -> None:
         with terminal.lock:
@@ -538,8 +559,7 @@ class FakeHc:
         with terminal.input_lock:
             self._wait_quiet(terminal)
             with terminal.lock:
-                if terminal.state != "live":
-                    raise RpcFailure("finished", f"{terminal.address} has finished")
+                self._check_program(terminal)
                 word = None if terminal.status is None else str(terminal.status["state"])
                 if word == "blocked" and not params.get("force"):
                     raise RpcFailure("blocked", f"{terminal.address} is waiting on its own question; nothing was typed")
@@ -568,6 +588,7 @@ class FakeHc:
         keys = [str(k) for k in params.get("keys") or []]
         with terminal.input_lock:
             self._wait_quiet(terminal)
+            self._check_program(terminal)
             for key in keys:
                 if key == "ctrl+c":
                     terminal.interrupt_signal()

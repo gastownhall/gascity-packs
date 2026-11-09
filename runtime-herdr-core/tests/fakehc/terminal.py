@@ -3,9 +3,11 @@
 Pids, sessions and process trees are therefore true, so tests can check
 what a kill or a holder loss does to them. The screen is a
 capped tail of the program's output; typed text and keys are logged.
-Records follow hc v0.1.19's documented transitions (schema README "Events"):
-exit clears the status and finishes the record; holder loss finishes it, or
-for a kept terminal replaces the program with a shell under a new pid.
+Records follow hc v0.1.19 (``crates/herdr-core/src``: ``terminals.rs``,
+``runtime.rs``, ``kept.rs``, ``status.rs``): an exit resets the status and
+finishes the record, which keeps its last pid; a kept terminal that loses its
+program stays live with no pid, refuses input, and gets a new shell after
+1.5 s, which clears the reason.
 """
 
 from __future__ import annotations
@@ -64,6 +66,10 @@ def killpg(pid: int, sig: int) -> None:
         pass
 
 
+KEPT_RESTART_S = 1.5
+"""hc's first wait before a lost kept terminal gets its new shell (KEEP_RETRY_MS)."""
+
+
 class FakeTerminal:
     """A terminal record and the program behind it."""
 
@@ -77,6 +83,7 @@ class FakeTerminal:
         cwd: str,
         env: Mapping[str, str],
         keep: bool,
+        restart_delay_s: float = KEPT_RESTART_S,
     ) -> None:
         self.address = address
         self.name = name
@@ -106,10 +113,21 @@ class FakeTerminal:
         self.changed = threading.Condition(self.lock)
         # hc's per-terminal input queue: send, keys and interrupt run one at a time.
         self.input_lock = threading.Lock()
+        # The record's pid: the running program's, the last one's once the
+        # record finished, None while a kept terminal waits for its new shell.
+        self.pid: Optional[int] = None
         self._ending: Optional[str] = None
         self._incarnation = 0
         self._threads: List[threading.Thread] = []
+        self._restart_delay_s = restart_delay_s
+        self._restart: Optional[threading.Timer] = None
+        self._reaped = False
         self.proc = self._spawn(self.argv)
+
+    @property
+    def lost(self) -> bool:
+        """A kept terminal between losing its program and getting its new shell."""
+        return self.state == "live" and self.pid is None and self.reason is not None
 
     # --- process ---------------------------------------------------------------
 
@@ -123,6 +141,7 @@ class FakeTerminal:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+        self.pid = proc.pid
         incarnation = self._incarnation
         for target in (self._read_output, self._await_exit):
             thread = threading.Thread(target=target, args=(proc, incarnation), daemon=True)
@@ -151,28 +170,85 @@ class FakeTerminal:
         with self.lock:
             if incarnation != self._incarnation or self.state != "live":
                 return
-            self._finish(self._ending or "exited", code)
+            if self._ending is not None:
+                self._finish(self._ending, code)
+            elif self.keep and code < 0:
+                # hc: a kept program killed by a signal, with no exit code, is
+                # lost (reason "signaled"), not ended (runtime.rs record_finish).
+                self._lose("signaled", code)
+            else:
+                self._finish("exited", code)
+
+    def _reset_status(self) -> None:
+        # hc status.rs reset: the record goes, a working turn ends with it, and
+        # status_ms marks the word changing.
+        was = None if self.status is None else str(self.status["state"])
+        self.status = None
+        if was == "working":
+            self.turn += 1
+        if was is not None:
+            self.status_ms = now_ms()
+
+    def _set_exit(self, code: Optional[int]) -> None:
+        if code is None:
+            self.exit_code, self.signal = None, None
+        elif code >= 0:
+            self.exit_code, self.signal = code, None
+        else:
+            self.exit_code, self.signal = None, -code
 
     def _finish(self, reason: str, code: Optional[int]) -> None:
-        # Status is cleared just before a record finishes (schema README).
-        self.status = None
+        """The record ends. It keeps its last pid (hc terminals.rs finish)."""
+        self._reset_status()
         self.state = "finished"
         self.reason = reason
         self.finished_ms = now_ms()
-        if code is not None and code >= 0:
-            self.exit_code, self.signal = code, None
-        elif code is not None:
-            self.exit_code, self.signal = None, -code
+        self._set_exit(code)
+        self._cancel_restart()
         self.changed.notify_all()
 
-    @property
-    def pid(self) -> Optional[int]:
-        return self.proc.pid if self.state == "live" else None
+    def _lose(self, reason: str, code: Optional[int]) -> None:
+        """A kept terminal loses its program: live, no pid, input refused until a new shell."""
+        self._reset_status()
+        self.reason = reason
+        self.pid = None
+        self.finished_ms = None
+        self._set_exit(code)
+        self._cancel_restart()
+        timer = threading.Timer(self._restart_delay_s, self._restart_shell)
+        timer.daemon = True
+        self._restart = timer
+        timer.start()
+        self.changed.notify_all()
+
+    def _cancel_restart(self) -> None:
+        if self._restart is not None:
+            self._restart.cancel()
+            self._restart = None
+
+    def _restart_shell(self) -> None:
+        # hc runtime.rs spawn_result: the new program's pid, and the reason,
+        # exit code and signal cleared.
+        with self.lock:
+            if self._reaped or not self.lost:
+                return
+            self._restart = None
+            self._incarnation += 1
+            self.program = ["/bin/sh"]
+            self.proc = self._spawn(self.program)
+            self.reason = None
+            self.exit_code = None
+            self.signal = None
+            self.changed.notify_all()
 
     def kill(self, grace_s: float) -> None:
         """HUP, TERM, then KILL to the program's process group, waiting ``grace_s`` between."""
         with self.lock:
             if self.state != "live":
+                return
+            if self.lost:
+                # Nothing runs to signal: the kill ends the record (hc runtime.rs kill).
+                self._finish("killed", None)
                 return
             self._ending = "killed"
             proc = self.proc
@@ -191,35 +267,38 @@ class FakeTerminal:
         with self.lock:
             if self.state != "live":
                 return
+            if self.lost:
+                self._finish(reason, None)
+                return
             self._incarnation += 1  # the old program's exit no longer finishes the record
             proc = self.proc
         killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
+        code = proc.wait()
         with self.lock:
-            self._finish(reason, None)
+            self._finish(reason, code)
 
     def lose_holder(self) -> None:
-        """The holder died: a kept terminal gets a fresh shell, any other finishes."""
+        """The holder died: a kept terminal waits for a new shell, any other finishes."""
         with self.lock:
-            if self.state != "live":
+            if self.state != "live" or self.lost:
                 return
-            self._incarnation += 1
+            self._incarnation += 1  # the program's exit is recorded here, not by its waiter
             proc = self.proc
         killpg(proc.pid, signal.SIGKILL)
         proc.wait()
         with self.lock:
-            if not self.keep:
-                self._finish("holder_lost", None)
+            if self.state != "live":
                 return
-            self.reason = "holder_lost"
-            self.status = None
-            self.program = ["/bin/sh"]
-            self.proc = self._spawn(self.program)
-            self.changed.notify_all()
+            if self.keep:
+                self._lose("holder_lost", None)
+            else:
+                self._finish("holder_lost", None)
 
     def reap(self) -> None:
         """Kill the program's whole group and collect it (fake shutdown)."""
         with self.lock:
+            self._reaped = True
+            self._cancel_restart()
             self._incarnation += 1
             proc = self.proc
         killpg(proc.pid, signal.SIGKILL)
@@ -253,13 +332,16 @@ class FakeTerminal:
     # --- status --------------------------------------------------------------------
 
     def set_status(self, state: str, *, kind: Optional[str], app: str, progress: Optional[int]) -> None:
+        # hc status.rs apply: the turn ends when the word leaves working;
+        # status_ms changes only with the word.
         with self.lock:
             previous = None if self.status is None else self.status["state"]
             if previous == "working" and state != "working":
                 self.turn += 1
             self.status = {"state": state, "kind": kind, "app": app, "progress": progress, "title": "", "msg": ""}
             self.reported = True
-            self.status_ms = now_ms()
+            if previous != state:
+                self.status_ms = now_ms()
             self.changed.notify_all()
 
     def status_word(self) -> Optional[str]:
@@ -278,7 +360,7 @@ class FakeTerminal:
     def record(self) -> Dict[str, Any]:
         """The terminal as hc's ``Terminal`` schema shapes it."""
         with self.lock:
-            live = self.state == "live"
+            running = self.state == "live" and self.pid is not None
             return {
                 "address": self.address,
                 "name": self.name,
@@ -290,7 +372,7 @@ class FakeTerminal:
                 "screen": self.screen,
                 "cols": SCREEN_COLS,
                 "rows": SCREEN_ROWS,
-                "pid": self.proc.pid if live else None,
+                "pid": self.pid,
                 "foreground": (
                     {
                         "pid": self.proc.pid,
@@ -298,7 +380,7 @@ class FakeTerminal:
                         "argv": list(self.program),
                         "cwd": self.cwd,
                     }
-                    if live
+                    if running
                     else None
                 ),
                 "reason": self.reason,

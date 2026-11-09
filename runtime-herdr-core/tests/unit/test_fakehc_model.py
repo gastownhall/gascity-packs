@@ -9,7 +9,7 @@ import signal
 import socket
 import time
 from pathlib import Path
-from typing import Callable, Dict
+from typing import Callable, Dict, List, Tuple
 
 import pytest
 
@@ -97,6 +97,8 @@ def test_a_finished_program_keeps_its_record_until_removed(fake_hc: FakeHc, shor
     wait_for(lambda: get(fake_hc, address)["state"] == "finished")
     done = get(fake_hc, address)
     assert done["reason"] == "exited" and done["exit_code"] == 3
+    assert done["pid"] == rec["pid"]  # a finished record keeps its last pid (hc terminals.rs finish)
+    assert done["foreground"] is None
     listed = raw_call(fake_hc.socket_path, "terminal.list", {})["result"]
     assert listed["terminals"] == [] and listed["hidden_finished"] == 1
     assert "machines" not in listed  # hc v0.1.19 omits it when empty (#190)
@@ -116,18 +118,65 @@ def test_holder_loss_finishes_an_unkept_program(fake_hc: FakeHc, short_tmp: Path
     fake_hc.lose_holder(str(rec["address"]))
     done = get(fake_hc, str(rec["address"]))
     assert done["state"] == "finished" and done["reason"] == "holder_lost"
+    assert done["pid"] == pid and done["exit_code"] is None and done["signal"] is None
     wait_for(lambda: not alive(pid))
 
 
-def test_holder_loss_restarts_a_kept_terminal_as_a_new_shell(fake_hc: FakeHc, short_tmp: Path) -> None:
+def test_holder_loss_of_a_kept_terminal_waits_then_restarts_a_shell(fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc: the record stays live with no pid and refuses input while it waits
+    # (terminals.rs check_program); the first retry comes after 1.5 s
+    # (KEEP_RETRY_MS); the restart sets the new pid and clears the reason
+    # (runtime.rs spawn_result).
     rec = run(fake_hc, short_tmp, "exec cat", keep=True)
+    address = str(rec["address"])
     old_pid = rec["pid"]
     assert isinstance(old_pid, int)
-    fake_hc.lose_holder(str(rec["address"]))
-    after = get(fake_hc, str(rec["address"]))
-    assert after["state"] == "live" and after["keep"] is True and after["reason"] == "holder_lost"
-    assert isinstance(after["pid"], int) and after["pid"] != old_pid
+    fake_hc.set_status(address, "working", app="claude")
+    lost_at = time.monotonic()
+    fake_hc.lose_holder(address)
+    lost = get(fake_hc, address)
+    assert lost["state"] == "live" and lost["keep"] is True and lost["reason"] == "holder_lost"
+    assert lost["pid"] is None and lost["foreground"] is None and lost["finished_ms"] is None
+    assert lost["status"] is None and lost["turn"] == 1  # the working turn ended with the program
+    refused: List[Tuple[str, Dict[str, object]]] = [
+        ("terminal.send", {"terminal": address, "text": "x"}),
+        ("terminal.keys", {"terminal": address, "keys": ["enter"]}),
+        ("terminal.interrupt", {"terminal": address, "timeout": 1.0}),
+    ]
+    for method, params in refused:
+        reply = raw_call(fake_hc.socket_path, method, params)
+        assert reply["error"]["data"]["kind"] == "unavailable", method
     wait_for(lambda: not alive(old_pid))
+    wait_for(lambda: get(fake_hc, address)["pid"] is not None, timeout=10.0)
+    assert time.monotonic() - lost_at >= 1.4
+    back = get(fake_hc, address)
+    assert back["state"] == "live" and back["reason"] is None
+    assert back["exit_code"] is None and back["signal"] is None
+    assert isinstance(back["pid"], int) and back["pid"] != old_pid
+    assert fake_hc.input_log(address) == []  # nothing was typed while it was lost
+
+
+def test_killing_a_lost_kept_terminal_ends_it(fake_hc: FakeHc, short_tmp: Path) -> None:
+    rec = run(fake_hc, short_tmp, "exec cat", keep=True)
+    address = str(rec["address"])
+    fake_hc.lose_holder(address)
+    killed = raw_call(fake_hc.socket_path, "terminal.kill", {"terminal": address})["result"]
+    assert killed["state"] == "finished" and killed["reason"] == "killed"
+    time.sleep(1.8)  # past the retry it would have had
+    assert get(fake_hc, address)["state"] == "finished"
+
+
+def test_a_name_reaches_the_live_holder_else_the_latest_finished(fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc terminals.rs resolve: a name means whoever holds it now, else the
+    # most recent finished terminal that had it.
+    first = str(run(fake_hc, short_tmp, "exit 0", name="ga")["address"])
+    wait_for(lambda: get(fake_hc, first)["state"] == "finished")
+    second = str(run(fake_hc, short_tmp, "exit 0", name="ga")["address"])
+    wait_for(lambda: get(fake_hc, second)["state"] == "finished")
+    assert get(fake_hc, "ga")["address"] == second
+    live = str(run(fake_hc, short_tmp, "exec cat", name="ga")["address"])
+    assert get(fake_hc, "ga")["address"] == live
+    assert raw_call(fake_hc.socket_path, "terminal.get", {"terminal": "gb"})["error"]["data"]["kind"] == "not_found"
 
 
 def test_send_refuses_a_blocked_program_and_reports_started(fake_hc: FakeHc, short_tmp: Path) -> None:
