@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 import sys
 from pathlib import Path
-from typing import Iterator, Tuple
+from typing import Iterator, List, Tuple
 
 import pytest
 
@@ -86,6 +87,64 @@ def test_every_module_postpones_annotations() -> None:
         if "annotations" not in futures:
             missing.append(str(path.relative_to(PACK_ROOT)))
     assert missing == []
+
+
+CODE_SCANNING_PASSWORD_NAME = re.compile(
+    r"(?is).*(pass(wd|word|code|.?phrase)(?!.*question)|(auth(entication|ori[sz]ation)?).?key|oauth|"
+    r"api.?(key|tok)|([_-]|\b)mfa([_-]|\b)).*"
+)
+"""CodeQL's ``maybePassword`` name heuristic (codeql ``SensitiveDataHeuristics.qll``)."""
+
+
+def test_no_name_looks_like_a_password_to_code_scanning() -> None:
+    # The runtime hashes paths and keys with SHA-256 (city id, hc session).
+    # Code scanning classifies as a password whatever comes from a function,
+    # parameter, variable or attribute whose name matches its heuristic, or
+    # from a lookup by such a string key, and a password reaching SHA-256 is
+    # a merge-blocking alert (py/weak-sensitive-data-hashing). It follows
+    # function references, so even a default argument naming such a function
+    # counts. No name in the runtime may match.
+    found: List[str] = []
+    for path, tree in runtime_sources():
+        for node in ast.walk(tree):
+            names: List[str] = []
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.append(node.name)
+            elif isinstance(node, ast.Name):
+                names.append(node.id)
+            elif isinstance(node, ast.Attribute):
+                names.append(node.attr)
+            elif isinstance(node, ast.arg):
+                names.append(node.arg)
+            elif isinstance(node, ast.keyword) and node.arg:
+                names.append(node.arg)
+            elif isinstance(node, ast.alias):
+                names.append(node.asname or node.name)
+            elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+                names.append(str(node.slice.value))
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                names.append(str(node.args[0].value))
+            found.extend(
+                f"{path.relative_to(PACK_ROOT)}:{getattr(node, 'lineno', 0)}: {name}"
+                for name in names
+                if CODE_SCANNING_PASSWORD_NAME.fullmatch(name)
+            )
+    assert found == []
+
+
+def test_the_password_heuristic_is_live() -> None:
+    # The guard above is only as good as its pattern: it must catch the name
+    # that raised the alert, and the near misses an innocent rename could pick.
+    for name in ("password_home", "passwd_home_dir", "get_passphrase", "api_token", "oauth_dir", "auth_key"):
+        assert CODE_SCANNING_PASSWORD_NAME.fullmatch(name), name
+    for name in ("user_home", "state_root", "session_name", "machine_identity", "city_key", "bypass_cache"):
+        assert not CODE_SCANNING_PASSWORD_NAME.fullmatch(name), name
 
 
 def test_only_main_reads_the_process_environment() -> None:

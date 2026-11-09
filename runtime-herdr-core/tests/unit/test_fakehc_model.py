@@ -156,6 +156,31 @@ def test_holder_loss_of_a_kept_terminal_waits_then_restarts_a_shell(fake_hc: Fak
     assert fake_hc.input_log(address) == []  # nothing was typed while it was lost
 
 
+def test_a_kept_program_killed_by_a_signal_is_lost_then_restarted(fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc runtime.rs record_finish: a kept program that died by a signal with
+    # no exit code is "signaled", which is loss, not an end.
+    rec = run(fake_hc, short_tmp, "kill -TERM $$", keep=True)
+    address = str(rec["address"])
+    wait_for(lambda: get(fake_hc, address)["reason"] == "signaled")
+    lost = get(fake_hc, address)
+    assert lost["state"] == "live" and lost["pid"] is None
+    assert lost["signal"] == signal.SIGTERM and lost["exit_code"] is None and lost["finished_ms"] is None
+    reply = raw_call(fake_hc.socket_path, "terminal.send", {"terminal": address, "text": "x"})
+    assert reply["error"]["data"]["kind"] == "unavailable"
+    wait_for(lambda: get(fake_hc, address)["pid"] is not None, timeout=10.0)
+    back = get(fake_hc, address)
+    assert back["state"] == "live" and back["reason"] is None and back["signal"] is None
+
+
+def test_an_unkept_program_killed_by_a_signal_finishes(fake_hc: FakeHc, short_tmp: Path) -> None:
+    rec = run(fake_hc, short_tmp, "kill -TERM $$")
+    address = str(rec["address"])
+    wait_for(lambda: get(fake_hc, address)["state"] == "finished")
+    done = get(fake_hc, address)
+    assert done["reason"] == "exited" and done["signal"] == signal.SIGTERM and done["exit_code"] is None
+    assert done["pid"] == rec["pid"]
+
+
 def test_killing_a_lost_kept_terminal_ends_it(fake_hc: FakeHc, short_tmp: Path) -> None:
     rec = run(fake_hc, short_tmp, "exec cat", keep=True)
     address = str(rec["address"])

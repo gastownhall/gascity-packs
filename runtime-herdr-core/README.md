@@ -53,13 +53,16 @@ runtime-herdr-core/
   `GC_EXEC_CITY_PATH` (`GC_CITY_PATH` for doctor and pack commands), or the
   fixed bucket `unscoped` when it is unset: never the cwd. The city id is
   `sha256(machine + "\0" + key)`, where `machine` is what herdr-core itself
-  keys a machine on: `/etc/machine-id` (then D-Bus's), or on macOS the
-  hardware UUID (IOPlatformUUID, read in process); `uname -n` only when no id
-  is readable, because machines get renamed. The hc session is `gc-` plus 10
+  keys a machine on: `/etc/machine-id`, or on macOS the hardware UUID
+  (IOPlatformUUID, read in process). Only when `/etc/machine-id` is missing,
+  empty or `uninitialized` does it fall back to D-Bus's copy and then to
+  `uname -n`, a last resort because machines get renamed; an id file that
+  exists but cannot be read fails the call. The hc session is `gc-` plus 10
   hex digits of `sha256(city id + "\0" + R)`, so every state root gets its own
   core and sockets. All state lives under `R`: `GC_EXEC_STATE_DIR`, else
-  `<password-database home>/.local/state/gc-runtime-herdr-core`, a 0700
-  directory owned by the user (a symlink or another owner's directory is
+  `<password-database home>/.local/state/gc-runtime-herdr-core`, with its
+  parents resolved so every spelling of one root names one core. `R` is a
+  0700 directory owned by the user (a symlink or another owner's directory is
   refused). The caller's `XDG_*`, `HOME`, `TMPDIR`, `HC_SOCKET` and
   `HC_SESSION` are ignored, and nothing is written under the city path. A
   socket path too long for `sun_path`, counting the
