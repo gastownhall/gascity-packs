@@ -220,11 +220,24 @@ def withheld(city: City, config: Mapping[str, object], **kwargs: object) -> str:
     return done.stderr
 
 
+def typed_after(city: City, config: Mapping[str, object], **kwargs: object) -> float:
+    """Start with ``config``; how long the start took, once sure the first turn was typed and nothing recorded."""
+    began = time.monotonic()
+    done = city.start("mc-a", json.dumps({**config, "nudge": "first task"}), **kwargs)
+    elapsed = time.monotonic() - began
+    assert done.code == 0, done.stderr
+    assert city.fake.input_log(city.address("mc-a")) == ["first task"]  # type: ignore[union-attr]
+    assert city.run("get-meta", "mc-a", "GC_STARTUP_DELIVERY_UNCONFIRMED").stdout == b""
+    return elapsed
+
+
 def test_a_menus_cursor_row_is_no_prompt(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
-    # The selected option carries the prompt glyph: the turn's Enter would pick "No, exit".
+    # The selected option carries the prompt glyph: it is never read as
+    # ready, so the turn waits out the wait; a menu gc does not know as a
+    # dialog then gets it, as gc's providers type it.
     monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.5)
-    config = {"command": "printf '❯ 1. No, exit\\n  2. Yes, I accept\\n'; exec cat", "ready_prompt_prefix": "❯ "}
-    assert "the first turn was withheld: the agent was not ready in time" in withheld(city, config)
+    config = {"command": "printf '❯ 1. Pick one\\n  2. Or this\\n'; exec cat", "ready_prompt_prefix": "❯ "}
+    assert typed_after(city, config) >= 1.5
 
 
 def test_a_settled_dialog_with_no_prompt_prefix_withholds_the_first_turn(city: City) -> None:
@@ -233,17 +246,25 @@ def test_a_settled_dialog_with_no_prompt_prefix_withholds_the_first_turn(city: C
     assert "the first turn was withheld: the agent shows a startup dialog" in withheld(city, config)
 
 
-def test_a_first_turn_never_ready_is_withheld(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_settled_dialog_withholds_the_first_turn_whatever_the_prompt_prefix(city: City) -> None:
+    config = {
+        "command": "printf 'Do you trust the files in this folder?\\n❯ 1. Yes, proceed\\n  2. No, exit\\n'; exec cat",
+        "ready_prompt_prefix": "❯ ",
+    }
+    assert "the first turn was withheld: the agent shows a startup dialog" in withheld(city, config)
+
+
+def test_a_boot_slower_than_the_wait_gets_its_turn_typed(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # gc's providers type the turn on a probe that timed out; nothing in gc
+    # types it later for an exec runtime.
     monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.0)
     config = {"command": "printf 'booting\\n'; exec cat", "ready_prompt_prefix": "READY>"}
-    assert "the first turn was withheld: the agent was not ready in time" in withheld(city, config)
+    assert typed_after(city, config) >= 1.0
 
 
-def test_a_delay_the_deadline_ends_first_withholds_the_first_turn(city: City) -> None:
-    # Never typed before its delay passed: gc's start, out of time, returns without the turn too.
+def test_a_delay_the_deadline_cuts_types_the_first_turn_at_the_waits_end(city: City) -> None:
     config = {"command": "printf 'booting\\n'; exec cat", "ready_delay_ms": 4000}
-    warned = withheld(city, config, deadline_ms=7000)
-    assert "the first turn was withheld: the agent was not ready in time" in warned
+    typed_after(city, config, deadline_ms=7000)
 
 
 def test_a_delay_past_the_wait_types_the_first_turn_at_its_end(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -253,6 +274,12 @@ def test_a_delay_past_the_wait_types_the_first_turn_at_its_end(city: City, monke
     done = city.start("mc-a", json.dumps(config))
     assert done.code == 0, done.stderr
     assert city.fake.input_log(city.address("mc-a")) == ["first task"]  # type: ignore[union-attr]
+
+
+def test_a_status_line_mentioning_rate_limits_under_a_prompt_is_ready(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(lifecycle, "READY_WAIT_S", 5.0)  # a miss shows as a slow start
+    config = {"command": "printf 'READY> \\n  rate limit: 40%% used\\n'; exec cat", "ready_prompt_prefix": "READY>"}
+    assert typed_after(city, config) < 4.0
 
 
 def test_a_prompt_with_a_non_breaking_space_is_ready(city: City, monkeypatch: pytest.MonkeyPatch) -> None:

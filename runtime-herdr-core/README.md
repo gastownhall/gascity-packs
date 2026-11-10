@@ -107,11 +107,19 @@ runtime-herdr-core/
   as gc reads a pane: the bottom-most prompt line, NBSP as a space, a box
   border skipped, and a numbered menu's cursor row no prompt; else its
   delay, at most 60 s as in gc; else its first status report; else settled
-  output). gc answers startup dialogs only once `start` returns, so a
-  screen showing one of gc's known dialogs is never ready: a settled
-  dialog, or no readiness within the wait (a delay that outlasts the op's
-  deadline too), withholds the turn with a warning and
-  `GC_STARTUP_DELIVERY_UNCONFIRMED` in the metadata. `session_live` (tmux
+  output). A wait that ends without readiness (a boot slower than the
+  wait, a prompt prefix that never matches, a wait cut short by the op's
+  deadline) types the turn all the same, as gc's tmux and herdr providers
+  type it on a probe that timed out. gc answers startup dialogs only once
+  `start` returns, so a screen showing one of gc's known dialogs is never
+  ready, and a dialog still on screen when the wait settles or ends
+  withholds the turn with a warning and `GC_STARTUP_DELIVERY_UNCONFIRMED`
+  in the metadata. A bare "rate limit" mention (a status line's) is no
+  dialog once a prompt line shows. Known limit: a turn withheld over a
+  dialog is not typed later, as gc answers the dialog but does not type
+  an exec runtime's first turn after `start`; the marker is for
+  operators. A menu gc does not know as a dialog gets the turn at the
+  wait's end, as in gc. `session_live` (tmux
   theming and keybindings) is never run: herdr-core runs no tmux server,
   and run on the host it would reach a person's own; `start` warns that it
   is not applied. `terminal.run` is sent once: after a lost reply
@@ -169,14 +177,25 @@ runtime-herdr-core/
   live agent started, every child of one already gone) found by its
   `GC_INSTANCE_TOKEN` whatever the box's state, every process still the one
   captured (same start time) sent TERM then KILL. Every process carrying
-  the token dies, one the agent meant to outlive it too, as gc's own
-  orphan sweep ends a process carrying a session identity gc no longer
-  runs. One started during the kill (a TERM handler's `setsid` child) is
-  found by scanning for the token again once the captured processes are
-  dead, until a scan finds none (at most three more rounds). City
-  infrastructure (gc's managed Dolt watchdog, bd's database
-  proxy, gc's nudge poller) and its whole subtree is never killed, and
-  other live sessions' trees are protected. Nothing under a process that
+  the token dies, one the agent meant to outlive it too. That is wider
+  than gc's own orphan sweep, which ends only orphan roots of sessions gc
+  no longer runs (and does not run for this pack): a shared per-user
+  daemon first started from inside a box carries its token and dies with
+  it, such as a Bazel or Gradle server, an ssh `ControlMaster` or a
+  `gpg-agent`; the next use starts it again. One started during the kill
+  (a TERM handler's `setsid` child) is found by scanning for the token
+  again once the captured processes are dead, until a scan finds none (at
+  most three more rounds). Infrastructure and its whole subtree is never
+  killed: city infrastructure (gc's managed Dolt watchdog, bd's database
+  proxy, gc's nudge poller) and, as gc never signals tmux, any tmux server
+  or client (its executable, or a `tmux: server` / `tmux: client` title).
+  A tmux server copies its founder's environment, so one founded from
+  inside a box carries the token into every pane it later runs: the
+  user's own shells and editors, or a whole tmux-runtime city when a gc
+  command run in the box founded it. A herdr-core box never runs inside
+  tmux; a tmux server the box itself runs under (hc's core started from a
+  pane) fences none of the box's own tree. Other live sessions' trees are
+  protected. Nothing under a process that
   cannot be read is signalled (an unreadable process may be
   infrastructure), nor is one that turns unreadable before its signal (its
   pid may have been recycled). When such a process is found, a process
@@ -184,7 +203,12 @@ runtime-herdr-core/
   daemon that respawns), or the process table cannot be read (hc's
   kill still happens), the op exits 1 and the box and its metadata stay:
   gc's retry (the next stop or start, or a corpse kill) finds what is left
-  by the token, and a `start` launches nothing while it may survive. A
+  by the token, and a `start` launches nothing while it may survive, for
+  up to 15 minutes from its first refusal: a survivor that never goes (an
+  unkillable process, one respawned from outside the kill, such as a user
+  service that imported the box's environment, a process table that never
+  reads) would refuse every start, so after that the start warns, naming
+  what may survive, removes the old box and goes ahead. A
   process that does not carry the token, or whose environment cannot be
   read, is not found that way.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's

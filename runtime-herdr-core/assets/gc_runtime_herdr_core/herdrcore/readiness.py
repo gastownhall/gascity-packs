@@ -12,6 +12,10 @@ Enter would pick it.
   and the cursor row of a numbered menu is no prompt.
 * :func:`shows_dialog` is its ``containsStartupDialog``
   (``internal/runtime/dialog.go``), with the same markers.
+* :func:`withholds_first_turn` is what keeps the first turn back: a dialog
+  gc knows, except that a bare "rate limit" mention (a status line's) is no
+  dialog once a prompt line shows. gc reads those markers only to answer a
+  dialog it already waits on, never to judge readiness.
 """
 
 from __future__ import annotations
@@ -50,7 +54,10 @@ DIALOGS: Final[Tuple[Tuple[Tuple[str, ...], ...], ...]] = (
 )
 """gc's startup dialogs but the rate limit: a screen shows one when, for each
 group of markers, it shows one of them."""
-RATE_LIMIT: Final = ("Usage limit reached", "You've hit your limit", "/rate-limit-options", "rate limit", "Rate limit")
+RATE_LIMIT_DIALOG: Final = ("Usage limit reached", "You've hit your limit", "/rate-limit-options")
+BARE_RATE_LIMIT: Final = ("rate limit", "Rate limit")
+RATE_LIMIT: Final[Tuple[str, ...]] = RATE_LIMIT_DIALOG + BARE_RATE_LIMIT
+"""gc's ``ContainsRateLimitDialog`` markers."""
 CODEX_BANNER: Final = "OpenAI Codex"
 CODEX_STATUS_SEPARATOR: Final = " · "
 
@@ -67,11 +74,33 @@ def shows_ready_prompt(screen: str, prefix: str) -> bool:
 def shows_dialog(screen: str) -> bool:
     """The screen shows a startup dialog gc knows. A rate-limit marker counts
     unless Codex has finished starting (gc's ``ContainsRateLimitDialog``)."""
-    if any(all(any(marker in screen for marker in group) for group in dialog) for dialog in DIALOGS):
+    return _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT)
+
+
+def withholds_first_turn(screen: str, prefix: str) -> bool:
+    """The screen shows a dialog the first turn must not land in: one gc
+    knows, but a bare "rate limit" mention under which a prompt line shows
+    (the ready prompt when ``prefix`` is set, else any prompt line)."""
+    if _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT_DIALOG):
         return True
+    return _rate_limited(screen, BARE_RATE_LIMIT) and not _shows_prompt_line(screen, prefix)
+
+
+def _named_dialog(screen: str) -> bool:
+    return any(all(any(marker in screen for marker in group) for group in dialog) for dialog in DIALOGS)
+
+
+def _rate_limited(screen: str, markers: Sequence[str]) -> bool:
+    """A rate-limit marker shows, unless Codex has finished starting."""
     if CODEX_BANNER in screen and _codex_settled(screen):
         return False
-    return any(marker in screen for marker in RATE_LIMIT)
+    return any(marker in screen for marker in markers)
+
+
+def _shows_prompt_line(screen: str, prefix: str) -> bool:
+    if prefix:
+        return shows_ready_prompt(screen, prefix)
+    return any(_prompt_indicator(line) for line in screen.split("\n"))
 
 
 def _prompt_rest(line: str, prefix: str) -> Optional[str]:

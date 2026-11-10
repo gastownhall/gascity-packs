@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from gc_runtime_herdr_core.herdrcore.readiness import shows_dialog, shows_ready_prompt
+from gc_runtime_herdr_core.herdrcore.readiness import shows_dialog, shows_ready_prompt, withholds_first_turn
 
 GLYPH = "❯"
 NBSP = "\u00a0"
@@ -54,3 +54,20 @@ def test_the_ready_prompt_is_read_as_gc_reads_it(screen: str, prefix: str, ready
 )
 def test_startup_dialogs_are_read_as_gc_reads_them(screen: str, dialog: bool) -> None:
     assert shows_dialog(screen) is dialog
+
+
+@pytest.mark.parametrize(
+    "screen, prefix, withheld",
+    [
+        (f"Do you trust the files in this folder?\n{GLYPH} 1. Yes, proceed\n  2. No, exit\n", f"{GLYPH} ", True),
+        ("You've hit your limit\nREADY> \n", "READY>", True),  # a rate-limit dialog, prompt or not
+        ("READY> \n  rate limit: 40% used\n", "READY>", False),  # a status line under the prompt
+        ("booting\n  rate limit: 40% used\n", "READY>", True),  # no prompt yet
+        (f"{GLYPH} \n  Rate limit resets at 5pm\n", "", False),  # any prompt line, with no prefix
+        ("Rate limit reached\nretrying...\n", "", True),
+        (f"rate limit\n{GLYPH} 1. Retry\n  2. Wait\n", f"{GLYPH} ", True),  # a menu's cursor row is no prompt
+        ("READY> \n", "READY>", False),
+    ],
+)
+def test_a_bare_rate_limit_mention_under_a_prompt_withholds_nothing(screen: str, prefix: str, withheld: bool) -> None:
+    assert withholds_first_turn(screen, prefix) is withheld

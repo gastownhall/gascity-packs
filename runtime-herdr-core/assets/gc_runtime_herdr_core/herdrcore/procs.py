@@ -23,10 +23,15 @@ argument that is neither a flag nor a runner subcommand names one, with or
 without its extension; ``kimi`` also matches ``kimi-code``, and ``gc`` the
 base name of the session's gc binary.
 
+Infrastructure is never killed with a session, nor is anything under it.
 The infrastructure verbs mirror gascity
-``internal/runtime/proctable/infrastructure_argv.go``: such a process (gc's
-managed Dolt watchdog, bd's database proxy, gc's nudge poller) and its whole
-subtree are never killed with a session.
+``internal/runtime/proctable/infrastructure_argv.go`` (gc's managed Dolt
+watchdog, bd's database proxy, gc's nudge poller), and tmux follows its
+``isInfrastructureCommand`` (gc never reports a tmux server or client as a
+session's root, and never signals one): a tmux server copies its founder's
+environment, so one founded from inside a session carries that session's
+identity into every pane it later runs, the user's own shells and editors
+and, for a server a gc command founded, a whole tmux-runtime city.
 """
 
 from __future__ import annotations
@@ -46,6 +51,11 @@ MANAGED_DOLT_SCOPE_WATCHDOG_VERB: Final = "__gc-managed-dolt-scope-watchdog"
 BD_PROXY_CHILD_VERB: Final = "db-proxy-child"
 NUDGE_POLLER_VERB: Final = "nudge"
 NUDGE_POLLER_SUBVERB: Final = "poll"
+TMUX_NAMES: Final = frozenset({"tmux", "tmux:", "tmux: server", "tmux: client"})
+"""gc's ``isInfrastructureCommand``: the tmux executable, and the titles tmux
+sets through setproctitle (``tmux:`` is the first word ``ps`` splits off a
+titled ``tmux: server``). Exact, path-stripped: a ``tmux-*`` wrapper may be
+an agent."""
 
 _PS_TIMEOUT_S: Final = 2.0
 
@@ -313,7 +323,11 @@ class PsProcs(ProcSource):
 
 
 def _ps_environ(words: Iterable[str]) -> Dict[str, str]:
-    """The ``KEY=value`` words of a ``ps -E`` command, the command's own too."""
+    """The ``KEY=value`` words of a ``ps -E`` command, the command's own too.
+
+    Lossy: an argv word of that form reads as environment, and a value is
+    cut at whitespace. A false token match needs the literal token on a
+    command line (gc mints it as 32 random hex characters, a secret)."""
     env: Dict[str, str] = {}
     for word in words:
         key, sep, value = word.partition("=")
@@ -350,8 +364,11 @@ def children_index(snapshot: Snapshot) -> Dict[int, List[int]]:
     return index
 
 
-def subtree(snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None) -> List[Proc]:
-    """``root`` and every descendant, in breadth-first order."""
+def subtree(
+    snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None, *, prune: Optional[int] = None
+) -> List[Proc]:
+    """``root`` and every descendant, in breadth-first order; a descendant
+    ``prune`` is left out, and so is everything under it."""
     if root not in snapshot:
         return []
     kids = children_index(snapshot) if index is None else index
@@ -364,7 +381,7 @@ def subtree(snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int
             continue
         seen.add(pid)
         out.append(snapshot[pid])
-        queue.extend(kids.get(pid, ()))
+        queue.extend(kid for kid in kids.get(pid, ()) if kid != prune)
     return out
 
 
@@ -377,13 +394,25 @@ def is_infrastructure_argv(argv: Sequence[str]) -> bool:
     return argv[1] == NUDGE_POLLER_VERB and len(argv) > 2 and argv[2] == NUDGE_POLLER_SUBVERB
 
 
-def fenced_pids(snapshot: Snapshot) -> FrozenSet[int]:
-    """Every city-infrastructure process and its whole subtree."""
+def is_tmux(proc: Proc) -> bool:
+    """Whether ``proc`` is a tmux server or client: its command name or its
+    argv[0] is one of :data:`TMUX_NAMES`, path-stripped."""
+    heads = (proc.comm, proc.argv[0] if proc.argv else "")
+    return any(os.path.basename(head.strip()) in TMUX_NAMES for head in heads if head.strip())
+
+
+def fenced_pids(snapshot: Snapshot, *, own: Optional[int] = None) -> FrozenSet[int]:
+    """Every infrastructure process (city infrastructure, tmux) and its whole
+    subtree. A tmux server above ``own`` (the program a kill ends: its
+    core was started from a tmux pane) fences none of ``own``'s tree; one
+    inside it still fences its own subtree."""
     index = children_index(snapshot)
     fenced: Set[int] = set()
     for proc in snapshot.values():
-        if proc.pid not in fenced and is_infrastructure_argv(proc.argv):
+        if is_infrastructure_argv(proc.argv):
             fenced.update(p.pid for p in subtree(snapshot, proc.pid, index))
+        elif is_tmux(proc) and proc.pid not in fenced:
+            fenced.update(p.pid for p in subtree(snapshot, proc.pid, index, prune=own))
     return frozenset(fenced)
 
 

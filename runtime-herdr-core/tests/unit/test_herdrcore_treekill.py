@@ -7,16 +7,22 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, Tuple, cast
 
 import pytest
 from cityharness import City
 
-from gc_runtime_herdr_core.herdrcore.lifecycle import RESCANS
+from fakehc.procfs import add_proc
+from gc_runtime_herdr_core.hc.client import HcClient
+from gc_runtime_herdr_core.hc.parse import parse_terminal
+from gc_runtime_herdr_core.hc.types import Terminal
+from gc_runtime_herdr_core.herdrcore.lifecycle import INSTANCE_TOKEN_KEY, RESCANS, kill_incarnation
+from gc_runtime_herdr_core.herdrcore.metastore import Meta
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, subtree
 
 PROXY = """\
@@ -138,6 +144,111 @@ def test_stop_kills_the_tree_but_not_fenced_infrastructure(city: City, leftovers
     assert done.code == 0, done.stderr
     assert wait_dead(detached) and wait_dead(child)
     assert alive(proxy) and alive(proxy_child), "infrastructure and its subtree survive a session stop"
+
+
+class _RecordingProcs(LinuxProcs):
+    """A fake ``/proc`` whose kill is recorded, never sent: a signalled
+    process leaves the fake tree as if it died."""
+
+    def __init__(self, root: Path) -> None:
+        LinuxProcs.__init__(self, str(root))
+        self.root = root
+        self.signals: List[Tuple[int, int]] = []
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.signals.append((pid, sig))
+        shutil.rmtree(self.root / str(pid), ignore_errors=True)
+
+
+class _RecordingClient:
+    """The hc calls a kill makes, recorded."""
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[str, str]] = []
+
+    def kill(self, address: str) -> None:
+        self.calls.append(("kill", address))
+
+    def remove(self, address: str) -> None:
+        self.calls.append(("remove", address))
+
+
+def _live_box(pid: int) -> Terminal:
+    return parse_terminal(
+        {
+            "address": "t1",
+            "labels": {"gc.session": "mc-a", "gc.pid": str(pid), "gc.obj": "o1"},
+            "argv": ["/bin/sh"],
+            "cwd": "/",
+            "state": "live",
+            "created_ms": 1_700_000_000_000,
+            "screen": "exact",
+            "cols": 80,
+            "rows": 24,
+            "pid": pid,
+            "reason": None,
+            "keep": False,
+        }
+    )
+
+
+def test_stop_never_signals_a_tmux_server_or_client_carrying_the_token(city: City, tmp_path: Path) -> None:
+    """A tmux server copies its founder's environment, so one founded from
+    inside the box (``tmux new -d``), and every pane and editor under it,
+    carries the box's instance token; so does another city's server that a
+    gc command run in the box founded. gc never signals tmux (its scanner
+    never reports a tmux server or client as a root): neither does the
+    kill. The box's own tree still dies, also when hc's core was started
+    from a tmux pane. A fake ``/proc``; nothing is signalled for real."""
+    tok = token("tmux-fence")
+    carry = {"GC_INSTANCE_TOKEN": tok}
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 100, ppid=1, argv=["tmux"], comm="tmux: server")  # the operator's, hc's core started in it
+    add_proc(root, 101, ppid=100, argv=["-zsh"], env=carry)  # a pane of it that ran gc in the box
+    add_proc(root, 150, ppid=100, argv=["herdr-core", "server"])
+    add_proc(root, 200, ppid=150, argv=["cat"], env=carry)  # the box's agent
+    add_proc(root, 201, ppid=200, argv=["sleep", "600"], env=carry)
+    add_proc(root, 205, ppid=200, argv=["tmux", "attach"], comm="tmux: client", env=carry)
+    add_proc(root, 206, ppid=205, argv=["sleep", "600"], env=carry)
+    add_proc(root, 210, ppid=1, argv=["sleep", "600"], env=carry)  # a daemon, re-parented
+    add_proc(root, 300, ppid=1, argv=["tmux", "new", "-d"], comm="tmux: server", env=carry)
+    add_proc(root, 301, ppid=300, argv=["-bash"], env=carry)  # the user's pane
+    add_proc(root, 302, ppid=301, argv=["vim", "notes.md"], env=carry)  # and their editor
+    add_proc(root, 500, ppid=1, argv=["/usr/bin/tmux", "-L", "city-t", "new-session", "-d"], comm="tmux: server", env=carry)
+    add_proc(root, 501, ppid=500, argv=["claude"], env=carry)  # another city's agent
+    source = _RecordingProcs(root)
+    client = _RecordingClient()
+    city.procs.inner = source
+    meta = Meta(session="mc-a").with_value(INSTANCE_TOKEN_KEY, tok)
+    problems = kill_incarnation(city.context(), cast(HcClient, client), _live_box(200), meta, pause=lambda _: None)
+    assert problems == []
+    assert sorted(pid for pid, _ in source.signals) == [200, 201, 210], source.signals
+    assert client.calls == [("kill", "t1"), ("remove", "t1")]
+
+
+def test_a_rollback_reads_the_record_afresh_before_it_captures_a_tree(city: City, tmp_path: Path) -> None:
+    """run's reply may be seconds old by the rollback: a pid that ended since
+    may run an unrelated process, whose tree is never captured."""
+    import dataclasses
+
+    from gc_runtime_herdr_core.herdrcore import lifecycle
+    from gc_runtime_herdr_core.herdrcore.records import object_of
+
+    assert city.start("mc-a", json.dumps({"command": "exec cat"})).code == 0
+    ctx = city.context()
+    record = ctx.client().get(city.address("mc-a"))
+    obj = object_of(record)
+    assert obj is not None
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 777, ppid=1, argv=["unrelated"])  # the stale pid, recycled
+    add_proc(root, 778, ppid=777, argv=["sleep", "600"])
+    source = _RecordingProcs(root)
+    city.procs.inner = source
+    lifecycle._undo(ctx, dataclasses.replace(record, pid=777), obj, pending=False)
+    assert source.signals == []
+    assert city.terminals() == []
 
 
 def test_holder_loss_orphans_are_found_by_instance_token(city: City, leftovers: List[int]) -> None:
@@ -360,6 +471,38 @@ def test_a_stop_that_may_leave_survivors_keeps_the_box_and_its_token_for_the_ret
     assert wait_dead(detached), "the retry found the survivor by the token the box kept"
     assert city.terminals() == []
     assert list(Path(city.context().state_dir("meta")).iterdir()) == []
+
+
+def test_starts_refused_over_survivors_go_ahead_after_the_limit(
+    city: City, leftovers: List[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A survivor that never goes away (one unkillable, one respawned from
+    outside the kill, a process table that never reads) refuses starts
+    only until the limit: then the start warns, naming it, and goes ahead."""
+    from gc_runtime_herdr_core.herdrcore import lifecycle
+
+    class Broken(LinuxProcs):
+        def snapshot(self) -> Dict[int, Proc]:
+            raise ProcError("no /proc")
+
+    work = city.root / "w13"
+    work.mkdir()
+    command = f"setsid sleep 600 & echo $! > {work}/detached.pid; exec cat"
+    assert city.start("mc-a", json.dumps({"command": command, "env": {"GC_INSTANCE_TOKEN": token("limit-1")}})).code == 0
+    leftovers.append(int(wait_file(work / "detached.pid")))
+    city.procs.inner = Broken()
+    assert city.run("stop", "mc-a").code == 1
+    again = json.dumps({"command": "exec cat", "env": {"GC_INSTANCE_TOKEN": token("limit-2")}})
+    refused = city.start("mc-a", again)
+    assert refused.code == 1 and "may survive" in refused.stderr and "minutes" in refused.stderr, refused.stderr
+    assert len(city.terminals()) == 1
+    monkeypatch.setattr(lifecycle, "START_REFUSAL_LIMIT_MS", 0)
+    done = city.start("mc-a", again)
+    assert done.code == 0, done.stderr
+    assert "beside an earlier incarnation's processes" in done.stderr and "cannot read the process table" in done.stderr
+    [record] = city.terminals()
+    assert record["state"] == "live", "only the new incarnation's box is left"
+    assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
 
 
 def test_a_normally_exited_agents_detached_child_is_found_by_its_token(city: City, leftovers: List[int]) -> None:

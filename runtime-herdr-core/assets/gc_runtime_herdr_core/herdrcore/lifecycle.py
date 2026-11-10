@@ -10,7 +10,9 @@ agent):
    record and every live broken incarnation of the name is recycled first
    (tree kill, then removed), or gc would read "already exists" every pass
    while the broken record stays. While an earlier incarnation's processes
-   may survive that kill, the start exits 1 and launches nothing beside them.
+   may survive that kill, the start exits 1 and launches nothing beside them,
+   for up to :data:`START_REFUSAL_LIMIT_MS` from the first refusal; then it
+   warns, removes that record and goes ahead.
 3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
@@ -30,24 +32,30 @@ agent):
    ready (its prompt, read as gc reads it, see :mod:`.readiness`; else its
    delay, at most the wait's, as in gc; else its first status report; else
    output that settled), the config's ``nudge`` is sent through the nudge
-   path (a send hc got whole is delivered). gc answers startup dialogs only
-   once ``start`` returns, so a screen that shows one is never ready: a
-   settled dialog, or no readiness within the wait (a delay that outlasts
-   the op's deadline too), withholds the turn. A withheld turn or a refusal
-   types nothing, warns, and records ``GC_STARTUP_DELIVERY_UNCONFIRMED`` in
-   the metadata.
+   path (a send hc got whole is delivered). A wait that ends without
+   readiness types it all the same, as gc's tmux and herdr providers do on
+   a probe that timed out (nothing in gc types an exec runtime's first turn
+   later). gc answers startup dialogs only once ``start`` returns, so a
+   screen that shows one is never ready, and one still showing when the
+   wait settles or ends withholds the turn (a known limit: nothing types it
+   later). A withheld turn or a refusal types nothing, warns, and records
+   ``GC_STARTUP_DELIVERY_UNCONFIRMED`` in the metadata.
 
 **stop** and **kill-object** end an incarnation's whole process tree:
 descendants are captured, with their start times, before hc's kill (hc ends
-the program's process groups, and since 0.1.19 no detached descendant); city
-infrastructure and its subtree are pruned from the kill set; what is left
-and still the same process gets TERM, then KILL. A descendant whose parent
+the program's process groups, and since 0.1.19 no detached descendant);
+infrastructure and its subtree are pruned from the kill set (city
+infrastructure, and tmux: see :func:`.procs.fenced_pids`); what is left and
+still the same process gets TERM, then KILL. A descendant whose parent
 exited is re-parented out of the agent's subtree: a daemon (fork, ``setsid``,
 parent exits) while the agent still runs, every child once the agent is
 gone. So whatever the record's state, the incarnation's processes are also
 found by its ``GC_INSTANCE_TOKEN`` in their environment, and each of them
-dies, one the agent meant to outlive it too (gc's own orphan sweep likewise
-ends a process carrying a session identity gc no longer runs). One started
+dies, one the agent meant to outlive it too. That is wider than gc's orphan
+sweep, which ends only orphan roots of sessions gc no longer runs (and does
+not run for this pack): a shared per-user daemon first started from inside
+the box (a Bazel or Gradle server, an ssh ControlMaster, a gpg-agent)
+carries the token and dies with it, by design. One started
 during the kill (a TERM handler's ``setsid`` child) was in no capture, so
 once what was captured is dead the token is looked for again, fenced
 afresh, until a scan finds nothing. A process of the tree that cannot be
@@ -106,7 +114,7 @@ from .procs import (
     scan_environ,
     subtree,
 )
-from .readiness import shows_dialog, shows_ready_prompt
+from .readiness import shows_ready_prompt, withholds_first_turn
 from .reads import agent_state, list_city, meta_store, session_arg, unreachable
 from .records import box_object, is_intact, newest, object_of
 from .staging import StagingError, stage
@@ -131,7 +139,6 @@ READY_WAIT_S: Final = 60.0
 READY_POLL_S: Final = 0.25
 SETTLE_S: Final = 1.0
 IN_DIALOG: Final = "the agent shows a startup dialog, which gc answers once start returns"
-NOT_READY: Final = "the agent was not ready in time"
 FIRST_TURN_RESERVE_S: Final = 5.0
 ROLLBACK_S: Final = 1.5
 RM_WAIT_S: Final = 3.0
@@ -139,6 +146,11 @@ RESCANS: Final = 3
 """How many rounds of killing what still carries the instance token follow
 a kill; whatever carries it after the last round (a daemon that respawns
 when signalled) may survive."""
+START_REFUSAL_LIMIT_MS: Final = 15 * 60 * 1000
+"""How long starts are refused while an earlier incarnation's processes may
+survive (one unkillable, one respawned from outside the kill, a process
+table that cannot be read); a start after that warns and goes ahead."""
+REFUSED_SINCE_KEY: Final = "GC_HERDR_CORE_START_REFUSED_SINCE_MS"
 DEFAULT_AGENT_SLICE: Final = "gascity-agents.slice"
 USERSCOPE_FILE: Final = "userscope.json"
 USERSCOPE_ENV: Final = "GC_HC_TEST_USERSCOPE"
@@ -197,8 +209,10 @@ def _hc_kill(client: HcClient, record: Terminal) -> Optional[HcError]:
 
 
 def _never_killed(snapshot: Snapshot, record: Terminal, protected: Iterable[Terminal]) -> Set[int]:
-    """City infrastructure, this process, and every other intact incarnation's tree."""
-    keep: Set[int] = set(fenced_pids(snapshot)) | {os.getpid()}
+    """Infrastructure (city infrastructure and tmux, each with its whole
+    subtree), this process, and every other intact incarnation's tree."""
+    own = record.pid if record.is_live else None
+    keep: Set[int] = set(fenced_pids(snapshot, own=own)) | {os.getpid()}
     for other in protected:
         if other.address != record.address and other.pid is not None and is_intact(other):
             keep.update(p.pid for p in subtree(snapshot, other.pid))
@@ -248,6 +262,7 @@ def kill_incarnation(
     *,
     protected: Iterable[Terminal] = (),
     pause: Optional[Callable[[float], None]] = None,
+    remover: Optional[Callable[[], HcClient]] = None,
 ) -> List[str]:
     """End ``record``'s program tree, then remove the record; returns what may
     survive. While anything may, the record stays (and the caller keeps its
@@ -255,7 +270,9 @@ def kill_incarnation(
     instance token. A process the kill itself started (a TERM handler's
     ``setsid`` child) was in no capture: before the record goes, the token
     is scanned for again. ``pause`` waits between checks (default: the op's,
-    which a cancel ends)."""
+    which a cancel ends); ``remover`` gives the client that removes the
+    record once the process work is done (default: ``client``), so a
+    rollback's short budget is not spent by the scans before it."""
     wait = ctx.request.cancel.pause if pause is None else pause
     others = list(protected)
     token = "" if meta is None else meta.values.get(INSTANCE_TOKEN_KEY, "")
@@ -274,7 +291,7 @@ def kill_incarnation(
     if not problems and token:
         problems = _rescan(ctx, record, token, others, wait)
     if not problems:
-        _remove_record(client, record, wait)
+        _remove_record(client if remover is None else remover(), record, wait)
     return problems
 
 
@@ -316,29 +333,63 @@ def _read_meta(ctx: OpContext, record: Terminal) -> Optional[Meta]:
         return None
 
 
-def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal]) -> List[str]:
+def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, abandoned: Optional[List[str]] = None) -> List[str]:
     """End and remove ``records``; every other live box of the city is
     protected. Returns what may survive: that record stays, and so does its
-    metadata."""
+    metadata. With ``abandoned`` (a start's), a record whose processes have
+    kept surviving for :data:`START_REFUSAL_LIMIT_MS` is removed all the same,
+    and what may survive it is reported there instead."""
     if not records:
         return []
     city = list_city(client, ctx, finished=False)
     problems: List[str] = []
     for record in records:
-        survived = kill_incarnation(ctx, client, record, _read_meta(ctx, record), protected=city)
-        if survived:
+        meta = _read_meta(ctx, record)
+        survived = kill_incarnation(ctx, client, record, meta, protected=city)
+        if survived and abandoned is not None and _refused_long_enough(ctx, record, meta):
+            _remove_record(client, record, ctx.request.cancel.pause)
+            abandoned += survived
+        elif survived:
             problems += survived
-        else:
-            _forget(ctx, object_of(record))
+            continue
+        _forget(ctx, object_of(record))
     return problems
 
 
-def _recycle_before_start(ctx: OpContext, client: HcClient, name: str, records: List[Terminal]) -> None:
+def _refused_long_enough(ctx: OpContext, record: Terminal, meta: Optional[Meta]) -> bool:
+    """Whether starts have been refused over ``record``'s survivors for
+    :data:`START_REFUSAL_LIMIT_MS`; the first refusal is recorded in its
+    metadata. One without metadata keeps being refused."""
+    obj = object_of(record)
+    if obj is None or meta is None:
+        return False
+    now = ctx.host.now_ms()
+    since = meta.values.get(REFUSED_SINCE_KEY, "")
+    if since.isdigit():
+        return now - int(since) >= START_REFUSAL_LIMIT_MS
+    try:
+        meta_store(ctx).write(obj, meta.with_value(REFUSED_SINCE_KEY, str(now)))
+    except MetaError:
+        pass
+    return False
+
+
+def _recycle_before_start(ctx: OpContext, client: HcClient, name: str, records: List[Terminal], warnings: List[str]) -> None:
     """Recycle ``records`` for a new incarnation, which never runs beside an
-    earlier one's processes."""
-    survived = _recycle(ctx, client, records)
+    earlier one's processes, unless they have kept surviving for
+    :data:`START_REFUSAL_LIMIT_MS`: the start then warns and goes ahead."""
+    abandoned: List[str] = []
+    survived = _recycle(ctx, client, records, abandoned=abandoned)
+    if abandoned:
+        warnings.append(
+            f"started {name!r} beside an earlier incarnation's processes, which may still run: " + "; ".join(abandoned)
+        )
     if survived:
-        raise OpError(f"cannot start {name!r} while an earlier incarnation's processes may survive: " + "; ".join(survived))
+        raise OpError(
+            f"cannot start {name!r} while an earlier incarnation's processes may survive: "
+            + "; ".join(survived)
+            + f" (end them, or the start goes ahead without them after {START_REFUSAL_LIMIT_MS // 60000} minutes)"
+        )
 
 
 # --- stop ---------------------------------------------------------------------------------------
@@ -607,7 +658,7 @@ def _start(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
         refused = _check_name(records, name, cfg.fresh_only)
         if refused is not None:
             return refused
-        _recycle_before_start(ctx, client, name, records)
+        _recycle_before_start(ctx, client, name, records, warnings)
     try:
         warnings += stage(cfg, cfg.env.get("GC_PROVIDER", ""))
     except StagingError as err:
@@ -658,7 +709,7 @@ def _create(
         refused = _check_name(records, name, cfg.fresh_only)
         if refused is not None:
             raise OpError(refused.message, refused.code)
-        _recycle_before_start(ctx, client, name, records)
+        _recycle_before_start(ctx, client, name, records, warnings)
         if cfg.work_dir and not os.path.isdir(cfg.work_dir):
             raise OpError("work_dir is not an existing directory after staging and pre_start")
         obj = new_object_nonce()
@@ -729,7 +780,9 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
         meta = None
     try:
         if created is not None:
-            targets = [created]
+            # Read afresh: run's reply may be seconds old, and a pid that
+            # ended since may already run an unrelated process.
+            targets = _current(rollback, created)
         else:
             targets = list(rollback.list_terminals(labels={LABEL_OBJ: obj}, include_finished=True).terminals)
         try:
@@ -739,7 +792,10 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
             return
         for record in targets:
             # The op's pause ends at its cancel; the rollback's own deadline bounds this one.
-            if kill_incarnation(ctx, rollback, record, meta, protected=city, pause=time.sleep):
+            survived = kill_incarnation(
+                ctx, rollback, record, meta, protected=city, pause=time.sleep, remover=lambda: ctx.rollback_client(ROLLBACK_S + 1.0)
+            )
+            if survived:
                 return
     except (HcError, ProcError):
         return
@@ -749,6 +805,16 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
         _forget(ctx, obj)
     except (OSError, StateDirError):
         pass
+
+
+def _current(client: HcClient, record: Terminal) -> List[Terminal]:
+    """``record`` as hc holds it now; none when it is gone."""
+    try:
+        return [client.get(record.address)]
+    except HcRpcError as err:
+        if err.kind == "not_found":
+            return []
+        raise
 
 
 def _reap_trees(ctx: OpContext, targets: List[Terminal]) -> None:
@@ -803,13 +869,14 @@ def _fail_if_ended(client: HcClient, record: Terminal, cfg: StartConfig) -> None
 
 def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig) -> Union[Terminal, str, None]:
     """Wait until the agent can take its first turn: its terminal then, why it
-    cannot (a startup dialog shows, or it was not ready in time), or None if
-    it ended first. A screen showing a dialog is never ready, in any mode."""
+    cannot (a startup dialog shows), or None if it ended first. A screen
+    showing a dialog is never ready, in any mode. A wait that ends with no
+    dialog on screen gives the terminal too: gc's providers type the turn
+    on a probe that timed out, and nothing in gc types it later."""
     begun = time.monotonic()
     end = begun + max(0.0, min(READY_WAIT_S, ctx.request.deadline.remaining() - FIRST_TURN_RESERVE_S))
     # A delay is a guess at readiness, cut to the wait as gc cuts it to its
-    # probe timeout. One the op's deadline ends first has not passed: gc's
-    # start, out of time, returns without the turn too.
+    # probe timeout.
     delay_until = begun + min(cfg.ready_delay_ms / 1000.0, READY_WAIT_S) if cfg.ready_delay_ms > 0 else None
     last_screen: Optional[str] = None
     stable_since = begun
@@ -822,13 +889,14 @@ def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig)
         if screen != last_screen:
             last_screen, stable_since = screen, now
         settled = bool(screen.strip()) and now - stable_since >= SETTLE_S
-        if shows_dialog(screen):
+        in_dialog = withholds_first_turn(screen, cfg.ready_prompt_prefix)
+        if in_dialog:
             if settled:  # gc answers it once start returns: the wait would outlast it
                 return IN_DIALOG
         elif _shows_ready(cfg, current, screen, settled, now, delay_until):
             return current
         if now >= end:
-            return NOT_READY
+            return IN_DIALOG if in_dialog else current
         ctx.request.cancel.pause(READY_POLL_S)
 
 
