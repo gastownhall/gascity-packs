@@ -35,7 +35,7 @@ from .context import Host, OpContext
 from .core import kick
 from .metastore import Meta, MetaError, MetaStore
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
-from .procs import ProcError, Snapshot, expand_names, find_agent, opaque_under
+from .procs import ProcError, Snapshot, expand_names, find_agent, is_launching, opaque_under
 from .records import box_object, group_by_session, is_intact, newest, object_of
 
 META_GC_AGE_S: Final = 600.0
@@ -87,9 +87,9 @@ def agent_state(
     snapshot: Optional[Snapshot], record: Terminal, names: Sequence[str], meta: Optional[Meta]
 ) -> Tuple[Optional[AgentState], Optional[str]]:
     """``alive``/``dead`` with the agent's pid, or (None, None) when it cannot
-    be told, as when no agent is found but the box runs a process that cannot
-    be read."""
-    if snapshot is None or record.pid is None or not names:
+    be told: while the launcher has not reached the agent, or when no agent is
+    found but the box runs a process that cannot be read."""
+    if snapshot is None or record.pid is None or not names or is_launching(snapshot, record.pid):
         return None, None
     wanted = expand_names(names, "" if meta is None else meta.gc_bin)
     found = find_agent(snapshot, record.pid, wanted)

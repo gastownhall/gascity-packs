@@ -9,7 +9,8 @@ Faults the tests script, per method: an error of any kind (including kinds
 hc does not have), a reply lost after its side effect, a delayed or garbled
 reply; per terminal, a human-quiet hold that withholds a ``send`` (it is typed
 only when released), scripted OSC 7501 status and holder loss; per core, a
-restart that drops every connection, and a version or generation change.
+restart that drops every connection, a version or generation change, and a
+stall that stops reading a long request part-way.
 
 Every request's params and every result pass the :mod:`.schema` guard; the
 violations are collected in :attr:`FakeHc.schema_violations`, which the
@@ -161,10 +162,16 @@ class FakeHc:
         self._conns: Set[socket.socket] = set()
         self._accepted = 0
         self._started_at = time.monotonic()
+        # The reported start lies a minute back, so a restart (which clears
+        # it) moves the core's start time far past any clock jitter.
+        self._uptime_bias_ms = 60_000
         self._server: Optional[_Server] = None
         self._thread: Optional[threading.Thread] = None
         # Set once server.stop has answered: a standalone core then exits.
         self.stopped = threading.Event()
+        # stall_reading: requests longer than this are read no further until resumed.
+        self._stall_over: Optional[int] = None
+        self._resumed = threading.Event()
         # Requests or results that left the vendored schema (must stay empty),
         # and the methods whose results the guard has checked.
         self.schema_violations: List[str] = []
@@ -188,6 +195,7 @@ class FakeHc:
         for terminal in terminals:
             with terminal.lock:
                 terminal.changed.notify_all()  # wake sends held by hold_input
+        self._resumed.set()  # and reads held by stall_reading
         self._stop_listening()
         for terminal in terminals:
             terminal.reap()
@@ -306,6 +314,21 @@ class FakeHc:
             terminal.held = False
             terminal.changed.notify_all()
 
+    def stall_reading(self, over: int) -> None:
+        """The core stops reading: a request longer than ``over`` bytes is read
+        no further until :meth:`resume_reading`, so a client sending it blocks
+        once the socket's buffers fill."""
+        with self._lock:
+            self._stall_over = over
+            self._resumed.clear()
+
+    def resume_reading(self) -> None:
+        """Read the stalled requests on, to their end or the connection's (as
+        hc does, a last line without its newline is still handled)."""
+        with self._lock:
+            self._stall_over = None
+            self._resumed.set()
+
     def set_status(
         self, address: str, state: str, *, kind: Optional[str] = None, app: str = "", progress: Optional[int] = None
     ) -> None:
@@ -322,10 +345,13 @@ class FakeHc:
         self._terminal(address).lose_holder()
 
     def restart_core(self, *, version: Optional[str] = None) -> None:
-        """The core process restarts: connections drop, programs and records survive."""
+        """The core process restarts: connections drop, programs and records
+        survive, and its start time changes."""
         with self._lock:
             if version is not None:
                 self._version = version
+            self._started_at = time.monotonic()
+            self._uptime_bias_ms = 0
             terminals = list(self._terminals.values())
         for terminal in terminals:
             with terminal.lock:
@@ -340,7 +366,7 @@ class FakeHc:
             self._accepted += 1
         try:
             while True:
-                line = rfile.readline()
+                line = self._read_request(rfile)
                 if not line:
                     return
                 reply, after = self._handle_line(line)
@@ -355,6 +381,17 @@ class FakeHc:
         finally:
             with self._lock:
                 self._conns.discard(conn)
+
+    def _read_request(self, rfile: io.BufferedIOBase) -> bytes:
+        with self._lock:
+            over = self._stall_over
+        if over is None:
+            return rfile.readline()
+        head = rfile.readline(over + 1)
+        if len(head) <= over or head.endswith(b"\n"):
+            return head
+        self._resumed.wait(timeout=60.0)
+        return head + rfile.readline()
 
     def _handle_line(self, line: bytes) -> Tuple[Optional[bytes], Optional[Callable[[], None]]]:
         try:
@@ -470,7 +507,7 @@ class FakeHc:
             "core": dict(self._core),
             "version": version,
             "pid": os.getpid(),
-            "uptime_ms": int((time.monotonic() - self._started_at) * 1000),
+            "uptime_ms": int((time.monotonic() - self._started_at) * 1000) + self._uptime_bias_ms,
             "holder": holder,
             "holders": [holder],
             "live": live,

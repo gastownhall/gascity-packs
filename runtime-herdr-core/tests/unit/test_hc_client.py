@@ -1,5 +1,5 @@
 """The hc client against fake-hc: typed methods, the budget table (with and
-without GC_EXEC_DEADLINE_MS), retry rules and the `written` contract."""
+without GC_EXEC_DEADLINE_MS), retry rules and the `written` and `partial` contract."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import socket
 import threading
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 
 import pytest
 
@@ -25,6 +25,7 @@ from gc_runtime_herdr_core.hc.errors import (
 )
 from gc_runtime_herdr_core.hc.types import RunSpec, Terminal
 from gc_runtime_herdr_core.hc.version import VersionPolicy
+from gc_runtime_herdr_core.rpp.jsonval import dumps
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Cancelled, Deadline
 
 ClientFactory = Callable[..., HcClient]
@@ -263,6 +264,49 @@ def test_no_time_left_writes_nothing(make_client: ClientFactory, fake_hc: FakeHc
         make_client(deadline_s=0.9).list_terminals()
     assert caught.value.written is False
     assert fake_hc.connections == 0
+
+
+class CutShort:
+    """A connection whose core stops reading after ``room`` bytes of the request."""
+
+    def __init__(self, room: int) -> None:
+        self.room = room
+        self.got = b""
+        self.wait = 0.0
+
+    def settimeout(self, timeout: float) -> None:
+        self.wait = timeout
+
+    def send(self, data: bytes) -> int:
+        taken = data[: self.room - len(self.got)]
+        if not taken:
+            time.sleep(self.wait)
+            raise socket.timeout("timed out")
+        self.got += taken
+        return len(taken)
+
+
+@pytest.mark.parametrize("unsent, partial", [(2, True), (1, False)], ids=["short-of-its-brace", "short-of-its-newline"])
+def test_a_send_cut_short_is_partial_unless_only_its_newline_is_missing(
+    make_client: ClientFactory, fake_hc: FakeHc, short_tmp: Path, unsent: int, partial: bool
+) -> None:
+    # hc parses a request only as a whole line, but runs the last line it reads
+    # when the connection ends: a send short only of its newline is typed.
+    term = started(make_client(), "ga", short_tmp)
+    request = {"jsonrpc": "2.0", "id": 1, "method": "terminal.send", "params": {"terminal": term.address, "text": "cut"}}
+    line = (dumps(request) + "\n").encode("ascii")
+    conn = CutShort(len(line) - unsent)
+    with pytest.raises(HcTimeout) as caught:
+        make_client()._send_line(cast(socket.socket, conn), "terminal.send", line, time.monotonic() + 0.3, 0.3)
+    assert caught.value.written is True
+    assert caught.value.partial is partial
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as core:  # the core reads what reached it
+        core.settimeout(5.0)
+        core.connect(fake_hc.socket_path)
+        core.sendall(conn.got)
+        core.shutdown(socket.SHUT_WR)
+        assert core.recv(1 << 16)  # its answer: the send's result, or a parse error
+    assert fake_hc.input_log(term.address) == ([] if partial else ["cut"])
 
 
 def test_timeout_table_values() -> None:

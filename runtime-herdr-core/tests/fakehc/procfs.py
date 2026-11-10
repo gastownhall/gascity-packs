@@ -19,6 +19,7 @@ def add_proc(
     start: int = 1000,
     env: Optional[Mapping[str, str]] = None,
     children: Optional[Sequence[int]] = None,
+    state: str = "S",
 ) -> None:
     """Write pid's entries; ``start`` is the starttime field (stat field 22),
     ``children`` what ``task/<pid>/children`` lists (no such file when None,
@@ -29,7 +30,7 @@ def add_proc(
     # Fields after "(comm)": state ppid pgrp session tty tpgid flags minflt
     # cminflt majflt cmajflt utime stime cutime cstime priority nice
     # num_threads itrealvalue starttime ...
-    rest = ["S", str(ppid)] + ["0"] * 17 + [str(start)] + ["0"] * 10
+    rest = [state, str(ppid)] + ["0"] * 17 + [str(start)] + ["0"] * 10
     (proc / "stat").write_text(f"{pid} ({name}) " + " ".join(rest) + "\n")
     (proc / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
     env_items = env or {}

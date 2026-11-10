@@ -10,7 +10,7 @@ transport answers alike.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Final, Literal, Mapping, Optional, Tuple
 
 from .cancel import CancelToken, Clock, Deadline
@@ -37,6 +37,10 @@ answer over 8 MiB (exec-session-provider.md "observe.v1"); other answers are a
 line or two."""
 
 
+def _no_stream(data: bytes) -> None:
+    raise OpError("this transport does not stream op output")
+
+
 @dataclass(frozen=True)
 class OpRequest:
     """One op, as every transport hands it to its handler."""
@@ -48,6 +52,9 @@ class OpRequest:
     cancel: CancelToken
     deadline: Deadline
     redactor: Redactor
+    emit: Callable[[bytes], None] = field(default=_no_stream)
+    """Writes part of a streaming op's answer now (``watch-startup``); an op
+    that answers once returns its stdout in its :class:`OpResult` instead."""
 
 
 @dataclass(frozen=True)

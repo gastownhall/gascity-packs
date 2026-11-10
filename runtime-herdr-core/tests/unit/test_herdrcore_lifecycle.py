@@ -19,7 +19,8 @@ from fakehc.rawclient import raw_call
 IDENTITY = {
     "GC_SESSION_ID": "mc-1",
     "GC_RUNTIME_EPOCH": "3",
-    "GC_INSTANCE_TOKEN": "tok-abcdefgh-1234",
+    # Every kill scans the host by token: no other run of these tests carries it.
+    "GC_INSTANCE_TOKEN": f"tok-abcdefgh-{os.getpid()}",
     "GT_PROCESS_NAMES": "cat",
 }
 
@@ -58,8 +59,10 @@ def test_start_then_observe_running_with_identity_and_agent(city: City) -> None:
     assert "agent" not in observe(city, "mc-mayor")  # no names: not judged
 
 
-def test_terminal_carries_labels_name_and_no_environment(city: City) -> None:
-    assert city.start("mc-a", start_config()).code == 0
+def test_terminal_carries_labels_name_and_no_session_env(city: City) -> None:
+    secret = "sk-very-secret-value-1234"
+    config = start_config(env=dict(IDENTITY, ANTHROPIC_API_KEY=secret))
+    assert city.start("mc-a", config).code == 0
     [record] = [t for t in city.terminals() if t["labels"]["gc.session"] == "mc-a"]  # type: ignore[index]
     labels = record["labels"]
     assert isinstance(labels, dict)
@@ -69,24 +72,11 @@ def test_terminal_carries_labels_name_and_no_environment(city: City) -> None:
     params = [c.params for c in city.fake.calls if c.method == "terminal.run"]  # type: ignore[union-attr]
     assert params[0]["env"] == {"TERM": "xterm-256color"}
     assert params[0]["no_parent"] is True and params[0]["no_notify"] is True and params[0]["keep"] is False
-    assert IDENTITY["GC_INSTANCE_TOKEN"] not in json.dumps(params)
-
-
-@pytest.mark.parametrize(
-    "extra",
-    [
-        {"env": dict(IDENTITY, ANTHROPIC_API_KEY="sk-very-secret-value-1234")},
-        {"nudge": "first task"},
-        {"pre_start": ["true"]},
-        {"overlay_dir": "/tmp/overlay"},
-        {"session_live": ["true"]},
-    ],
-)
-def test_what_only_the_launcher_can_apply_is_refused(city: City, extra: Dict[str, Any]) -> None:
-    done = city.start("mc-a", start_config(**extra))
-    assert done.code == 1 and "cannot apply" in done.stderr
-    assert "sk-very-secret-value-1234" not in done.stderr
-    assert city.terminals() == []
+    assert secret not in json.dumps(params)
+    # The agent itself got the session environment.
+    env = city.fake.terminal_env(str(record["address"]))  # type: ignore[union-attr]
+    assert "HC_SCOPE" in env  # hc set it on the launcher; the launcher drops it before the agent
+    assert not list(city.spawn_dir.iterdir()), "the launcher unlinks its spawn file"
 
 
 def test_duplicate_start_fails_and_fresh_only_exits_73(city: City) -> None:
@@ -115,7 +105,7 @@ def test_stop_with_the_core_down_exits_1(city: City) -> None:
 
 
 def test_exited_program_reads_dead_and_its_screen_stays_readable(city: City) -> None:
-    assert city.start("mc-a", start_config(command="echo bye-now; exit 3")).code == 0
+    assert city.start("mc-a", start_config(command="echo bye-now; exit 3", lifecycle="one_shot")).code == 0
     wait_for(lambda: observe(city, "mc-a")["state"] == "dead")
     peeked = city.run("peek", "mc-a", "5")
     assert peeked.code == 0 and "bye-now" in peeked.text
@@ -137,6 +127,8 @@ def test_kept_terminal_after_holder_loss_is_a_dead_box(city: City) -> None:
     wait_for(lambda: city.terminals()[0]["pid"] is not None)  # the replacement shell
     assert observe(city, "mc-a")["state"] == "dead"
     assert city.run("is-running", "mc-a").text.strip() == "false"
+    assert city.run("nudge", "mc-a", stdin=b"hello").code == 0  # gone: nothing typed
+    assert city.fake.input_log(address) == []  # type: ignore[union-attr]
 
 
 def test_a_broken_live_record_is_recycled_by_a_plain_start(city: City) -> None:
@@ -153,7 +145,7 @@ def test_a_broken_live_record_is_recycled_by_a_plain_start(city: City) -> None:
 
 
 def test_finished_records_are_removed_before_a_new_incarnation(city: City) -> None:
-    assert city.start("mc-a", start_config(command="exit 0")).code == 0
+    assert city.start("mc-a", start_config(command="exit 0", lifecycle="one_shot")).code == 0
     wait_for(lambda: observe(city, "mc-a")["state"] == "dead")
     done = city.start("mc-a", start_config())
     assert done.code == 0, done.stderr
@@ -162,7 +154,7 @@ def test_finished_records_are_removed_before_a_new_incarnation(city: City) -> No
 
 def test_inventory_lists_each_name_once_with_the_newest_record(city: City) -> None:
     assert city.start("mc-a", start_config()).code == 0
-    assert city.start("mc-b", start_config(command="exit 0")).code == 0
+    assert city.start("mc-b", start_config(command="exit 0", lifecycle="one_shot")).code == 0
     wait_for(lambda: observe(city, "mc-b")["state"] == "dead")
     done = city.run("inventory")
     assert done.code == 0, done.stderr
@@ -221,7 +213,7 @@ def test_kill_object_rechecks_then_kills_exactly(city: City) -> None:
 
 
 def test_kill_object_on_a_corpse(city: City) -> None:
-    assert city.start("mc-a", start_config(command="exit 0")).code == 0
+    assert city.start("mc-a", start_config(command="exit 0", lifecycle="one_shot")).code == 0
     wait_for(lambda: observe(city, "mc-a")["state"] == "dead")
     obj = observe(city, "mc-a")["object"]
     done = city.run("kill-object", "mc-a", stdin=json.dumps({"object": obj, "mode": "corpse"}).encode())
@@ -273,6 +265,24 @@ def test_cities_on_one_state_root_are_separate(short_tmp: Path, home_dir: Path) 
         for made in (first, second):
             assert made.fake is not None
             made.fake.close()
+
+
+def test_observe_answers_within_4s_while_a_nudge_is_held(city: City) -> None:
+    from cityharness import in_thread
+
+    assert city.start("mc-a", start_config()).code == 0
+    address = city.address("mc-a")
+    city.fake.hold_input(address)  # type: ignore[union-attr]
+    results = []
+    thread = in_thread(lambda: results.append(city.run("nudge", "mc-a", stdin=b"held text", deadline_ms=8000)))
+    wait_for(lambda: city.fake.call_count("terminal.send") == 1)  # type: ignore[union-attr]
+    began = time.monotonic()
+    answer = observe(city, "mc-a", "cat")
+    assert time.monotonic() - began < 4.0
+    assert answer["state"] == "running"
+    city.fake.release_input(address)  # type: ignore[union-attr]
+    thread.join(timeout=15)
+    assert results and results[0].code == 0
 
 
 @pytest.mark.parametrize("op", ["observe", "inventory", "is-attached"])
@@ -357,7 +367,7 @@ def test_a_lost_run_reply_is_found_by_its_object_never_sent_again(city: City) ->
 def test_a_quick_command_whose_run_reply_was_lost_runs_once(city: City) -> None:
     marker = city.root / "ran"
     city.fake.drop_reply("terminal.run", after_exit=True)  # type: ignore[union-attr]
-    done = city.start("mc-a", start_config(command=f"echo once >> {marker}"))
+    done = city.start("mc-a", start_config(command=f"echo once >> {marker}", lifecycle="one_shot"))
     assert done.code == 0, done.stderr
     assert marker.read_text() == "once\n"
     assert observe(city, "mc-a")["state"] == "dead"
@@ -380,8 +390,36 @@ def test_a_failed_rollback_keeps_the_metadata_of_the_terminal_it_left(city: City
     city.fake.fail_next("terminal.kill", "unavailable")  # type: ignore[union-attr]
     done = city.start("mc-a", start_config())
     assert done.code == 1 and "cannot start 'mc-a'" in done.stderr
+    # hc refused the kill, so its record stays; the captured tree was killed
+    # anyway. The record keeps its identity: gc can still tell whose it is.
     answer = observe(city, "mc-a")
-    assert answer["state"] == "running" and answer["identity"] == IDENTITY
+    assert answer["state"] in ("running", "dead") and answer["identity"] == IDENTITY
+
+
+def test_a_rollback_that_may_leave_survivors_keeps_the_record_and_its_metadata(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError
+
+    class Blind(LinuxProcs):
+        """The process table cannot be read once the start labels its terminal."""
+
+        def snapshot(self) -> Dict[int, Proc]:
+            if city.fake.call_count("terminal.label"):  # type: ignore[union-attr]
+                raise ProcError("no /proc")
+            return LinuxProcs.snapshot(self)
+
+    readable = city.procs.inner
+    city.procs.inner = Blind()
+    city.fake.drop_reply("terminal.label")  # type: ignore[union-attr]
+    done = city.start("mc-a", start_config())
+    assert done.code == 1 and "cannot start 'mc-a'" in done.stderr
+    city.procs.inner = readable
+    # hc's kill ran, but the rollback could not tell that the tree died: the
+    # record stays, and so does the metadata whose token finds what is left.
+    assert len(city.terminals()) == 1
+    assert observe(city, "mc-a")["identity"] == IDENTITY
+    assert city.run("stop", "mc-a").code == 0
+    assert city.terminals() == []
+    assert list(Path(city.context().state_dir("meta")).iterdir()) == []
 
 
 def cancel_a_start(city: City) -> None:
@@ -501,3 +539,10 @@ def test_process_alive_without_a_process_table_cannot_tell(city: City) -> None:
     city.procs.inner = Broken()
     done = city.run("process-alive", "mc-a", stdin=b"cat\n")
     assert done.code == 0 and done.stdout == b"", "empty: gc reads it as alive, never dead"
+
+
+def test_an_agent_that_dies_during_startup_fails_the_start(city: City) -> None:
+    done = city.start("mc-a", start_config(command="echo oops; exit 3", process_names=["cat"]))
+    assert done.code == 1 and "exited during startup" in done.stderr
+    one_shot = city.start("mc-b", start_config(command="exit 0", lifecycle="one_shot"))
+    assert one_shot.code == 0, one_shot.stderr

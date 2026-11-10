@@ -46,17 +46,41 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
+_PUNCTUATION = "`\\[],=-.';/"
+_ALIASES = {"return": "enter", "escape": "esc", "del": "delete", "pgdn": "pagedown", "pgup": "pageup", "backslash": "\\"}
+_MODIFIERS = {"shift": 1, "ctrl": 2, "control": 2, "alt": 4, "meta": 4, "opt": 4, "super": 8, "cmd": 8}
+
+
 def key_bytes(key: str) -> Optional[bytes]:
-    """The bytes a key types into a pipe, or None for an unknown key (ctrl+c is a signal)."""
-    if key in KEY_BYTES:
-        return KEY_BYTES[key]
-    if key.startswith("ctrl+") and len(key) == 6 and key[5].isalpha():
-        return bytes([ord(key[5].lower()) & 0x1F])
-    if key.startswith("alt+") and len(key) == 5:
-        return b"\x1b" + key[4].encode()
-    if len(key) == 1 and key.isprintable():
-        return key.encode()
-    return None
+    """The bytes a key types into a pipe, or None for a key hc does not name.
+
+    Names follow hc ``crates/herdr-core/src/keys.rs``: the spec is
+    lower-cased, ``+`` joins modifiers to one key name (a letter, a digit,
+    one of hc's punctuation keys, or a named key). ``ctrl+c`` is a signal,
+    handled by the caller. The bytes are an approximation of what a terminal
+    sends; tests read the key log, not the bytes.
+    """
+    parts = key.lower().split("+")
+    name = parts.pop()
+    if not name:
+        return None
+    mods = 0
+    for mod in parts:
+        if mod not in _MODIFIERS:
+            return None
+        mods |= _MODIFIERS[mod]
+    name = _ALIASES.get(name, name)
+    if name in KEY_BYTES or name == "insert":
+        base = KEY_BYTES.get(name, b"\x1b[2~")
+    elif len(name) == 1 and (name.isascii() and (name.islower() or name.isdigit()) or name in _PUNCTUATION):
+        base = name.upper().encode() if mods & 1 and name.isalpha() else name.encode()
+    else:
+        return None
+    if mods & 2 and len(base) == 1 and base.isalpha():
+        base = bytes([base.lower()[0] & 0x1F])
+    if mods & 4:
+        base = b"\x1b" + base
+    return base
 
 
 def killpg(pid: int, sig: int) -> None:

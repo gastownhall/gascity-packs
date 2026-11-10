@@ -1,0 +1,31 @@
+# The in-agent `hc` of a city on runtime herdr-core, rendered into
+# R/pack/<city id>/shim/bin/{hc,herdr-core} (first on the agent's PATH). It
+# gives hc the city core's exact discovery tuple, and refuses while that core
+# is down instead of letting the hc CLI start a second core: one started from
+# an agent would run on the agent's environment and credentials.
+import json
+import os
+import socket
+import sys
+
+CONFIG = json.loads(@CONFIG@)
+
+
+def main() -> int:
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(1.0)
+    try:
+        probe.connect(CONFIG["env"]["HC_SOCKET"])
+    except OSError:
+        sys.stderr.write("hc: the city's herdr-core is down; gc restarts it\n")
+        return 1
+    finally:
+        probe.close()
+    env = dict(os.environ)
+    env.update(CONFIG["env"])
+    env.pop("HC_SCOPE", None)
+    os.execve(CONFIG["hc_bin"], [CONFIG["hc_bin"]] + sys.argv[1:], env)
+    return 1
+
+
+sys.exit(main())

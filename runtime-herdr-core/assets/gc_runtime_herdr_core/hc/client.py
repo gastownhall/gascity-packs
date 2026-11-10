@@ -340,27 +340,31 @@ class HcClient:
             raise HcUnreachable(method, f"no core answers its socket ({err.strerror or type(err).__name__})") from None
         return conn
 
-    def _arm(self, conn: socket.socket, method: str, ends: float, timeout: float, *, written: bool) -> None:
+    def _arm(
+        self, conn: socket.socket, method: str, ends: float, timeout: float, *, written: bool, partial: bool = False
+    ) -> None:
         # Socket waits run in POLL_INTERVAL_S steps so a cancel lands promptly.
         if self._cancel.cancelled:
-            raise HcCancelled(method, self._cancel.reason, written=written)
+            raise HcCancelled(method, self._cancel.reason, written=written, partial=partial)
         left = ends - time.monotonic()
         if left <= 0:
-            raise HcTimeout(method, f"timed out after {timeout:.1f}s", written=written)
+            raise HcTimeout(method, f"timed out after {timeout:.1f}s", written=written, partial=partial)
         conn.settimeout(min(POLL_INTERVAL_S, left))
 
     def _send_line(self, conn: socket.socket, method: str, line: bytes, ends: float, timeout: float) -> None:
         sent = 0
         while sent < len(line):
             # Once any byte is out, hc may have the request: it counts as written.
-            self._arm(conn, method, ends, timeout, written=sent > 0)
+            # Short of the JSON's last byte it is partial: hc parses none of it.
+            written, partial = sent > 0, 0 < sent < len(line) - 1
+            self._arm(conn, method, ends, timeout, written=written, partial=partial)
             try:
                 sent += conn.send(line[sent:])
             except socket.timeout:
                 continue
             except OSError:
                 raise HcConnectionLost(
-                    method, "the core closed the connection while the request was sent", written=sent > 0
+                    method, "the core closed the connection while the request was sent", written=written, partial=partial
                 ) from None
 
     def _read_line(self, conn: socket.socket, method: str, ends: float, timeout: float) -> bytes:

@@ -44,6 +44,7 @@ class CoreEnvProcs(ProcSource):
     def __init__(self, inner: ProcSource) -> None:
         self.inner = inner
         self.core_environ: Optional[Dict[str, str]] = None
+        self.killed: List[int] = []
 
     def snapshot(self) -> Dict[int, Proc]:
         return self.inner.snapshot()
@@ -52,6 +53,10 @@ class CoreEnvProcs(ProcSource):
         if pid == os.getpid():
             return None if self.core_environ is None else dict(self.core_environ)
         return self.inner.environ(pid)
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.killed.append(pid)
+        self.inner.kill(pid, sig)
 
 
 @dataclass
@@ -75,6 +80,14 @@ class City:
     procs: CoreEnvProcs
     fake: Optional[FakeHc] = None
     now_ms: List[int] = field(default_factory=list)
+
+    @property
+    def spawn_root(self) -> Path:
+        return Path(self.env["GC_HC_TEST_SPAWN_ROOT"])
+
+    @property
+    def spawn_dir(self) -> Path:
+        return self.spawn_root / self.paths.city_id
 
     def context(self, *, deadline_s: float = 30.0, extra: Optional[Mapping[str, str]] = None) -> OpContext:
         env = dict(self.env)
@@ -171,6 +184,7 @@ def make_city(tmp: Path, home: Path, *, city_path: str = "/cities/test", procs: 
         "GC_EXEC_CITY_PATH": city_path,
         "GC_HC_TEST": "1",
         "GC_HC_TEST_BIN": launcher,
+        "GC_HC_TEST_SPAWN_ROOT": str(tmp / "spawn"),
     }
     paths = resolve_paths(env, machine=MACHINE, home=lambda: str(home))
     wrapped = CoreEnvProcs(procs or LinuxProcs())

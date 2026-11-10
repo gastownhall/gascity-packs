@@ -6,6 +6,12 @@ when nothing was written nothing can have been typed, but once a request may
 have reached hc, hc may still act on it. A ``send`` is typed only once nobody
 has typed for about 3 s (hc.openrpc.json ``terminal.send``), however long that
 takes, so a send whose reply was lost may still be typed later.
+
+A request cut short (:attr:`HcError.partial`) was written, but hc acts on
+none of it: hc parses a request only as a whole line, and no prefix of one
+parses. A request short only of its newline is whole, as hc runs the last
+line it reads when the connection ends (``crates/herdr-core/src/server.rs``,
+``connection``).
 """
 
 from __future__ import annotations
@@ -50,10 +56,11 @@ KNOWN_ERROR_KINDS: Final[FrozenSet[str]] = frozenset(get_args(ErrorKind))
 class HcError(Exception):
     """A call to the core failed."""
 
-    def __init__(self, method: str, message: str, *, written: bool) -> None:
+    def __init__(self, method: str, message: str, *, written: bool, partial: bool = False) -> None:
         Exception.__init__(self, f"{method}: {message}")
         self.method = method
         self.written = written  # whether the request may have reached the core
+        self.partial = partial  # whether only part of it did, which hc never acts on
 
 
 class HcUnreachable(HcError):
@@ -100,6 +107,6 @@ class HcRpcError(HcError):
 class HcCancelled(HcError, Cancelled):
     """The op was canceled while the call was in flight."""
 
-    def __init__(self, method: str, reason: str, *, written: bool) -> None:
-        HcError.__init__(self, method, f"canceled ({reason})", written=written)
+    def __init__(self, method: str, reason: str, *, written: bool, partial: bool = False) -> None:
+        HcError.__init__(self, method, f"canceled ({reason})", written=written, partial=partial)
         self.reason = reason

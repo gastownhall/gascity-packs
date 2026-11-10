@@ -9,8 +9,9 @@ table. The test-only overrides (``GC_HC_TEST_*``) are honoured only under
 ``GC_HC_TEST=1``.
 
 The pack's state for a city lives in ``R/pack/<city id>/``: ``meta/`` (one
-file per incarnation), ``locks/``, ``outbox/``, ``activity.json`` and
-``kick.json``, all private to the user.
+file per incarnation), ``locks/``, ``shim/bin/`` (the in-agent ``hc``),
+``activity.json``, ``userscope.json`` and ``kick.json``, all private to the
+user.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Final, Mapping, Optional
 
 from ..hc.client import CallTimeouts, CoreEndpoint, HcClient
@@ -96,20 +97,25 @@ class OpContext:
 
     @property
     def shim_dir(self) -> str:
-        return os.path.join(self.paths.state_root, SHIM_SUBDIR)
+        """The city's in-agent ``hc`` shims: one set per city, as each holds its own core's tuple."""
+        return os.path.join(self.pack_state, SHIM_SUBDIR)
 
     def hc_binary(self) -> str:
         return resolve_hc_binary(self.env, self.pack_state, home=self.host.home)
 
     # --- hc ------------------------------------------------------------------------
 
-    def client(self, *, read: bool = False, probe: bool = False) -> HcClient:
-        """An hc client for this op, within its deadline and cancel token."""
+    def client(self, *, read: bool = False, probe: bool = False, send_reserve: Optional[float] = None) -> HcClient:
+        """An hc client for this op, within its deadline and cancel token;
+        ``send_reserve`` overrides how long before the deadline a ``send`` stops waiting."""
+        timeouts = CallTimeouts.for_op(read=read, probe=probe)
+        if send_reserve is not None:
+            timeouts = replace(timeouts, send_reserve=send_reserve)
         return HcClient(
             self._endpoint,
             deadline=self.request.deadline,
             cancel=self.request.cancel,
-            timeouts=CallTimeouts.for_op(read=read, probe=probe),
+            timeouts=timeouts,
             inject_unavailable=self.fault,
         )
 
