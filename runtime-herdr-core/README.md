@@ -201,7 +201,16 @@ runtime-herdr-core/
   user's own shells and editors, or a whole tmux-runtime city when a gc
   command run in the box founded it. A herdr-core box never runs inside
   tmux; a tmux server the box itself runs under (hc's core started from a
-  pane) fences none of the box's own tree. Other live sessions' trees are
+  pane) fences none of the box's own tree. As in gc, the fence matches
+  tmux's exact names and covers only what is still under a server: a
+  process that detaches from a pane of a server founded from a box (an
+  `ssh -fN`, a `nohup` job whose shell exited, an agent such as `ssh-agent`
+  started there) is re-parented out of it, still carries the token and
+  dies; a renamed tmux (`tmux-next`) or a GNU `screen` server founded from
+  a box is not fenced and dies with every window it runs; and work an
+  agent runs under tmux (`tmux new -d 'make'`, a `tmux -D` server outside
+  its process group) is fenced, so it outlives the box's stop. Other live
+  sessions' trees are
   protected. Nothing under a process that
   cannot be read is signalled (an unreadable process may be
   infrastructure), nor is one that turns unreadable before its signal (its

@@ -220,11 +220,20 @@ def _hc_kill(client: HcClient, record: Terminal) -> Optional[HcError]:
     return None
 
 
-def _never_killed(snapshot: Snapshot, record: Terminal, protected: Iterable[Terminal]) -> Set[int]:
+def _own_root(snapshot: Snapshot, record: Terminal) -> Optional[Proc]:
+    """The live record's program as ``snapshot`` shows it, if any."""
+    return snapshot.get(record.pid) if record.pid is not None and record.is_live else None
+
+
+def _never_killed(snapshot: Snapshot, record: Terminal, protected: Iterable[Terminal], own: Optional[Proc]) -> Set[int]:
     """Infrastructure (city infrastructure and tmux, each with its whole
-    subtree), this process, and every other intact incarnation's tree."""
-    own = record.pid if record.is_live else None
-    keep: Set[int] = set(fenced_pids(snapshot, own=own)) | {os.getpid()}
+    subtree), this process, and every other intact incarnation's tree.
+    ``own`` is the record's program as first captured: a tmux server above
+    it fences none of its tree while its pid still runs that process (a
+    pid reused since, a tmux pane's, is fenced as every pane is)."""
+    current = None if own is None else snapshot.get(own.pid)
+    same = own is not None and current is not None and bool(own.start) and current.start == own.start
+    keep: Set[int] = set(fenced_pids(snapshot, own=own.pid if same and own is not None else None)) | {os.getpid()}
     for other in protected:
         if other.address != record.address and other.pid is not None and is_intact(other):
             keep.update(p.pid for p in subtree(snapshot, other.pid))
@@ -243,7 +252,9 @@ def _reap(ctx: OpContext, snapshot: Snapshot, captured: List[Proc], keep: Set[in
     return problems
 
 
-def _rescan(ctx: OpContext, record: Terminal, token: str, protected: List[Terminal], wait: Callable[[float], None]) -> List[str]:
+def _rescan(
+    ctx: OpContext, record: Terminal, own: Optional[Proc], token: str, protected: List[Terminal], wait: Callable[[float], None]
+) -> List[str]:
     """Kill what carries ``token`` now, fenced afresh as the first kill was,
     until a scan finds nothing; returns what may survive, as does a carrier
     still found after :data:`RESCANS` kills."""
@@ -253,7 +264,7 @@ def _rescan(ctx: OpContext, record: Terminal, token: str, protected: List[Termin
             snapshot = ctx.host.procs.snapshot()
         except ProcError as err:
             return [f"cannot read the process table ({err})"]
-        keep = _never_killed(snapshot, record, protected)
+        keep = _never_killed(snapshot, record, protected, own)
         found = [p for p in scan_environ(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, token) if p.pid not in keep]
         if not found:
             return []
@@ -295,13 +306,14 @@ def kill_incarnation(
         snapshot = None
         problems.append(f"cannot read the process table ({err})")
     captured = [] if snapshot is None else _capture(ctx, record, token, snapshot)
+    own = None if snapshot is None else _own_root(snapshot, record)
     kill_error = _hc_kill(client, record)
     if snapshot is not None:
-        problems += _reap(ctx, snapshot, captured, _never_killed(snapshot, record, others), wait)
+        problems += _reap(ctx, snapshot, captured, _never_killed(snapshot, record, others, own), wait)
     if kill_error is not None:
         raise kill_error  # the tree is dead either way; the record stays for the next try
     if not problems and token:
-        problems = _rescan(ctx, record, token, others, wait)
+        problems = _rescan(ctx, record, own, token, others, wait)
     if not problems:
         _remove_record(client if remover is None else remover(), record, wait)
     return problems
@@ -870,7 +882,8 @@ def _reap_trees(ctx: OpContext, targets: List[Terminal]) -> None:
         started = ctx.host.procs.started_ms(snapshot[record.pid])
         if started is None or started > record.created_ms + ROOT_START_SLACK_MS:
             continue
-        _reap(ctx, snapshot, subtree(snapshot, record.pid), _never_killed(snapshot, record, ()), time.sleep)
+        keep = _never_killed(snapshot, record, (), _own_root(snapshot, record))
+        _reap(ctx, snapshot, subtree(snapshot, record.pid), keep, time.sleep)
 
 
 def _await_agent(ctx: OpContext, record: Terminal, cfg: StartConfig) -> Optional[str]:

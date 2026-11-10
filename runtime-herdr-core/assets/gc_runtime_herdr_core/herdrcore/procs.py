@@ -31,7 +31,11 @@ watchdog, bd's database proxy, gc's nudge poller), and tmux follows its
 session's root, and never signals one): a tmux server copies its founder's
 environment, so one founded from inside a session carries that session's
 identity into every pane it later runs, the user's own shells and editors
-and, for a server a gc command founded, a whole tmux-runtime city.
+and, for a server a gc command founded, a whole tmux-runtime city. Like
+gc's, the fence is by tmux's exact names and covers only what still runs
+under a server: a process detached from a pane (re-parented to init), a
+renamed tmux (``tmux-next``) or a GNU ``screen`` server is not fenced, and
+work an agent runs under tmux is, so it outlives the session's stop.
 """
 
 from __future__ import annotations

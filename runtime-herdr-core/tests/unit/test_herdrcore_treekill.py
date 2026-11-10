@@ -227,6 +227,32 @@ def test_stop_never_signals_a_tmux_server_or_client_carrying_the_token(city: Cit
     assert client.calls == [("kill", "t1"), ("remove", "t1")]
 
 
+def test_a_recycled_box_pid_inside_tmux_keeps_the_tmux_fence(city: City, tmp_path: Path) -> None:
+    """The box's pid, once its agent is dead, may be reused by a pane of a
+    token-carrying tmux server: the rescans fence it like every tmux pane,
+    as it is not the process the box ran."""
+    tok = token("tmux-reuse")
+    carry = {"GC_INSTANCE_TOKEN": tok}
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 150, ppid=1, argv=["herdr-core", "server"])
+    add_proc(root, 200, ppid=150, argv=["cat"], env=carry, start=1000)  # the box's agent
+    add_proc(root, 300, ppid=1, argv=["tmux", "new", "-d"], comm="tmux: server", env=carry)
+
+    class Reusing(_RecordingProcs):
+        def kill(self, pid: int, sig: int) -> None:
+            _RecordingProcs.kill(self, pid, sig)
+            if pid == 200:  # a new pane of the server gets the dead agent's pid
+                add_proc(root, 200, ppid=300, argv=["-bash"], env=carry, start=5000)
+
+    source = Reusing(root)
+    city.procs.inner = source
+    meta = Meta(session="mc-a").with_value(INSTANCE_TOKEN_KEY, tok)
+    problems = kill_incarnation(city.context(), cast(HcClient, _RecordingClient()), _live_box(200), meta, pause=lambda _: None)
+    assert problems == []
+    assert source.signals == [(200, signal.SIGTERM)], source.signals
+
+
 def test_a_rollback_reads_the_record_afresh_before_it_captures_a_tree(city: City, tmp_path: Path) -> None:
     """run's reply may be seconds old by the rollback: a pid that ended since
     may run an unrelated process, whose tree is never captured."""
