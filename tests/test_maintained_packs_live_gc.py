@@ -50,6 +50,7 @@ from gc_live_city import (
 MAINTAINED_PACKS = (
     "oversight-rig",
     "pr-pipeline",
+    "runtime-herdr-core",
     "slack-channel",
     "slack-full",
     "slack-mini",
@@ -63,6 +64,11 @@ MAINTAINED_PACKS = (
 EXPECTED_DOCTOR_DELTA: dict[str, frozenset[str]] = {
     "oversight-rig": frozenset(),
     "pr-pipeline": frozenset(),
+    # The pack runs herdr-core at a pinned version and never uses one on PATH,
+    # so a fresh install meets `hc-binary` until the user runs
+    # `gc herdr-core install`, which is the fix the message names. Its other
+    # checks are quiet in a city with no herdr-core sessions.
+    "runtime-herdr-core": frozenset({"runtime-herdr-core:hc-binary"}),
     "slack-channel": frozenset(),
     # Both of these are the correct messages for a fresh install, and both come
     # from checks only `slack-full` ships. `binaries`: the pack ships its Slack

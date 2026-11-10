@@ -2,6 +2,8 @@
 
     gc-runtime-herdr-core <op> [args...]   one RPP op, per-op transport
     gc-runtime-herdr-core x-version         the pack's name and version (JSON)
+    gc-runtime-herdr-core x-doctor <check>  one of the pack's gc doctor checks
+    gc-runtime-herdr-core x-command <name>  one of the pack's gc commands
 
 This is the only module that reads the process environment: it hands a
 snapshot to the per-op runner, which builds each op's request from it.
@@ -50,6 +52,14 @@ def main(argv: Sequence[str], *, started: float) -> int:
     """Run the command ``argv`` names; ``started`` is when the process began."""
     if len(argv) > 1 and argv[1] == "x-version":
         return _version()
+    if len(argv) > 1 and argv[1] == "x-doctor":
+        from .herdrcore import doctor
+
+        return doctor.main(argv[2:], os.environ, sys.executable, sys.stdout)
+    if len(argv) > 1 and argv[1] == "x-command":
+        from .herdrcore import commands
+
+        return commands.main(argv[2:], os.environ, sys.executable, sys.stdout, sys.stderr)
     return run_per_op(
         argv,
         os.environ,

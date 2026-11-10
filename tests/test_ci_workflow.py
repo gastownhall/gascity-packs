@@ -124,3 +124,27 @@ def test_runtime_herdr_core_is_in_the_lint_loop() -> None:
     packs = loop.split("for pack in", 1)[1].split("; do", 1)[0].replace("\\", " ").split()
     assert "runtime-herdr-core" in packs, f"gc lint loop: {packs}"
 
+
+
+def test_runtime_herdr_core_guards_infrastructure_argv_drift_at_the_conformance_pin() -> None:
+    workflow = yaml.safe_load(
+        REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = {step.get("name"): step for step in workflow["jobs"]["runtime-herdr-core"]["steps"]}
+    step = steps.get("Infrastructure argv matches the pinned gc")
+    assert step is not None, f"runtime-herdr-core lost its drift guard; steps: {sorted(steps)}"
+    assert "continue-on-error" not in step and "if" not in step, "the drift guard must block merges on every leg"
+    conformance = steps["RPP conformance against fake-hc"]
+    assert step["env"]["GASCITY_PIN"] == conformance["env"]["GASCITY_PIN"], "guard and conformance use one gc pin"
+    active = [
+        line.strip()
+        for line in step["run"].splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert any('github.com/gastownhall/gascity@${GASCITY_PIN}' in line for line in active)
+    assert any(
+        line.startswith("python tests/infra_argv_drift.py ")
+        and line.endswith('/internal/runtime/proctable/infrastructure_argv.go"')
+        for line in active
+    ), active
+    assert not any("||" in line for line in active), "drift must fail the job"
