@@ -67,8 +67,12 @@ class DoctorCity:
     listeners: List[socket.socket] = field(default_factory=list)
 
     @property
+    def install_root(self) -> Path:
+        return self.home / ".local/share/gc-runtime-herdr-core/hc"
+
+    @property
     def hc_bin(self) -> Path:
-        return self.home / ".local/share/gc-runtime-herdr-core/hc" / str(load_pin().version) / "herdr-core"
+        return self.install_root / str(load_pin().version) / "herdr-core"
 
     def run(self, check: str) -> Tuple[int, List[str]]:
         done = subprocess.run(
@@ -110,6 +114,8 @@ class DoctorCity:
         return core_env(ctx, str(self.hc_bin))
 
     def start_core(self, *, version: str = "0.1.19", environ: Optional[Dict[str, str]] = None, exe: Optional[str] = None, cgroup: Optional[str] = None) -> FakeHc:
+        """Serve the city's socket with a core of ``version`` that runs, by
+        default, the pack's install of that version."""
         ensure_dirs(self.paths)
         self.fake = FakeHc(self.paths.socket, version=version)
         self.fake.start()
@@ -119,7 +125,7 @@ class DoctorCity:
             ppid=1,
             argv=[str(self.hc_bin), "serve"],
             env=self.expected_core_env() if environ is None else environ,
-            exe=exe or str(self.hc_bin),
+            exe=exe or str(self.install_root / version / "herdr-core"),
             cgroup=cgroup,
         )
         return self.fake
@@ -278,6 +284,7 @@ def test_hc_core_errors_on_a_crash_looping_core(dc: DoctorCity) -> None:
 
 def test_hc_core_passes_for_the_packs_own_pinned_core(dc: DoctorCity) -> None:
     dc.install_pinned()
+    dc.run_city()
     dc.start_core()
     code, lines = dc.run("hc-core")
     assert (code, lines[0]) == (0, "the city's core runs herdr-core 0.1.19"), lines
@@ -285,6 +292,7 @@ def test_hc_core_passes_for_the_packs_own_pinned_core(dc: DoctorCity) -> None:
 
 def test_hc_core_warns_when_the_core_differs_from_the_pin(dc: DoctorCity) -> None:
     dc.install_pinned()
+    dc.run_city()
     dc.start_core(version="0.1.20")
     code, lines = dc.run("hc-core")
     assert code == 1
@@ -292,8 +300,49 @@ def test_hc_core_warns_when_the_core_differs_from_the_pin(dc: DoctorCity) -> Non
     assert any("not a tested version" in line for line in lines)
 
 
+def test_hc_core_warns_on_a_core_still_running_a_previous_install(dc: DoctorCity) -> None:
+    # Between `install` of a new pin and `upgrade`, the core runs the build
+    # the pack installed before: a warning naming upgrade, never an error.
+    dc.install_pinned()
+    dc.run_city()
+    dc.start_core(version="0.1.20", exe=str(dc.install_root / "0.1.20" / "herdr-core") + " (deleted)")
+    code, lines = dc.run("hc-core")
+    assert code == 1, lines
+    assert "gc herdr-core upgrade" in lines[0]
+    assert not any("not the pack's" in line for line in lines)
+
+
+def test_hc_core_errors_on_a_core_running_from_outside_the_install_root(dc: DoctorCity) -> None:
+    dc.install_pinned()
+    dc.run_city()
+    dc.start_core(exe=str(dc.tmp / "elsewhere" / "0.1.19" / "herdr-core"))
+    code, lines = dc.run("hc-core")
+    assert code == 2 and "not the pack's" in lines[0] and "restart-core" in lines[0]
+
+
+def test_hc_core_warns_on_a_core_running_for_a_stopped_city(dc: DoctorCity) -> None:
+    dc.install_pinned()
+    dc.start_core()
+    code, lines = dc.run("hc-core")
+    assert code == 1
+    assert lines[0].startswith(f"the city is stopped but its core still runs (pid {CORE_PID}, ")
+
+
+def test_hc_core_names_the_user_manager_only_on_linux(dc: DoctorCity) -> None:
+    dc.install_pinned()
+    dc.run_city()
+    dc.env["GC_HC_TEST_RUNTIME_DIR"] = str(dc.tmp / "no-such-run-dir")
+    dc.start_core()
+    ctx = admin_context(dc.env, admin_host(dc.env, sys.executable), name="t", deadline_s=5, cancel=CancelToken())
+    linux = doctor.check_core(ctx, linger_dir=dc.env["GC_HC_TEST_LINGER_DIR"], platform="linux")
+    assert linux.status == doctor.Status.WARNING and linux.message.startswith("no systemd user manager")
+    darwin = doctor.check_core(ctx, linger_dir=dc.env["GC_HC_TEST_LINGER_DIR"], platform="darwin")
+    assert darwin.status == doctor.Status.OK, darwin.render()
+
+
 def test_hc_core_errors_on_a_core_older_than_the_minimum(dc: DoctorCity) -> None:
     dc.install_pinned()
+    dc.run_city()
     dc.start_core(version="0.1.18")
     code, lines = dc.run("hc-core")
     assert code == 2 and "older than the minimum" in lines[0] and "gc herdr-core upgrade" in lines[0]
@@ -319,6 +368,7 @@ def test_hc_core_errors_on_a_core_running_another_binary(dc: DoctorCity) -> None
 
 def test_hc_core_hints_at_lingering_and_the_user_manager(dc: DoctorCity) -> None:
     dc.install_pinned()
+    dc.run_city()
     for flag in Path(dc.env["GC_HC_TEST_LINGER_DIR"]).iterdir():
         flag.unlink()
     dc.start_core()
@@ -410,12 +460,42 @@ def test_scope_hygiene_attributes_the_supervisor_holding_the_citys_controller_so
 # --- hc-state-perms ---------------------------------------------------------------------
 
 
+def write_terminals(dc: DoctorCity, mode: int) -> Path:
+    """terminals.json as hc writes it (``std::fs::write``: 0666 less the umask)."""
+    path = Path(dc.paths.state_dir) / "terminals.json"
+    path.write_text("{}")
+    path.chmod(mode)
+    return path
+
+
 def test_state_perms_flags_a_readable_hc_state_directory(dc: DoctorCity) -> None:
     assert dc.run("hc-state-perms")[0] == 0
     ensure_dirs(dc.paths)
+    write_terminals(dc, 0o644)
     os.chmod(dc.paths.state_dir, 0o755)
     code, lines = dc.run("hc-state-perms")
-    assert code == 2 and "readable by others" in lines[0]
+    assert code == 2 and "open to others" in lines[0]
+    # R itself is still 0700: nobody else reaches the file.
+    assert not any("terminals.json" in line for line in lines)
+    for part in (dc.paths.state_root, os.path.dirname(dc.paths.state_dir)):
+        os.chmod(part, 0o755)
+    code, lines = dc.run("hc-state-perms")
+    assert code == 2 and any("terminals.json is readable by others (mode 644)" in line for line in lines)
+
+
+def test_state_perms_accepts_hcs_umask_file_inside_private_directories(dc: DoctorCity) -> None:
+    ensure_dirs(dc.paths)
+    write_terminals(dc, 0o644)
+    code, lines = dc.run("hc-state-perms")
+    assert (code, lines[0]) == (0, "hc's state is private"), lines
+
+
+def test_state_perms_flags_a_state_directory_others_can_traverse(dc: DoctorCity) -> None:
+    ensure_dirs(dc.paths)
+    write_terminals(dc, 0o600)
+    os.chmod(os.path.dirname(dc.paths.state_dir), 0o711)
+    code, lines = dc.run("hc-state-perms")
+    assert code == 2 and "open to others (mode 711)" in lines[0]
 
 
 # --- the budget ------------------------------------------------------------------------

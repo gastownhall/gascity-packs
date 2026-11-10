@@ -24,6 +24,7 @@ import os
 import pwd
 import signal
 import stat
+import sys
 from enum import IntEnum
 from types import FrameType
 from typing import Callable, Dict, Final, List, Mapping, Optional, Sequence, Set, TextIO, Tuple
@@ -33,7 +34,7 @@ from ..hc.version import Version
 from ..rpp.cancel import CancelToken
 from ..rpp.statedir import DOCTOR_CITY_ENV, StateDirError
 from .admin import admin_context, admin_host, city_running, controller_socket, lock_socket
-from .config import ConfigError, install_root, pinned_binary, read_pack_config
+from .config import BINARY_NAME, ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
 from .core import FOREIGN_FIX, KICK_BACKOFF_MS, core_env, foreign_reason, read_kick
 from .infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB, infrastructure_prefix
@@ -153,7 +154,31 @@ def _supervisor_cgroup(procs: ProcSource, snapshot: Snapshot) -> Optional[str]:
     return None
 
 
-def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR) -> Report:
+DELETED_SUFFIX: Final = " (deleted)"
+
+
+def _exe_problem(exe: str, root: str, operator_bin: Optional[str]) -> Optional[str]:
+    """Why the core's executable ``exe`` is not one the pack runs, or None.
+
+    A pinned city's core may run any version the pack installed (the
+    version-vs-pin warning covers a core an ``upgrade`` has not yet handed
+    over); only a binary outside the install root is out of band. A city
+    driving the operator's ``hc_bin`` must run exactly that file.
+    """
+    if exe.endswith(DELETED_SUFFIX):
+        exe = exe[: -len(DELETED_SUFFIX)]
+    running = os.path.realpath(exe)
+    if operator_bin is not None:
+        if running == os.path.realpath(operator_bin):
+            return None
+        return f"the core runs {exe}, not the pack's {operator_bin} (updated or started outside the pack): {RESTART_FIX}"
+    version_dir = os.path.dirname(running)
+    if os.path.basename(running) == BINARY_NAME and os.path.dirname(version_dir) == os.path.realpath(root):
+        return None
+    return f"the core runs {exe}, not the pack's build under {root} (updated or started outside the pack): {RESTART_FIX}"
+
+
+def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR, platform: str = sys.platform) -> Report:
     """The city's core: reachable while the city runs, gated, the pack's own."""
     report = Report()
     try:
@@ -165,6 +190,9 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR) -> Report:
         hc_bin: Optional[str] = ctx.hc_binary()
     except ConfigError:
         hc_bin = None
+    root = install_root(ctx.host.home)
+    pinned = pinned_binary(ctx.host.home, str(pin.version))
+    operator_bin = hc_bin if hc_bin is not None and os.path.realpath(hc_bin) != os.path.realpath(pinned) else None
     running = city_running(ctx.env)
     other = lock_socket(ctx)
     if other is not None:
@@ -206,7 +234,7 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR) -> Report:
         return report
     if status.installed_by:
         report.note(Status.WARNING, f"the core's hc came from {status.installed_by}, which updates it outside the pin")
-    expected = core_env(ctx, hc_bin or pinned_binary(ctx.host.home, str(pin.version)))
+    expected = core_env(ctx, hc_bin or pinned)
     procs = ctx.host.procs
     try:
         actual = procs.environ(status.pid)
@@ -220,19 +248,11 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR) -> Report:
     elif report.status < Status.ERROR:
         report.note(Status.ERROR, f"cannot read the core's environment (pid {status.pid}); {FOREIGN_FIX}")
     exe = procs.exe(status.pid)
-    if exe and hc_bin and os.path.realpath(exe.replace(" (deleted)", "")) != os.path.realpath(hc_bin):
-        report.note(Status.ERROR, f"the core runs {exe}, not the pack's {hc_bin} (updated or started outside the pack): {RESTART_FIX}")
-    runtime_dir = expected.get("XDG_RUNTIME_DIR", "")
-    if not runtime_dir:
-        report.note(
-            Status.WARNING,
-            "no systemd user manager: the core lives only as long as whoever started it, and agents are not re-scoped out of hc's holders",
-        )
-    elif not os.path.exists(os.path.join(linger_dir, _user_name())):
-        report.note(
-            Status.WARNING,
-            "lingering is off: the user manager, the core and every agent stop when your last login ends (`loginctl enable-linger`)",
-        )
+    problem = _exe_problem(exe, root, operator_bin) if exe else None
+    if problem is not None:
+        report.note(Status.ERROR, problem)
+    if platform.startswith("linux"):
+        _user_manager_hints(report, expected.get("XDG_RUNTIME_DIR", ""), linger_dir)
     try:
         snapshot = procs.snapshot()
     except ProcError:
@@ -242,8 +262,29 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR) -> Report:
     if service and core_group and (core_group == service or core_group.startswith(service + "/")):
         report.note(Status.WARNING, f"the core runs inside gc's service cgroup ({service}): restarting that service ends every agent")
     if not running:
-        report.notes.append("the city is stopped; its core stays up until it is stopped")
+        report.note(
+            Status.WARNING,
+            f"the city is stopped but its core still runs (pid {status.pid}, {status.live} live terminal(s)): "
+            "a read of one of the city's sessions starts it again after `gc stop`",
+        )
     return report
+
+
+def _user_manager_hints(report: Report, runtime_dir: str, linger_dir: str) -> None:
+    """Linux only: hc places its core under the systemd user manager there
+    (macOS uses launchd)."""
+    if not runtime_dir:
+        report.note(
+            Status.WARNING,
+            "no systemd user manager: the core lives only as long as whoever started it, and agents are not re-scoped out of hc's holders",
+        )
+    elif os.path.exists(os.path.join(linger_dir, _user_name())):
+        report.notes.append("lingering is on (hc enables it): the core and its agents outlive your logins")
+    else:
+        report.note(
+            Status.WARNING,
+            "lingering is off: the user manager, the core and every agent stop when your last login ends (`loginctl enable-linger`)",
+        )
 
 
 # --- hc-scope-hygiene ---------------------------------------------------------------------
@@ -397,26 +438,47 @@ def check_scope_hygiene(ctx: OpContext) -> Report:
 # --- hc-state-perms --------------------------------------------------------------------
 
 
+TERMINALS_FILE: Final = "terminals.json"
+OTHERS: Final = 0o077
+OTHERS_TRAVERSE: Final = 0o011
+OTHERS_READ: Final = 0o044
+
+
 def check_state_perms(ctx: OpContext) -> Report:
-    """hc's state for the city (terminal records, saved screens) is private."""
+    """hc's state for the city (terminal records, saved screens) is private.
+
+    The directories must be this user's 0700 directories. hc writes
+    ``terminals.json`` with ``std::fs::write`` (0666 less the umask, so 0644
+    on most hosts) and rewrites it on every save, so the file is judged by
+    its exposure: readable by others only when its directories let them in.
+    """
     report = Report()
-    targets = [ctx.paths.state_root, os.path.dirname(ctx.paths.state_dir), ctx.paths.state_dir, os.path.join(ctx.paths.state_dir, "terminals.json")]
+    directories = [ctx.paths.state_root, os.path.dirname(ctx.paths.state_dir), ctx.paths.state_dir]
     found = False
-    for path in targets:
+    traversable = True
+    for path in [*directories, os.path.join(ctx.paths.state_dir, TERMINALS_FILE)]:
         try:
             st = os.lstat(path)
         except FileNotFoundError:
+            traversable = False
             continue
         except OSError as err:
             report.note(Status.ERROR, f"cannot read {path}: {err.strerror}")
+            traversable = False
             continue
         found = True
+        mode = stat.S_IMODE(st.st_mode)
         if stat.S_ISLNK(st.st_mode):
             report.note(Status.ERROR, f"{path} is a symlink")
+            traversable = False
         elif st.st_uid != os.getuid():
             report.note(Status.ERROR, f"{path} is owned by uid {st.st_uid}")
-        elif stat.S_IMODE(st.st_mode) & 0o077:
-            report.note(Status.ERROR, f"{path} is readable by others (mode {stat.S_IMODE(st.st_mode):o})")
+        elif path in directories:
+            if mode & OTHERS:
+                report.note(Status.ERROR, f"{path} is open to others (mode {mode:o}): it must be 0700")
+            traversable = traversable and bool(mode & OTHERS_TRAVERSE)
+        elif mode & OTHERS_READ and traversable:
+            report.note(Status.ERROR, f"{path} is readable by others (mode {mode:o})")
     if report.status == Status.OK:
         report.note(Status.OK, "hc's state is private" if found else "no hc state yet")
         report.notes.append(f"hc keeps terminal records and screens in plaintext under {ctx.paths.state_dir}")
