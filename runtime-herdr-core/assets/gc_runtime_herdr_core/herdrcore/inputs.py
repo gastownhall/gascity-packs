@@ -9,10 +9,11 @@ box that is gone, exits 0 (best-effort input, exec-session-provider.md
 * hc refused (``blocked``: the agent waits on its own question; ``unavailable``:
   the terminal is still starting or waits for a shell; a failed
   precondition);
-* the request never reached hc (the core is down, or refused on its hello);
+* the request never reached hc (the core is down, or refused on its hello),
+  or a ``nudge``'s reached it cut short (hc acts on no part of a request);
 * a tmux key with no hc spelling.
 
-A ``nudge`` whose request reached hc is delivered, like tmux's
+A ``nudge`` whose request reached hc whole is delivered, like tmux's
 fire-and-forget ``send-keys``: hc types a send only once a person stops
 typing and finishes it after the pack stops waiting, so one it still holds
 at the op's deadline, or whose reply was lost, is typed later, and gc must
@@ -172,11 +173,12 @@ def deliver(
 ) -> Delivery:
     """Send ``text`` to ``record``.
 
-    A send whose request reached hc is delivered unless hc answers that
-    nothing was typed: hc finishes a send after its client stops waiting,
-    so one it still holds for a person's pause, or whose reply was lost, is
-    typed; and answering it as a failure would make gc's queue send it
-    again. Only a send never written, or one hc refused, is not sent."""
+    A send whose request reached hc whole is delivered unless hc answers
+    that nothing was typed: hc finishes a send after its client stops
+    waiting, so one it still holds for a person's pause, or whose reply was
+    lost, is typed; and answering it as a failure would make gc's queue
+    send it again. Only a send never written, one cut short (hc acts on no
+    part of a request), or one hc refused, is not sent."""
     obj = object_of(record)
     while True:
         try:
@@ -187,7 +189,7 @@ def deliver(
                 continue
             return _refused(err)
         except HcError as err:
-            if not err.written:
+            if not err.written or err.partial:
                 return Delivery("not_sent", f"not sent: {err}")
         if obj is not None:
             activity.note_input(ctx, obj)

@@ -7,7 +7,7 @@ history: reading a full-screen program's history scrolls it by sending it
 input.
 
 ``copy-to`` copies a file or directory into the session's work directory,
-never outside it.
+never outside it: nothing is written through a symlink (see ``staging``).
 """
 
 from __future__ import annotations
@@ -57,11 +57,8 @@ def op_copy_to(ctx: OpContext) -> OpResult:
     work_dir = meta.work_dir if meta is not None and meta.work_dir else record.cwd
     if not os.path.isabs(work_dir):
         raise OpError(f"{name!r} has no absolute work directory")
-    dst = os.path.normpath(os.path.join(work_dir, rel)) if rel else work_dir
-    if dst != work_dir and not dst.startswith(work_dir.rstrip(os.sep) + os.sep):
-        raise OpError("copy-to: the destination leaves the work directory")
     try:
-        stage_path(src, dst)
+        stage_path(src, work_dir, rel)
     except (OSError, StagingError) as err:
         raise OpError(f"copy-to: {err}") from None
     return OpResult.ok()

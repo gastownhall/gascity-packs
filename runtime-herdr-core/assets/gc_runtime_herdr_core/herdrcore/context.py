@@ -9,8 +9,9 @@ table. The test-only overrides (``GC_HC_TEST_*``) are honoured only under
 ``GC_HC_TEST=1``.
 
 The pack's state for a city lives in ``R/pack/<city id>/``: ``meta/`` (one
-file per incarnation), ``locks/``, ``activity.json``, ``userscope.json`` and
-``kick.json``, all private to the user.
+file per incarnation), ``locks/``, ``shim/bin/`` (the in-agent ``hc``),
+``activity.json``, ``userscope.json`` and ``kick.json``, all private to the
+user.
 """
 
 from __future__ import annotations
@@ -96,7 +97,8 @@ class OpContext:
 
     @property
     def shim_dir(self) -> str:
-        return os.path.join(self.paths.state_root, SHIM_SUBDIR)
+        """The city's in-agent ``hc`` shims: one set per city, as each holds its own core's tuple."""
+        return os.path.join(self.pack_state, SHIM_SUBDIR)
 
     def hc_binary(self) -> str:
         return resolve_hc_binary(self.env, self.pack_state, home=self.host.home)

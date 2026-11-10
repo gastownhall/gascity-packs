@@ -19,7 +19,8 @@ from fakehc.rawclient import raw_call
 IDENTITY = {
     "GC_SESSION_ID": "mc-1",
     "GC_RUNTIME_EPOCH": "3",
-    "GC_INSTANCE_TOKEN": "tok-abcdefgh-1234",
+    # Every kill scans the host by token: no other run of these tests carries it.
+    "GC_INSTANCE_TOKEN": f"tok-abcdefgh-{os.getpid()}",
     "GT_PROCESS_NAMES": "cat",
 }
 
@@ -393,6 +394,32 @@ def test_a_failed_rollback_keeps_the_metadata_of_the_terminal_it_left(city: City
     # anyway. The record keeps its identity: gc can still tell whose it is.
     answer = observe(city, "mc-a")
     assert answer["state"] in ("running", "dead") and answer["identity"] == IDENTITY
+
+
+def test_a_rollback_that_may_leave_survivors_keeps_the_record_and_its_metadata(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError
+
+    class Blind(LinuxProcs):
+        """The process table cannot be read once the start labels its terminal."""
+
+        def snapshot(self) -> Dict[int, Proc]:
+            if city.fake.call_count("terminal.label"):  # type: ignore[union-attr]
+                raise ProcError("no /proc")
+            return LinuxProcs.snapshot(self)
+
+    readable = city.procs.inner
+    city.procs.inner = Blind()
+    city.fake.drop_reply("terminal.label")  # type: ignore[union-attr]
+    done = city.start("mc-a", start_config())
+    assert done.code == 1 and "cannot start 'mc-a'" in done.stderr
+    city.procs.inner = readable
+    # hc's kill ran, but the rollback could not tell that the tree died: the
+    # record stays, and so does the metadata whose token finds what is left.
+    assert len(city.terminals()) == 1
+    assert observe(city, "mc-a")["identity"] == IDENTITY
+    assert city.run("stop", "mc-a").code == 0
+    assert city.terminals() == []
+    assert list(Path(city.context().state_dir("meta")).iterdir()) == []
 
 
 def cancel_a_start(city: City) -> None:

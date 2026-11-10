@@ -10,6 +10,15 @@ and ``internal/overlay``): every ``pack_overlay_dirs`` entry, then
 (gc's runtime mirror) is never staged. A missing source is skipped, as gc
 does. Files keep their permission bits; later layers overwrite earlier ones.
 
+Nothing is written outside the work directory. Each path below it is opened
+one component at a time from a directory descriptor, never through a
+symlink, so a symlink where a file or directory would be written fails the
+staging (gc writes through one); a file kept as it is (below) is only read.
+Destinations join as gc joins them (Go's ``filepath.Join``: an absolute
+``rel_dst`` stays below the work directory), and a ``copy_files`` entry
+whose destination still leaves it is not staged, with a warning: gc adds its
+hook files with city-relative destinations meant for container providers.
+
 gc JSON-merges its hook and settings files (``.claude/settings.json``,
 ``.gemini/settings.json``, ``.codex/hooks.json``, ``.cursor/hooks.json``,
 ``.agents/hooks.json``, ``.github/hooks/gascity.json``) into what the work
@@ -25,9 +34,11 @@ itself, a custom provider's family fallback, and the extra provider slots of
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
-from typing import Callable, Final, List, Optional, Set
+import stat
+from typing import Callable, Final, List, Optional, Sequence, Set
 
 from ..rpp.wire import StartConfig
 
@@ -47,20 +58,74 @@ MERGED_PATHS: Final = frozenset(
 """Files gc merges rather than copies (gascity ``internal/overlay/merge.go``)."""
 KIRO: Final = "kiro"
 KIRO_AGENTS_MD: Final = "AGENTS.md"
+_DIR_BELOW: Final = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
 class StagingError(Exception):
     """A file could not be staged."""
 
 
-def _copy_file(src: str, dst: str) -> None:
-    parent = os.path.dirname(dst)
-    if parent:
-        os.makedirs(parent, mode=0o755, exist_ok=True)
-    if os.path.islink(dst) or os.path.isdir(dst):
-        raise StagingError(f"cannot stage {src} over {dst}: not a regular file")
-    shutil.copyfile(src, dst)
-    shutil.copymode(src, dst)
+def _parts(work_dir: str, rel: str) -> Optional[List[str]]:
+    """The components below ``work_dir`` of the destination gc names by
+    ``rel`` (none for the work directory itself), or None when it leaves."""
+    below = os.path.relpath(os.path.join(work_dir, rel.lstrip(os.sep)), work_dir).split(os.sep)
+    if below == [os.curdir]:
+        return []
+    return None if below[0] == os.pardir else below
+
+
+def _open_dir(work_dir: str, parts: Sequence[str]) -> int:
+    """Open the directory ``parts`` below ``work_dir``, making what is
+    missing, one component at a time and never through a symlink."""
+    fd = os.open(work_dir, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for depth, part in enumerate(parts, 1):
+            try:
+                os.mkdir(part, 0o755, dir_fd=fd)
+            except FileExistsError:
+                pass
+            try:
+                child = os.open(part, _DIR_BELOW, dir_fd=fd)
+            except OSError as err:
+                if err.errno not in (errno.ENOTDIR, errno.ELOOP):
+                    raise
+                raise StagingError(f"{os.path.join(work_dir, *parts[:depth])} is a symlink or not a directory") from None
+            fd, parent = child, fd
+            os.close(parent)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _copy_file(src: str, work_dir: str, parts: Sequence[str]) -> None:
+    """Copy the file ``src`` to ``parts`` below ``work_dir``, never through a
+    symlink. A destination that already is ``src`` (a tree staged onto
+    itself, or a hard link) is left as it is: opening it to write would empty
+    it first (gc's copy does)."""
+    if not stat.S_ISREG(os.stat(src).st_mode):
+        raise StagingError(f"cannot stage {src}: not a regular file")
+    fd = _open_dir(work_dir, parts[:-1])
+    try:
+        try:
+            existing: Optional[os.stat_result] = os.stat(parts[-1], dir_fd=fd, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and not stat.S_ISREG(existing.st_mode):
+            raise StagingError(f"cannot stage {src} over {os.path.join(work_dir, *parts)}: not a regular file")
+
+        def below(name: str, flags: int) -> int:
+            return os.open(name, flags | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+
+        with open(src, "rb") as reader:
+            source = os.fstat(reader.fileno())
+            if existing is not None and os.path.samestat(source, existing):
+                return
+            with open(parts[-1], "wb", opener=below) as writer:
+                shutil.copyfileobj(reader, writer)
+                os.fchmod(writer.fileno(), stat.S_IMODE(source.st_mode))
+    finally:
+        os.close(fd)
 
 
 class Stager:
@@ -81,13 +146,15 @@ class Stager:
         self.warnings.append(f"kept the work directory's own {rel} (gc merges it; this runtime does not yet)")
         return True
 
-    def copy_file(self, src: str, dst: str, rel: str, keep: Callable[[str], bool]) -> None:
+    def copy_file(self, src: str, parts: Sequence[str], rel: str, keep: Callable[[str], bool]) -> None:
+        dst = os.path.join(self.work_dir, *parts)
         if self._keep(rel, dst, keep):
             return
-        _copy_file(src, dst)
+        _copy_file(src, self.work_dir, parts)
         self.staged.add(dst)
 
-    def copy_tree(self, src: str, dst: str, *, skip: Optional[Callable[[str], bool]] = None, keep: Callable[[str], bool] = lambda rel: False) -> None:
+    def copy_tree(self, src: str, at: Sequence[str] = (), *, skip: Optional[Callable[[str], bool]] = None, keep: Callable[[str], bool] = lambda rel: False) -> None:
+        """Copy the tree ``src`` to ``at`` below the work directory."""
         for root, dirs, files in os.walk(src):
             rel_root = os.path.relpath(root, src)
             rel_root = "" if rel_root == "." else rel_root
@@ -97,16 +164,17 @@ class Stager:
                 if skip is not None and skip(rel):
                     continue
                 if os.path.islink(os.path.join(root, d)):
-                    self.copy_file(os.path.join(root, d), os.path.join(dst, rel), rel, keep)
+                    self.copy_file(os.path.join(root, d), [*at, *rel.split(os.sep)], rel, keep)
                     continue
-                os.makedirs(os.path.join(dst, rel), mode=0o755, exist_ok=True)
+                if not os.path.isdir(os.path.join(self.work_dir, *at, rel)):
+                    os.close(_open_dir(self.work_dir, [*at, *rel.split(os.sep)]))
                 kept.append(d)
             dirs[:] = kept
             for name in sorted(files):
                 rel = os.path.join(rel_root, name)
                 if skip is not None and skip(rel):
                     continue
-                self.copy_file(os.path.join(root, name), os.path.join(dst, rel), rel, keep)
+                self.copy_file(os.path.join(root, name), [*at, *rel.split(os.sep)], rel, keep)
 
     def overlay(self, src: str, provider: str) -> None:
         """Stage one overlay directory for ``provider``."""
@@ -114,13 +182,12 @@ class Stager:
             return
         if not os.path.isdir(src):
             raise StagingError(f"overlay {src} is not a directory")
-        self.copy_tree(src, self.work_dir, skip=_universal, keep=lambda rel: rel in MERGED_PATHS)
+        self.copy_tree(src, skip=_universal, keep=lambda rel: rel in MERGED_PATHS)
         if provider and os.sep not in provider and provider not in (".", ".."):
             provider_dir = os.path.join(src, PER_PROVIDER, provider)
             if os.path.isdir(provider_dir):
                 self.copy_tree(
                     provider_dir,
-                    self.work_dir,
                     skip=lambda rel: rel.split(os.sep, 1)[0] == RUNTIME_MIRROR,
                     keep=lambda rel: rel in MERGED_PATHS or (provider == KIRO and rel == KIRO_AGENTS_MD),
                 )
@@ -133,25 +200,32 @@ def _universal(rel: str) -> bool:
 
 def copy_overlay(src: str, work_dir: str, provider: str) -> List[str]:
     """Stage one overlay directory for ``provider`` into ``work_dir``; returns warnings."""
+    os.makedirs(work_dir, mode=0o755, exist_ok=True)
     stager = Stager(work_dir)
     stager.overlay(src, provider)
     return stager.warnings
 
 
-def stage_path(src: str, dst: str) -> None:
-    """gc's ``StagePath``: a directory merges into ``dst``; a file lands at
-    ``dst``, or inside it when ``dst`` is a directory."""
+def stage_path(src: str, work_dir: str, rel: str = "") -> None:
+    """gc's ``StagePath`` to ``rel`` below ``work_dir``, never outside it: a
+    directory merges into the destination; a file lands there, or inside it
+    when it is a directory. A source that is its own destination is skipped,
+    a directory as well as a file, as gc skips it."""
     if not os.path.exists(src):
         return
-    if os.path.isdir(src):
-        os.makedirs(dst, mode=0o755, exist_ok=True)
-        Stager(dst).copy_tree(src, dst)
-        return
-    if os.path.isdir(dst):
-        dst = os.path.join(dst, os.path.basename(src))
+    parts = _parts(work_dir, rel)
+    if parts is None:
+        raise StagingError("the destination leaves the work directory")
+    is_tree = os.path.isdir(src)
+    if not is_tree and (not parts or os.path.isdir(os.path.join(work_dir, *parts))):
+        parts.append(os.path.basename(src))
+    dst = os.path.join(work_dir, *parts)
     if os.path.exists(dst) and os.path.samefile(src, dst):
         return
-    _copy_file(src, dst)
+    if is_tree:
+        Stager(work_dir).copy_tree(src, parts)
+    else:
+        _copy_file(src, work_dir, parts)
 
 
 def stage(cfg: StartConfig, provider: str) -> List[str]:
@@ -168,8 +242,10 @@ def stage(cfg: StartConfig, provider: str) -> List[str]:
         if cfg.overlay_dir:
             stager.overlay(cfg.overlay_dir, provider)
         for entry in cfg.copy_files:
-            dst = os.path.join(cfg.work_dir, entry.rel_dst) if entry.rel_dst else cfg.work_dir
-            stage_path(entry.src, dst)
+            if _parts(cfg.work_dir, entry.rel_dst) is None:
+                stager.warnings.append(f"did not stage {entry.src}: {entry.rel_dst} leaves the work directory")
+                continue
+            stage_path(entry.src, cfg.work_dir, entry.rel_dst)
     except OSError as err:
         raise StagingError(f"staging into the work directory failed: {err}") from None
     return stager.warnings

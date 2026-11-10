@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import pytest
-from cityharness import City
+from cityharness import City, make_city
 
 from gc_runtime_herdr_core.herdrcore import envplan, launch, shim, spawnfile
 from gc_runtime_herdr_core.herdrcore.spawnfile import Scope, SpawnSpec
@@ -270,9 +270,32 @@ def test_start_writes_the_shims_and_puts_them_first(city: City) -> None:
     deadline = time.monotonic() + 10
     while not out.exists() and time.monotonic() < deadline:
         time.sleep(0.05)
-    shim_dir = Path(city.paths.state_root) / "shim" / "bin"
+    shim_dir = Path(city.paths.state_root) / "pack" / city.paths.city_id / "shim" / "bin"
     assert out.read_text().split(":")[0] == str(shim_dir)
     assert (shim_dir / "hc").exists() and (shim_dir / "herdr-core").exists()
+
+
+def test_each_citys_agents_run_their_own_citys_hc(short_tmp: Path, home_dir: Path) -> None:
+    # Two cities on one state root: a shared shim would hold the last
+    # starter's socket, so one city's agent would drive the other's core.
+    cities = [make_city(short_tmp, home_dir, city_path=f"/cities/{n}") for n in ("one", "two")]
+    for made in cities:
+        made.start_core()
+    try:
+        for index, made in enumerate(cities):
+            config = json.dumps({"command": f"command -v hc > {short_tmp}/hc-{index}.txt; exec cat"})
+            assert made.start("mc-a", config).code == 0
+        for index, made in enumerate(cities):
+            path = short_tmp / f"hc-{index}.txt"
+            deadline = time.monotonic() + 10
+            while not (path.exists() and path.read_text().strip()) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            hc = Path(path.read_text().strip()).read_text()
+            assert made.paths.socket in hc and cities[1 - index].paths.socket not in hc
+    finally:
+        for made in cities:
+            assert made.fake is not None
+            made.fake.close()
 
 
 # --- start cancels cleanly --------------------------------------------------------------------

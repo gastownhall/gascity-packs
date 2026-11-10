@@ -11,7 +11,8 @@ never puts on the wire: the base name of the session's gc binary (a process
 name alias) and its work directory.
 
 Writes are whole-file replacements (temp file, then rename) under the
-name's exclusive lock; ``stop`` deletes the file.
+name's exclusive lock; ``stop`` deletes the file once nothing of the
+incarnation may survive (until then its token finds what is left).
 """
 
 from __future__ import annotations

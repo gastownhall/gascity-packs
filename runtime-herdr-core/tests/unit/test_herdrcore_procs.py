@@ -23,6 +23,8 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     LinuxProcs,
     Proc,
     ProcError,
+    ProcSource,
+    PsProcs,
     expand_names,
     fenced_pids,
     find_agent,
@@ -362,6 +364,34 @@ def test_scan_environ_skips_a_process_it_cannot_read(tmp_path: Path) -> None:
         (tmp_path / "51" / "environ").chmod(0o600)
 
 
+def test_ps_reads_every_environment_with_one_ps() -> None:
+    """macOS: one ``ps -E`` for the whole scan, as gc's proctable reads it,
+    with the per-process read as the fallback."""
+
+    class Ps(PsProcs):
+        def __init__(self, *, bulk: bool) -> None:
+            self.bulk = bulk
+            self.calls: List[Tuple[str, ...]] = []
+
+        def _ps(self, *args: str) -> str:
+            self.calls.append(args)
+            if "-axo" in args:
+                if not self.bulk:
+                    raise ProcError("ps exited 1")
+                return "   31 orphan GC_INSTANCE_TOKEN=tok-1 PATH=/usr/bin\n   32 other GC_INSTANCE_TOKEN=tok-2 9X=no\n   33 none\n"
+            return {"31": "orphan GC_INSTANCE_TOKEN=tok-1\n", "32": "other GC_INSTANCE_TOKEN=tok-2\n", "33": "none\n"}[args[-1]]
+
+    snapshot = {pid: proc(pid, (name,)) for pid, name in ((31, "orphan"), (32, "other"), (33, "none"))}
+    bulk = Ps(bulk=True)
+    assert [p.pid for p in scan_environ(bulk, snapshot, "GC_INSTANCE_TOKEN", "tok-1")] == [31]
+    assert bulk.calls == [("-E", "-ww", "-axo", "pid=,command=")]
+    want = {31: {"GC_INSTANCE_TOKEN": "tok-1", "PATH": "/usr/bin"}, 32: {"GC_INSTANCE_TOKEN": "tok-2"}}
+    assert bulk.environs([31, 32, 99]) == want
+    each = Ps(bulk=False)
+    assert [p.pid for p in scan_environ(each, snapshot, "GC_INSTANCE_TOKEN", "tok-1")] == [31]
+    assert len(each.calls) == 4, "the one ps for all of them fails, then one per process"
+
+
 def test_a_zombie_is_neither_an_agent_nor_alive(tmp_path: Path) -> None:
     add_proc(tmp_path, 61, ppid=1, argv=["sh"])
     add_proc(tmp_path, 62, ppid=61, argv=["claude"], state="Z")
@@ -410,5 +440,42 @@ def test_an_opaque_process_is_never_signalled(tmp_path: Path) -> None:
     add_proc(tmp_path, 81, ppid=1, argv=["a"], start=5)
     source = RecordingProcs(str(tmp_path))
     hidden = Proc(pid=81, ppid=1, uid=os.getuid(), start="", comm="", argv=(), opaque=True)
-    assert kill_captured(source, [hidden], grace_s=0.2, pause=time.sleep) == []
+    # Captured without a start token, it cannot be told from a recycled pid:
+    # it may survive, and is never signalled.
+    assert kill_captured(source, [hidden], grace_s=0.2, pause=time.sleep) == [hidden]
     assert source.signals == []
+
+
+def test_a_process_that_turns_opaque_after_its_capture_may_survive() -> None:
+    """Readable when captured, opaque on every re-read (non-dumpable under
+    ``hidepid=1``): never signalled, and reported as surviving, so the
+    record and its token stay for the retry."""
+
+    class Hidden(ProcSource):
+        def snapshot(self) -> Dict[int, Proc]:
+            return {12345: Proc(pid=12345, ppid=1, uid=os.getuid(), start="", comm="", argv=(), opaque=True)}
+
+        def kill(self, pid: int, sig: int) -> None:
+            raise AssertionError(f"signalled {pid} with {sig}")
+
+    source = Hidden()
+    captured = proc(12345, ("daemon",), start="7")
+    assert kill_captured(source, [captured], grace_s=0.3, pause=lambda _: None) == [captured]
+
+
+@needs_file_modes
+def test_a_process_that_turns_opaque_mid_kill_is_reported_beside_one_that_outlived_its_kill(tmp_path: Path) -> None:
+    add_proc(tmp_path, 1, ppid=0, argv=["init"], children=[91, 92])
+    add_proc(tmp_path, 91, ppid=1, argv=["stubborn"], start=5)
+    add_proc(tmp_path, 92, ppid=1, argv=["hiding"], start=5)
+
+    class Turning(RecordingProcs):
+        def kill(self, pid: int, sig: int) -> None:
+            self.signals.append((pid, sig))  # 91 outlives even its KILL
+            if pid == 92:
+                hide(self.root, 92)  # turns non-dumpable instead of exiting
+
+    source = Turning(str(tmp_path))
+    captured = [proc(91, ("stubborn",), start="5"), proc(92, ("hiding",), start="5")]
+    assert kill_captured(source, captured, grace_s=0.2, pause=time.sleep) == captured
+    assert source.signals == [(91, signal.SIGTERM), (92, signal.SIGTERM), (91, signal.SIGKILL)]

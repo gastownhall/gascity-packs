@@ -45,7 +45,7 @@ runtime-herdr-core/
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
         lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
-        inputs.py screen.py
+        inputs.py screen.py readiness.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
     unit/                          the unit tier
@@ -95,21 +95,33 @@ runtime-herdr-core/
   five minutes on failure) shows a user manager can place it, the agent runs
   in its own scope under `GC_AGENT_SLICE` (the session's, else gc's, else
   `gascity-agents.slice`); otherwise, or when the launcher cannot run
-  `systemd-run`, it starts unwrapped and `start` warns. The shim gives
-  in-agent `hc` the core's exact tuple and refuses while the core is down
-  instead of starting a second one.
+  `systemd-run`, it starts unwrapped and `start` warns. The shim (one per
+  city, in the city's pack state) gives in-agent `hc` the city core's exact
+  tuple and refuses while the core is down instead of starting a second
+  one.
 - **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
   (fatal), creates the terminal in `work_dir` (which must exist by then;
   the home without one), runs `session_setup` and the setup script
-  (warnings), then types `nudge` once the agent is ready (its prompt, its
-  delay, its first status report, or settled output). `session_live` (tmux
+  (warnings), then types `nudge` once the agent is ready (its prompt, read
+  as gc reads a pane: the bottom-most prompt line, NBSP as a space, a box
+  border skipped, and a numbered menu's cursor row no prompt; else its
+  delay, at most 60 s as in gc; else its first status report; else settled
+  output). gc answers startup dialogs only once `start` returns, so a
+  screen showing one of gc's known dialogs is never ready: a settled
+  dialog, or no readiness within the wait (a delay that outlasts the op's
+  deadline too), withholds the turn with a warning and
+  `GC_STARTUP_DELIVERY_UNCONFIRMED` in the metadata. `session_live` (tmux
   theming and keybindings) is never run: herdr-core runs no tmux server,
   and run on the host it would reach a person's own; `start` warns that it
   is not applied. `terminal.run` is sent once: after a lost reply
   the start takes the terminal its `gc.obj` names, so a command never runs
-  twice, and a failed start keeps the metadata while its terminal may still
-  run. An agent that exits
+  twice, and a start that fails while it creates the terminal ends its
+  processes as `stop` does, by their `GC_INSTANCE_TOKEN` too, and keeps
+  the metadata while its terminal may still run. When hc cannot list the
+  city's boxes, it ends the terminal's tree but scans nothing by the token,
+  and leaves the box to gc's stop. One that fails or is
+  canceled later leaves the box, which gc stops. An agent that exits
   during startup fails the start, unless its lifecycle is `one_shot`.
   Staging does not merge: the files gc JSON-merges (`.claude/settings.json`,
   `.gemini/settings.json`, `.codex/hooks.json`, `.cursor/hooks.json`,
@@ -117,13 +129,24 @@ runtime-herdr-core/
   `AGENTS.md` already in the work directory are kept, with a warning. Only
   `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
   and `install_agent_hooks`' extra slots are not (gaps until gc stages on
-  the host for runtime packs).
+  the host for runtime packs). Staging and `copy-to` write nothing outside
+  the work directory: nothing is written through a symlink below it (one
+  where a file or directory would go fails the staging or the copy; gc
+  writes through it), and a `copy_files` destination that leaves the work
+  directory is skipped with a warning (gc adds its hook files with
+  city-relative destinations meant for container providers). A
+  `copy_files` entry or `copy-to` source that is its own destination is
+  skipped, as in gc, and a file staged onto itself (a hard link, or an
+  overlay that is the work directory) is left as it is, where gc's copy
+  empties it.
 - **Input** (`nudge`, `send-keys`, `interrupt`) goes to the current
   incarnation by address. RPP v0 outcomes: delivered or gone exits 0; a
   refusal (the agent waits on its own question, the terminal is not ready, a
   failed precondition, a tmux key hc cannot spell) or a request that never
-  reached hc exits 1 with nothing typed. A `nudge` whose request reached hc
-  is delivered, as tmux's `send-keys` is fire-and-forget: hc types a send
+  reached hc exits 1 with nothing typed, as does a `nudge` whose request
+  reached hc cut short (hc acts on no part of a request). A `nudge` whose
+  request reached hc whole is delivered, as tmux's `send-keys` is
+  fire-and-forget: hc types a send
   only once a person stops typing and finishes it after the pack stops
   waiting, so a nudge still held at the op's deadline, or whose reply was
   lost, is typed later, and gc's queue never sends it twice. **Accepted
@@ -142,14 +165,28 @@ runtime-herdr-core/
   reads within its deadline, and a box whose screen it did not read on that
   pass reads as active now, never at an old time.
 - **Stop and kill-object** end the whole process tree: descendants captured
-  before hc's kill, a broken incarnation's orphans found by its
-  `GC_INSTANCE_TOKEN`, every process still the one captured (same start
-  time) sent TERM then KILL. City infrastructure (gc's managed Dolt
-  watchdog, bd's database proxy, gc's nudge poller) and its whole subtree is
-  never killed, and other live sessions' trees are protected. Nothing
-  under a process that cannot be read is signalled (an unreadable process
-  may be infrastructure); such a stop exits 1 so gc retries. When the
-  process table cannot be read, the op still kills but exits 1.
+  before hc's kill, the incarnation's re-parented processes (a daemon a
+  live agent started, every child of one already gone) found by its
+  `GC_INSTANCE_TOKEN` whatever the box's state, every process still the one
+  captured (same start time) sent TERM then KILL. Every process carrying
+  the token dies, one the agent meant to outlive it too, as gc's own
+  orphan sweep ends a process carrying a session identity gc no longer
+  runs. One started during the kill (a TERM handler's `setsid` child) is
+  found by scanning for the token again once the captured processes are
+  dead, until a scan finds none (at most three more rounds). City
+  infrastructure (gc's managed Dolt watchdog, bd's database
+  proxy, gc's nudge poller) and its whole subtree is never killed, and
+  other live sessions' trees are protected. Nothing under a process that
+  cannot be read is signalled (an unreadable process may be
+  infrastructure), nor is one that turns unreadable before its signal (its
+  pid may have been recycled). When such a process is found, a process
+  outlives its KILL, one still carries the token after the last round (a
+  daemon that respawns), or the process table cannot be read (hc's
+  kill still happens), the op exits 1 and the box and its metadata stay:
+  gc's retry (the next stop or start, or a corpse kill) finds what is left
+  by the token, and a `start` launches nothing while it may survive. A
+  process that does not carry the token, or whose environment cannot be
+  read, is not found that way.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's
   `attach` runs (it holds a lock) or a `herdr-core|hc attach` process of this
   user targets it on this city's core. `is-attached` exits 1 when it cannot

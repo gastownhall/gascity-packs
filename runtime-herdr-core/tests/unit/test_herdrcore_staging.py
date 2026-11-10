@@ -85,8 +85,84 @@ def test_stage_path_merges_directories(tmp_path: Path) -> None:
     (src / "a").mkdir(parents=True)
     (src / "a/b.txt").write_text("b")
     dst = tmp_path / "dst"
+    dst.mkdir()
     stage_path(str(src), str(dst))
     assert (dst / "a/b.txt").read_text() == "b"
+
+
+def test_a_directory_staged_onto_itself_is_skipped_as_gc_skips_it(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    (work / "sub").mkdir(parents=True)
+    (work / "AGENTS.md").write_text("payload")
+    (work / "CLAUDE.md").symlink_to("AGENTS.md")
+    (work / "sub" / "b.txt").write_text("payload")
+    stage_path(str(work), str(work))
+    stage_path(str(work / "sub"), str(work), "sub")
+    assert (work / "AGENTS.md").read_text() == "payload" and (work / "sub" / "b.txt").read_text() == "payload"
+    assert os.readlink(work / "CLAUDE.md") == "AGENTS.md"
+
+
+def test_a_hard_linked_destination_keeps_its_bytes(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.txt").write_text("payload")
+    src = tmp_path / "src"
+    src.mkdir()
+    os.link(work / "a.txt", src / "a.txt")
+    (src / "new.txt").write_text("new")
+    stage_path(str(src), str(work))
+    copy_overlay(str(src), str(work), "")
+    assert (work / "a.txt").read_text() == "payload"
+    assert (work / "new.txt").read_text() == "new"
+
+
+def test_staging_never_writes_through_a_symlinked_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "f.txt").write_text("theirs")
+    src = tmp_path / "overlay"
+    (src / "docs" / "deep").mkdir(parents=True)
+    (src / "docs" / "deep" / "f.txt").write_text("staged")
+    work = tmp_path / "work"
+    (work / "docs").mkdir(parents=True)
+    (work / "docs" / "deep").symlink_to(outside)
+    with pytest.raises(StagingError, match="symlink"):
+        copy_overlay(str(src), str(work), "")
+    with pytest.raises(StagingError, match="symlink"):
+        stage_path(str(src), str(work))
+    (src / "docs" / "deep" / "f.txt").unlink()
+    (src / "docs" / "deep" / "new").mkdir()
+    with pytest.raises(StagingError, match="symlink"):
+        stage_path(str(src / "docs"), str(work), "docs")
+    assert sorted(p.name for p in outside.iterdir()) == ["f.txt"]
+    assert (outside / "f.txt").read_text() == "theirs"
+
+
+def test_a_merged_file_kept_behind_a_symlinked_directory_is_only_read(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "settings.json").write_text('{"mine":true}')
+    src = tmp_path / "overlay"
+    (src / ".claude").mkdir(parents=True)
+    (src / ".claude" / "settings.json").write_text('{"from":"overlay"}')
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / ".claude").symlink_to(shared)
+    warnings = copy_overlay(str(src), str(work), "")
+    assert len(warnings) == 1 and ".claude/settings.json" in warnings[0]
+    assert (shared / "settings.json").read_text() == '{"mine":true}'
+
+
+def test_a_copy_files_destination_is_joined_as_gc_joins_it_and_never_leaves(tmp_path: Path) -> None:
+    extra = tmp_path / "extra.txt"
+    extra.write_text("copied")
+    work = tmp_path / "city" / "work"
+    entries = [{"src": str(extra), "rel_dst": "../hooks.json"}, {"src": str(extra), "rel_dst": "/abs/extra.txt"}]
+    cfg = parse_start_config(json.dumps({"work_dir": str(work), "copy_files": entries}).encode())
+    warnings = stage(cfg, "")
+    assert len(warnings) == 1 and "../hooks.json leaves the work directory" in warnings[0]
+    assert not (tmp_path / "city" / "hooks.json").exists()
+    assert (work / "abs" / "extra.txt").read_text() == "copied"
 
 
 def test_stage_refuses_a_relative_work_dir() -> None:
@@ -166,6 +242,40 @@ def test_copy_to_stays_in_the_work_dir(city: City) -> None:
     escaped = city.run("copy-to", "mc-a", str(src), "../outside")
     assert escaped.code == 1 and not (city.root / "outside").exists()
     assert os.path.exists(work / "sub")
+
+
+def test_a_start_whose_copy_files_name_the_work_dir_keeps_it(city: City) -> None:
+    work = city.root / "w"
+    (work / "sub").mkdir(parents=True)
+    (work / "AGENTS.md").write_text("payload")
+    (work / "CLAUDE.md").symlink_to("AGENTS.md")
+    (work / "sub" / "b.txt").write_text("payload")
+    entries = [{"src": str(work)}, {"src": str(work / "sub"), "rel_dst": "sub"}]
+    done = city.start("mc-a", json.dumps({"command": "cat", "work_dir": str(work), "copy_files": entries}))
+    assert done.code == 0, done.stderr
+    assert city.run("copy-to", "mc-a", str(work)).code == 0
+    assert (work / "AGENTS.md").read_text() == "payload" and (work / "sub" / "b.txt").read_text() == "payload"
+
+
+def test_copy_to_never_writes_through_a_symlink(city: City) -> None:
+    work = city.root / "w"
+    outside = city.root / "outside"
+    (work / "real").mkdir(parents=True)
+    outside.mkdir()
+    (work / "linked").symlink_to(outside)
+    (work / "real" / "leaf").symlink_to(outside / "leaf")
+    assert city.start("mc-a", json.dumps({"command": "cat", "work_dir": str(work)})).code == 0
+    src = city.root / "f.txt"
+    src.write_text("x")
+    tree_src = city.root / "tree"
+    (tree_src / "sub").mkdir(parents=True)
+    (tree_src / "sub" / "g.txt").write_text("g")
+    for source, rel in ((src, "linked/victim.txt"), (src, "linked"), (src, "real/leaf"), (tree_src, "linked")):
+        done = city.run("copy-to", "mc-a", str(source), rel)
+        assert done.code == 1 and "copy-to:" in done.stderr, (rel, done.stderr)
+    assert list(outside.iterdir()) == []
+    assert city.run("copy-to", "mc-a", str(src), "real/inside.txt").code == 0
+    assert (work / "real" / "inside.txt").read_text() == "x"
 
 
 @pytest.mark.parametrize(

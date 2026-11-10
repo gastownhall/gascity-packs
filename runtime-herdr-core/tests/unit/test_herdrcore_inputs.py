@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import json
 import time
-from typing import List, Optional
+from typing import List, Mapping, Optional
 
 import pytest
 from cityharness import City, Result, in_thread
 from fakehc.terminal import key_bytes
 
+from gc_runtime_herdr_core.herdrcore import lifecycle
 from gc_runtime_herdr_core.herdrcore.inputs import translate_key, translate_keys
 
 
@@ -109,6 +110,19 @@ def test_a_reply_lost_after_the_write_is_delivered(city: City) -> None:
     assert city.fake.call_count("terminal.send") == 1  # type: ignore[union-attr]
 
 
+def test_a_send_the_core_stopped_reading_part_way_is_not_sent(city: City) -> None:
+    # hc acts on no part of a request: a nudge the socket's buffers cut short
+    # types nothing, so gc's queue may send it again.
+    address = started(city)
+    city.fake.stall_reading(1 << 16)  # type: ignore[union-attr]
+    done = city.run("nudge", "mc-a", stdin=b"x" * (4 << 20), deadline_ms=7000)
+    assert done.code == 1 and "not sent" in done.stderr, done.stderr
+    city.fake.resume_reading()  # type: ignore[union-attr]
+    wait_for(lambda: city.fake.open_connections == 0)  # type: ignore[union-attr]
+    assert city.fake.call_count("terminal.send") == 0  # type: ignore[union-attr]
+    assert city.fake.input_log(address) == []  # type: ignore[union-attr]
+
+
 def test_nothing_written_is_not_sent(city: City) -> None:
     address = started(city)
     city.fake.set_generation(2)  # type: ignore[union-attr]  # the gate refuses before the send is written
@@ -194,6 +208,59 @@ def test_first_turn_refused_is_recorded_and_not_typed(city: City) -> None:
     assert city.fake.input_log(address) == []  # type: ignore[union-attr]
     marker = city.run("get-meta", "mc-a", "GC_STARTUP_DELIVERY_UNCONFIRMED")
     assert b"pending interaction" in marker.stdout
+
+
+def withheld(city: City, config: Mapping[str, object], **kwargs: object) -> str:
+    """Start with ``config``; what the start warned, once sure nothing was typed and the strand is recorded."""
+    done = city.start("mc-a", json.dumps({**config, "nudge": "first task"}), **kwargs)
+    assert done.code == 0, done.stderr
+    assert city.fake.input_log(city.address("mc-a")) == []  # type: ignore[union-attr]
+    marker = city.run("get-meta", "mc-a", "GC_STARTUP_DELIVERY_UNCONFIRMED")
+    assert b"the first turn was withheld" in marker.stdout
+    return done.stderr
+
+
+def test_a_menus_cursor_row_is_no_prompt(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The selected option carries the prompt glyph: the turn's Enter would pick "No, exit".
+    monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.5)
+    config = {"command": "printf '❯ 1. No, exit\\n  2. Yes, I accept\\n'; exec cat", "ready_prompt_prefix": "❯ "}
+    assert "the first turn was withheld: the agent was not ready in time" in withheld(city, config)
+
+
+def test_a_settled_dialog_with_no_prompt_prefix_withholds_the_first_turn(city: City) -> None:
+    # gc answers it only once start returns, so start does not wait it out.
+    config = {"command": "printf 'Do you trust the files in this folder?\\n❯ 1. Yes, proceed\\n  2. No, exit\\n'; exec cat"}
+    assert "the first turn was withheld: the agent shows a startup dialog" in withheld(city, config)
+
+
+def test_a_first_turn_never_ready_is_withheld(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.0)
+    config = {"command": "printf 'booting\\n'; exec cat", "ready_prompt_prefix": "READY>"}
+    assert "the first turn was withheld: the agent was not ready in time" in withheld(city, config)
+
+
+def test_a_delay_the_deadline_ends_first_withholds_the_first_turn(city: City) -> None:
+    # Never typed before its delay passed: gc's start, out of time, returns without the turn too.
+    config = {"command": "printf 'booting\\n'; exec cat", "ready_delay_ms": 4000}
+    warned = withheld(city, config, deadline_ms=7000)
+    assert "the first turn was withheld: the agent was not ready in time" in warned
+
+
+def test_a_delay_past_the_wait_types_the_first_turn_at_its_end(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # gc cuts a delay to its probe timeout, and types the turn then.
+    monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.0)
+    config = {"command": "printf 'booting\\n'; exec cat", "ready_delay_ms": 5000, "nudge": "first task"}
+    done = city.start("mc-a", json.dumps(config))
+    assert done.code == 0, done.stderr
+    assert city.fake.input_log(city.address("mc-a")) == ["first task"]  # type: ignore[union-attr]
+
+
+def test_a_prompt_with_a_non_breaking_space_is_ready(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(lifecycle, "READY_WAIT_S", 5.0)  # a miss fails fast
+    config = {"command": "printf '❯\u00a0Try it\\n'; exec cat", "nudge": "first task", "ready_prompt_prefix": "❯ "}
+    done = city.start("mc-a", json.dumps(config))
+    assert done.code == 0, done.stderr
+    assert city.fake.input_log(city.address("mc-a")) == ["first task"]  # type: ignore[union-attr]
 
 
 def test_nudge_held_does_not_block_a_stop(city: City) -> None:

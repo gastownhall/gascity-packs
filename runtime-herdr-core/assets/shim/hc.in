@@ -1,8 +1,8 @@
 # The in-agent `hc` of a city on runtime herdr-core, rendered into
-# R/shim/bin/{hc,herdr-core} (first on the agent's PATH). It gives hc the
-# city core's exact discovery tuple, and refuses while that core is down
-# instead of letting the hc CLI start a second core: one started from an
-# agent would run on the agent's environment and credentials.
+# R/pack/<city id>/shim/bin/{hc,herdr-core} (first on the agent's PATH). It
+# gives hc the city core's exact discovery tuple, and refuses while that core
+# is down instead of letting the hc CLI start a second core: one started from
+# an agent would run on the agent's environment and credentials.
 import json
 import os
 import socket

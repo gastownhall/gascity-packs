@@ -1,9 +1,11 @@
 """The in-agent ``hc`` shim, rendered from ``assets/shim/hc.in``.
 
-``start`` (re)writes ``R/shim/bin/hc`` and ``R/shim/bin/herdr-core``
-atomically whenever their content would change (another hc binary, another
-discovery tuple). Each is a ``/bin/sh`` script that runs the template under
-the pack's Python, isolated (``-I -S``), with the core's tuple baked in.
+``start`` (re)writes ``R/pack/<city id>/shim/bin/hc`` and ``herdr-core``
+beside it atomically whenever their content would change (another hc
+binary, another discovery tuple). Each is a ``/bin/sh`` script that runs the
+template under the pack's Python, isolated (``-I -S``), with the core's
+tuple baked in, so each city has its own: agents of cities sharing a state
+root never reach each other's core.
 """
 
 from __future__ import annotations

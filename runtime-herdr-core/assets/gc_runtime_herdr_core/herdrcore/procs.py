@@ -95,6 +95,19 @@ class ProcSource:
         "cannot tell", never "nothing there"."""
         raise NotImplementedError
 
+    def environs(self, pids: Iterable[int]) -> Dict[int, Dict[str, str]]:
+        """The environments of ``pids``, one :meth:`environ` each; a process
+        that is gone or cannot be read is left out."""
+        out: Dict[int, Dict[str, str]] = {}
+        for pid in pids:
+            try:
+                env = self.environ(pid)
+            except ProcError:
+                continue
+            if env is not None:
+                out[pid] = env
+        return out
+
     def kill(self, pid: int, sig: int) -> None:
         """Signal ``pid``; a process that is gone is not an error."""
         try:
@@ -281,12 +294,32 @@ class PsProcs(ProcSource):
             except PermissionError:
                 pass
             raise
-        env: Dict[str, str] = {}
-        for word in text.split():
-            key, sep, value = word.partition("=")
-            if sep and key and (key[0].isalpha() or key[0] == "_") and all(c.isalnum() or c == "_" for c in key):
-                env[key] = value
-        return env
+        return _ps_environ(text.split())
+
+    def environs(self, pids: Iterable[int]) -> Dict[int, Dict[str, str]]:
+        # One ps for every process, as gc's proctable reads them on macOS;
+        # a ps per process when that one fails.
+        wanted = set(pids)
+        try:
+            text = self._ps("-E", "-ww", "-axo", "pid=,command=")
+        except ProcError:
+            return ProcSource.environs(self, wanted)
+        out: Dict[int, Dict[str, str]] = {}
+        for line in text.splitlines():
+            words = line.split()
+            if words and words[0].isdigit() and int(words[0]) in wanted:
+                out[int(words[0])] = _ps_environ(words[1:])
+        return out
+
+
+def _ps_environ(words: Iterable[str]) -> Dict[str, str]:
+    """The ``KEY=value`` words of a ``ps -E`` command, the command's own too."""
+    env: Dict[str, str] = {}
+    for word in words:
+        key, sep, value = word.partition("=")
+        if sep and key and (key[0].isalpha() or key[0] == "_") and all(c.isalnum() or c == "_" for c in key):
+            env[key] = value
+    return env
 
 
 def default_source() -> ProcSource:
@@ -432,14 +465,18 @@ def opaque_under(snapshot: Snapshot, root: int) -> bool:
 # --- killing ---------------------------------------------------------------------------
 
 
-def still_same(source: ProcSource, proc: Proc, snapshot: Optional[Snapshot] = None) -> bool:
-    """Whether ``proc`` is still running as the same process (same start
-    token). An opaque process has no start token to compare, so it never is:
-    nothing is signalled that could be a recycled pid."""
-    if proc.opaque or not proc.start:
+def still_same(proc: Proc, snapshot: Snapshot) -> Optional[bool]:
+    """Whether the captured ``proc`` still runs as the same process (same
+    start token): False when its pid is gone, a zombie or another process;
+    None when that cannot be told, as it was captured without a start token
+    or its pid now reads opaque. Such a process may survive, and is never
+    signalled: its pid may have been recycled."""
+    current = snapshot.get(proc.pid)
+    if current is None or current.zombie:
         return False
-    current = (snapshot if snapshot is not None else source.snapshot()).get(proc.pid)
-    return current is not None and not current.opaque and current.start == proc.start and not current.zombie
+    if proc.opaque or not proc.start or current.opaque:
+        return None
+    return current.start == proc.start
 
 
 def kill_captured(
@@ -450,18 +487,30 @@ def kill_captured(
     pause: Callable[[float], None],
 ) -> List[Proc]:
     """TERM every captured process that is still the same process, then KILL
-    whatever is left after ``grace_s``. Returns the processes still alive.
+    whatever is left after ``grace_s``. Returns the processes that may still
+    run: those that outlived their KILL, and those that could not be told
+    from what was captured (:func:`still_same` is None on a re-read), which
+    are never signalled again.
 
     Nothing is signalled unless a fresh read of the process table shows it is
     still the captured process: when the table cannot be re-read, every
-    target is reported as surviving and none is signalled."""
+    target not yet known to have ended is reported as surviving and none is
+    signalled."""
+    unsure: List[Proc] = []
 
     def alive(targets: Sequence[Proc]) -> Optional[List[Proc]]:
         try:
             now = source.snapshot()
         except ProcError:
             return None
-        return [p for p in targets if still_same(source, p, now)]
+        same: List[Proc] = []
+        for proc in targets:
+            fate = still_same(proc, now)
+            if fate is None:
+                unsure.append(proc)
+            elif fate:
+                same.append(proc)
+        return same
 
     first = alive(procs)
     if first is None:
@@ -475,18 +524,18 @@ def kill_captured(
         waited += 0.1
         current = alive(remaining)
         if current is None:
-            return remaining
+            return remaining + unsure
         remaining = current
     final = alive(remaining)
     if final is None:
-        return remaining
+        return remaining + unsure
     for proc in final:
         source.kill(proc.pid, signal.SIGKILL)
     if final:
         pause(0.1)
         after = alive(final)
-        return final if after is None else after
-    return final
+        return (final if after is None else after) + unsure
+    return unsure
 
 
 def scan_environ(source: ProcSource, snapshot: Snapshot, key: str, value: str) -> List[Proc]:
@@ -496,14 +545,6 @@ def scan_environ(source: ProcSource, snapshot: Snapshot, key: str, value: str) -
     process of the user (ssh-agent, for one) has a root-owned ``environ``,
     and failing on it would fail every scan."""
     uid = os.getuid()
-    found: List[Proc] = []
-    for proc in snapshot.values():
-        if proc.uid != uid or proc.pid == os.getpid():
-            continue
-        try:
-            env = source.environ(proc.pid)
-        except ProcError:
-            continue
-        if env is not None and env.get(key) == value:
-            found.append(proc)
-    return found
+    mine = [proc for proc in snapshot.values() if proc.uid == uid and proc.pid != os.getpid()]
+    envs = source.environs(proc.pid for proc in mine)
+    return [proc for proc in mine if envs.get(proc.pid, {}).get(key) == value]
