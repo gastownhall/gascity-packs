@@ -1,0 +1,14 @@
+#!/usr/bin/env -S python3 -I -S
+"""gc-herdr-core-launch: the agent launcher of runtime ``herdr-core``.
+
+hc runs it as a terminal's program, ``<python> -I -S gc-herdr-core-launch
+<spawn file>``; it execs the agent in place (gc_runtime_herdr_core.herdrcore.launch).
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+from gc_runtime_herdr_core.herdrcore.launch import main  # noqa: E402
+
+sys.exit(main(sys.argv, os.environ))

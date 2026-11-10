@@ -85,6 +85,12 @@ def _update(ctx: OpContext, obj: str, change: Callable[[Seen], Seen]) -> Seen:
         return change(Seen())
 
 
+def note_input(ctx: OpContext, obj: str) -> None:
+    """The pack typed into incarnation ``obj`` now."""
+    now = ctx.host.now_ms()
+    _update(ctx, obj, lambda s: Seen(s.screen_hash, s.changed_ms, now))
+
+
 def note_screen(ctx: OpContext, obj: str, screen: str) -> Seen:
     """What the screen of ``obj`` reads now; returns the updated entry."""
     digest = hashlib.sha256(screen.encode("utf-8", "surrogateescape")).hexdigest()

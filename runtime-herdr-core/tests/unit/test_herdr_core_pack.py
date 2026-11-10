@@ -17,11 +17,15 @@ from gc_runtime_herdr_core import PACK_NAME, PACK_VERSION, RUNTIME_NAME
 PACK_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = PACK_ROOT / "assets" / "gc_runtime_herdr_core"
 ENTRY = PACK_ROOT / "assets" / "bin" / "gc-runtime-herdr-core"
-SCRIPTS = (ENTRY,)
+LAUNCHER = PACK_ROOT / "assets" / "bin" / "gc-herdr-core-launch"
+SHIM_TEMPLATE = PACK_ROOT / "assets" / "shim" / "hc.in"
+SCRIPTS = (ENTRY, LAUNCHER, SHIM_TEMPLATE)
 
 
 def source_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    """The Python ``path`` holds (the shim template with its marker filled)."""
+    text = path.read_text(encoding="utf-8")
+    return text.replace("@CONFIG@", "'{}'") if path == SHIM_TEMPLATE else text
 
 
 def runtime_sources() -> Iterator[Tuple[Path, ast.Module]]:
@@ -165,4 +169,12 @@ def test_only_main_reads_the_process_environment() -> None:
                 and node.attr in ("environ", "environb", "getenv", "putenv", "unsetenv")
             ):
                 readers.append(str(path.relative_to(PACK_ROOT)))
-    assert sorted(set(readers)) == [os.path.join("assets", "gc_runtime_herdr_core", "main.py")]
+    # The executable's main, the launcher (it builds the agent's environment
+    # from its own) and the shim (it execs hc with the caller's environment).
+    assert sorted(set(readers)) == sorted(
+        [
+            os.path.join("assets", "bin", "gc-herdr-core-launch"),
+            os.path.join("assets", "gc_runtime_herdr_core", "main.py"),
+            os.path.join("assets", "shim", "hc.in"),
+        ]
+    )

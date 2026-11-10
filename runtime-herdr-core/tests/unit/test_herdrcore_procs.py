@@ -1,12 +1,15 @@
-"""The process table: snapshots, gc's agent matching rules and the attach scan."""
+"""The process table: snapshots, gc's agent matching rules, the
+infrastructure fence, the tree kill and the attach scan."""
 
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import pytest
 from cityharness import City
@@ -21,9 +24,14 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     Proc,
     ProcError,
     expand_names,
+    fenced_pids,
     find_agent,
+    is_infrastructure_argv,
+    is_launching,
+    kill_captured,
     matches,
     parse_environ,
+    scan_environ,
     subtree,
 )
 
@@ -171,18 +179,6 @@ def test_agent_matching_follows_gc(argv: Tuple[str, ...], comm: str, names: set,
     assert matches(proc(5, argv, comm=comm), wanted) is want
 
 
-def test_subtree_is_breadth_first() -> None:
-    snap = {
-        1: proc(1, ("sh",), ppid=0),
-        2: proc(2, ("a",), ppid=1),
-        3: proc(3, ("b",), ppid=2),
-        4: proc(4, ("c",), ppid=1),
-        5: proc(5, ("other",), ppid=0),
-    }
-    assert [p.pid for p in subtree(snap, 1)] == [1, 2, 4, 3]
-    assert subtree(snap, 99) == []
-
-
 def test_find_agent_looks_through_wrappers() -> None:
     snap = {
         1: proc(1, ("/bin/sh", "-c", "x"), ppid=0),
@@ -192,6 +188,77 @@ def test_find_agent_looks_through_wrappers() -> None:
     found = find_agent(snap, 1, expand_names(["claude"]))
     assert found is not None and found.pid == 3
     assert find_agent(snap, 1, expand_names(["codex"])) is None
+
+
+def test_is_launching_until_the_launcher_execs() -> None:
+    launching = {7: proc(7, ("/usr/bin/python3", "-I", "-S", "/p/assets/bin/gc-herdr-core-launch", "/run/x.json"))}
+    assert is_launching(launching, 7)
+    assert not is_launching({7: proc(7, ("cat",))}, 7)
+
+
+@pytest.mark.parametrize(
+    "argv, want",
+    [
+        (("dolt", "__gc-managed-dolt-scope-watchdog"), True),
+        (("/usr/local/bin/bd", "db-proxy-child", "--x"), True),
+        (("gc", "nudge", "poll", "mc"), True),
+        (("gc", "nudge", "send"), False),
+        (("db-proxy-child",), False),
+        (("sleep", "60"), False),
+    ],
+)
+def test_infrastructure_verbs_mirror_gc(argv: Tuple[str, ...], want: bool) -> None:
+    assert is_infrastructure_argv(argv) is want
+
+
+def test_fenced_subtrees_are_pruned_whole() -> None:
+    snap = {
+        1: proc(1, ("sh",), ppid=0),
+        2: proc(2, ("gc", "__gc-managed-dolt-scope-watchdog"), ppid=1),
+        3: proc(3, ("dolt", "sql-server"), ppid=2),  # the server under the watchdog
+        4: proc(4, ("bd", "db-proxy-child"), ppid=1),
+        5: proc(5, ("helper",), ppid=4),
+        6: proc(6, ("sleep", "600"), ppid=1),
+    }
+    assert fenced_pids(snap) == {2, 3, 4, 5}
+    assert [p.pid for p in subtree(snap, 1)] == [1, 2, 4, 6, 3, 5]
+
+
+class RecordingProcs(LinuxProcs):
+    def __init__(self, root: str) -> None:
+        LinuxProcs.__init__(self, root)
+        self.signals: List[Tuple[int, int]] = []
+        self.root = Path(root)
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.signals.append((pid, sig))
+        if sig == signal.SIGKILL or pid != 22:  # pid 22 ignores TERM
+            for leaf in ("stat", "cmdline", "environ"):
+                (self.root / str(pid) / leaf).unlink(missing_ok=True)
+            (self.root / str(pid)).rmdir()
+
+
+def test_kill_captured_terms_then_kills_and_fences_by_start_time(tmp_path: Path) -> None:
+    add_proc(tmp_path, 21, ppid=1, argv=["a"], start=5)
+    add_proc(tmp_path, 22, ppid=1, argv=["stubborn"], start=5)
+    add_proc(tmp_path, 23, ppid=1, argv=["recycled"], start=9)
+    add_proc(tmp_path, 1, ppid=0, argv=["init"])
+    source = RecordingProcs(str(tmp_path))
+    captured = [proc(21, ("a",), start="5"), proc(22, ("stubborn",), start="5"), proc(23, ("recycled",), start="5")]
+    survivors = kill_captured(source, captured, grace_s=0.3, pause=time.sleep)
+    assert survivors == []
+    assert (23, signal.SIGTERM) not in source.signals  # a new process on a reused pid is never signalled
+    assert source.signals[:2] == [(21, signal.SIGTERM), (22, signal.SIGTERM)]
+    assert (22, signal.SIGKILL) in source.signals and (21, signal.SIGKILL) not in source.signals
+
+
+def test_scan_environ_finds_the_incarnations_processes(tmp_path: Path) -> None:
+    add_proc(tmp_path, 31, ppid=1, argv=["orphan"], env={"GC_INSTANCE_TOKEN": "tok-1"})
+    add_proc(tmp_path, 32, ppid=1, argv=["other"], env={"GC_INSTANCE_TOKEN": "tok-2"})
+    add_proc(tmp_path, 33, ppid=1, argv=["none"])
+    source = LinuxProcs(str(tmp_path))
+    found = scan_environ(source, source.snapshot(), "GC_INSTANCE_TOKEN", "tok-1")
+    assert [p.pid for p in found] == [31]
 
 
 # --- the attach scan ---------------------------------------------------------------------
@@ -280,3 +347,68 @@ def test_a_viewer_that_exited_is_not_a_viewer(city: City, tmp_path: Path) -> Non
         assert attach.viewer_targets(city.context(), snapshot) == frozenset()
     finally:
         city.procs.inner = saved
+
+
+def test_scan_environ_skips_a_process_it_cannot_read(tmp_path: Path) -> None:
+    if os.getuid() == 0:
+        pytest.skip("root reads any file")
+    add_proc(tmp_path, 51, ppid=1, argv=["ssh-agent"], env={"GC_INSTANCE_TOKEN": "tok-1"})
+    add_proc(tmp_path, 52, ppid=1, argv=["orphan"], env={"GC_INSTANCE_TOKEN": "tok-1"})
+    (tmp_path / "51" / "environ").chmod(0)
+    source = LinuxProcs(str(tmp_path))
+    try:
+        assert [p.pid for p in scan_environ(source, source.snapshot(), "GC_INSTANCE_TOKEN", "tok-1")] == [52]
+    finally:
+        (tmp_path / "51" / "environ").chmod(0o600)
+
+
+def test_a_zombie_is_neither_an_agent_nor_alive(tmp_path: Path) -> None:
+    add_proc(tmp_path, 61, ppid=1, argv=["sh"])
+    add_proc(tmp_path, 62, ppid=61, argv=["claude"], state="Z")
+    source = LinuxProcs(str(tmp_path))
+    snap = source.snapshot()
+    assert snap[62].state == "Z"
+    assert find_agent(snap, 61, expand_names(["claude"])) is None
+    assert kill_captured(source, [snap[62]], grace_s=0.2, pause=time.sleep) == []
+
+
+def test_nothing_is_signalled_when_the_table_cannot_be_reread(tmp_path: Path) -> None:
+    add_proc(tmp_path, 71, ppid=1, argv=["a"], start=5)
+
+    class Flaky(RecordingProcs):
+        def snapshot(self) -> Dict[int, Proc]:
+            raise ProcError("gone")
+
+    source = Flaky(str(tmp_path))
+    captured = [proc(71, ("a",), start="5")]
+    assert kill_captured(source, captured, grace_s=0.2, pause=time.sleep) == captured
+    assert source.signals == []
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("/usr/bin/systemd-run", "--user", "--scope", "--", "/bin/sh", "-c", "claude"),
+        ("/usr/bin/env", "-u", "X", "/bin/sh", "-c", "claude"),
+    ],
+)
+def test_the_launch_wrappers_count_as_launching(argv: Tuple[str, ...]) -> None:
+    assert is_launching({8: proc(8, argv)}, 8)
+
+
+def test_a_wrapper_root_with_a_child_has_launched() -> None:
+    snap = {
+        8: proc(8, ("/usr/bin/systemd-run", "--user", "--scope", "--", "x")),
+        9: proc(9, ("claude",), ppid=8),
+    }
+    assert not is_launching(snap, 8)
+    launcher = {7: proc(7, ("/usr/bin/python3", "-I", "-S", "/p/assets/bin/gc-herdr-core-launch", "/run/x.json"))}
+    assert is_launching(launcher, 7)
+
+
+def test_an_opaque_process_is_never_signalled(tmp_path: Path) -> None:
+    add_proc(tmp_path, 81, ppid=1, argv=["a"], start=5)
+    source = RecordingProcs(str(tmp_path))
+    hidden = Proc(pid=81, ppid=1, uid=os.getuid(), start="", comm="", argv=(), opaque=True)
+    assert kill_captured(source, [hidden], grace_s=0.2, pause=time.sleep) == []
+    assert source.signals == []

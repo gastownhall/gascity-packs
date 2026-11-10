@@ -163,6 +163,7 @@ def entry_env(tmp: Path, home: Path) -> Dict[str, str]:
         "GC_EXEC_CITY_PATH": "/cities/entry",
         "GC_HC_TEST": "1",
         "GC_HC_TEST_BIN": write_launcher(str(bindir / "herdr-core")),
+        "GC_HC_TEST_SPAWN_ROOT": str(tmp / "spawn"),
         "ANTHROPIC_API_KEY": "sk-from-gcs-env",
         "LANG": "C.UTF-8",
     }

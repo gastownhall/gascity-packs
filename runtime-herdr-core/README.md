@@ -6,18 +6,13 @@ daemon the Herdr desktop app is built on. The pack ships one executable that
 speaks the Runtime Provider Protocol (RPP v0). It is typed Python, standard
 library only, Python 3.9 or later, so it needs no binary of its own.
 
-## Status: observe.v1 ops in, not released
+## Status: runtime ops in, not released
 
-The executable implements gc's lifecycle and observe.v1 ops on herdr-core
-and is v2-ready: it declares `observe.v1`, `report-attachment`,
-`report-activity`, `city-scoped` and `conformance-faults` (locality
-`local`), and passes
+The executable implements gc's runtime ops on herdr-core and is v2-ready:
+it declares `observe.v1`, `report-attachment`, `report-activity`,
+`city-scoped` and `conformance-faults` (locality `local`), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
-[Tests](#tests)). It cannot run a configured agent yet: the agent launcher,
-which applies the session environment, staging, setup commands and the
-first turn without handing secrets to hc, and the driving ops (`nudge`,
-`send-keys`, `interrupt`) are the next change, so `start` refuses a start
-config that needs them. The pack is not in `registry.toml` yet: it is published
+[Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. The doctor checks and
 the `gc herdr-core install|status|upgrade|restart-core` commands are not in
 this build: until they are, install herdr-core 0.1.19 yourself at
@@ -36,8 +31,10 @@ runtime-herdr-core/
   mypy.ini                         mypy --strict; disallow_any_expr in rpp/ and herdrcore/
   assets/
     bin/gc-runtime-herdr-core      0755, #!/usr/bin/env -S python3 -I -S
+    bin/gc-herdr-core-launch       0755, the agent launcher hc runs in each terminal
+    shim/hc.in                     the in-agent hc shim's template
     gc_runtime_herdr_core/
-      main.py                      argv dispatch; the only reader of os.environ
+      main.py                      argv dispatch; reads os.environ (as do the launcher and shim)
       handshake.py                 the capabilities this build declares
       rpp/                         provider-neutral RPP kit
         exitcodes.py wire.py ops.py perop.py cancel.py redact.py flock.py
@@ -47,7 +44,8 @@ runtime-herdr-core/
       herdrcore/                   runtime semantics
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
-        lifecycle.py
+        lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
+        inputs.py screen.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
     unit/                          the unit tier
@@ -83,19 +81,71 @@ runtime-herdr-core/
 - **Dead boxes.** A finished record, and a live one no longer running the
   program the pack started (a kept terminal's replacement shell, a lost
   holder), is a dead box: `peek` still reads its screen, `kill-object corpse`
-  removes it, and a plain `start` replaces it.
-- **Start** runs the command under `sh -c` with the core's environment, in
-  `work_dir` (which must exist; the home without one); hc gets only `TERM`.
-  `terminal.run` is sent once: after a lost reply the start takes the
-  terminal its `gc.obj` names, so a command never runs twice, and a failed
-  start keeps the metadata while its terminal may still run. **Stop** and
-  **kill-object** end the program with `terminal.kill` and remove the record
-  and its metadata.
+  removes it, and a plain `start` recycles it.
+- **The launcher.** hc gets only `TERM`; the session's environment, command
+  and work directory travel in a spawn file on tmpfs (0600, created
+  exclusively, never following links), which the launcher unlinks before it
+  reads it. The launcher removes `HC_SCOPE` (hc's holder-loss sweep kills
+  every process carrying it), `HC_SOCKET`, `HC_SESSION` and the core's own
+  state and config directories the session does not set (the user's runtime
+  directory and session bus stay, as in a tmux pane), applies the session
+  environment (`""` unsets), puts the hc shim first on `PATH`, and execs the
+  agent. When `start`'s probe (the launcher's exact `systemd-run --user
+  --scope --slice=…` invocation, kept per core process on success and for
+  five minutes on failure) shows a user manager can place it, the agent runs
+  in its own scope under `GC_AGENT_SLICE` (the session's, else gc's, else
+  `gascity-agents.slice`); otherwise, or when the launcher cannot run
+  `systemd-run`, it starts unwrapped and `start` warns. The shim gives
+  in-agent `hc` the core's exact tuple and refuses while the core is down
+  instead of starting a second one.
+- **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
+  `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
+  (fatal), creates the terminal in `work_dir` (which must exist by then;
+  the home without one), runs `session_setup` and the setup script
+  (warnings), then types `nudge` once the agent is ready (its prompt, its
+  delay, its first status report, or settled output), then runs
+  `session_live` (warnings). `terminal.run` is sent once: after a lost reply
+  the start takes the terminal its `gc.obj` names, so a command never runs
+  twice, and a failed start keeps the metadata while its terminal may still
+  run. An agent that exits
+  during startup fails the start, unless its lifecycle is `one_shot`.
+  Staging does not merge: the files gc JSON-merges (`.claude/settings.json`,
+  `.gemini/settings.json`, `.codex/hooks.json`, `.cursor/hooks.json`,
+  `.agents/hooks.json`, `.github/hooks/gascity.json`) and a Kiro
+  `AGENTS.md` already in the work directory are kept, with a warning. Only
+  `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
+  and `install_agent_hooks`' extra slots are not (gaps until gc stages on
+  the host for runtime packs).
+- **Input** (`nudge`, `send-keys`, `interrupt`) goes to the current
+  incarnation by address. RPP v0 outcomes: delivered or gone exits 0; a
+  refusal (the agent waits on its own question, the terminal is not ready, a
+  failed precondition, a tmux key hc cannot spell) or a request that never
+  reached hc exits 1 with nothing typed. A `nudge` whose request reached hc
+  is delivered, as tmux's `send-keys` is fire-and-forget: hc types a send
+  only once a person stops typing and finishes it after the pack stops
+  waiting, so a nudge still held at the op's deadline, or whose reply was
+  lost, is typed later, and gc's queue never sends it twice. **Accepted
+  limit:** a nudge hc still holds is lost if the core dies before the person
+  stops typing (rare). gc's typed input outcomes (an exit code for
+  "delivered, not yet observed") will report that case precisely once they
+  land. gc's nudge queue itself is at-least-once: a gc process that dies
+  mid-op redelivers after its claim's lease (about two minutes) runs out,
+  and a send hc holds for a person's pause widens that window to the op's
+  whole budget. A nudge stops waiting for hc 5 s before its deadline, so
+  its answer reaches gc before gc gives up on the op. A `send-keys` or `interrupt` whose reply was lost after the write
+  exits 1 ("unconfirmed").
 - **Activity.** A program that never reported OSC 7501 status is active
   when its screen changes: `inventory` and `get-last-activity` read the
   screen of each such running agent (hc keeps no output time). `inventory`
   reads within its deadline, and a box whose screen it did not read on that
   pass reads as active now, never at an old time.
+- **Stop and kill-object** end the whole process tree: descendants captured
+  before hc's kill, a broken incarnation's orphans found by its
+  `GC_INSTANCE_TOKEN`, every process still the one captured (same start
+  time) sent TERM then KILL. City infrastructure (gc's managed Dolt
+  watchdog, bd's database proxy, gc's nudge poller) and its whole subtree is
+  never killed, and other live sessions' trees are protected. When the
+  process table cannot be read, the op still kills but exits 1.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's
   `attach` runs (it holds a lock) or a `herdr-core|hc attach` process of this
   user targets it on this city's core. `is-attached` exits 1 when it cannot
@@ -103,9 +153,7 @@ runtime-herdr-core/
   `attach` checks the core answers first and runs `hc attach` with the
   core's allowlist environment, so it never starts a core on gc's.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
-  reading stdin); the driving ops, `watch-startup` and `copy-to` (exit 2,
-  until the launcher lands); `server-stop`, `program-status` and session
-  events.
+  reading stdin), `server-stop`, `program-status` and session events.
 
 ## Foundations
 

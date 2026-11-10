@@ -161,6 +161,9 @@ class FakeHc:
         self._conns: Set[socket.socket] = set()
         self._accepted = 0
         self._started_at = time.monotonic()
+        # The reported start lies a minute back, so a restart (which clears
+        # it) moves the core's start time far past any clock jitter.
+        self._uptime_bias_ms = 60_000
         self._server: Optional[_Server] = None
         self._thread: Optional[threading.Thread] = None
         # Set once server.stop has answered: a standalone core then exits.
@@ -322,10 +325,13 @@ class FakeHc:
         self._terminal(address).lose_holder()
 
     def restart_core(self, *, version: Optional[str] = None) -> None:
-        """The core process restarts: connections drop, programs and records survive."""
+        """The core process restarts: connections drop, programs and records
+        survive, and its start time changes."""
         with self._lock:
             if version is not None:
                 self._version = version
+            self._started_at = time.monotonic()
+            self._uptime_bias_ms = 0
             terminals = list(self._terminals.values())
         for terminal in terminals:
             with terminal.lock:
@@ -470,7 +476,7 @@ class FakeHc:
             "core": dict(self._core),
             "version": version,
             "pid": os.getpid(),
-            "uptime_ms": int((time.monotonic() - self._started_at) * 1000),
+            "uptime_ms": int((time.monotonic() - self._started_at) * 1000) + self._uptime_bias_ms,
             "holder": holder,
             "holders": [holder],
             "live": live,

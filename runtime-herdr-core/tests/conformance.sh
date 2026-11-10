@@ -7,7 +7,8 @@
 # Runs `gc runtime check` and `gc runtime conformance` on the pack's
 # executable and fails unless both pass, every requirement passes or is
 # skipped, and the report says v2-ready. fake-hc stands in for the hc binary
-# (GC_HC_TEST_BIN, honoured only under GC_HC_TEST=1).
+# (GC_HC_TEST_BIN, honoured only under GC_HC_TEST=1); spawn files go under
+# the scratch directory.
 #
 # By default all state lives in a scratch GC_EXEC_STATE_DIR. --default-root
 # leaves GC_EXEC_STATE_DIR unset, proving the default state root under the
@@ -58,6 +59,7 @@ else
 fi
 export GC_HC_TEST=1
 export GC_HC_TEST_BIN="$bin/herdr-core"
+export GC_HC_TEST_SPAWN_ROOT="$scratch/spawn"
 unset GC_EXEC_CITY_PATH GC_EXEC_CITY_NAME GC_RPP_FAULT
 
 teardown() {

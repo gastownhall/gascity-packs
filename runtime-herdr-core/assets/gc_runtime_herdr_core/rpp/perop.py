@@ -119,6 +119,10 @@ def run_per_op(
         _emit(stderr, redactor.redact(f"{op}: unknown operation"))
         return int(ExitCode.UNKNOWN_OP)
 
+    def emit(data: bytes) -> None:
+        stdout.write(data)
+        stdout.flush()
+
     cancel = CancelToken()
     if install_signals:
         _install_sigterm(cancel)
@@ -133,6 +137,7 @@ def run_per_op(
             cancel=cancel,
             deadline=deadline,
             redactor=redactor,
+            emit=emit,
         )
         # gc may have canceled, or given up waiting, while the op read stdin or started up.
         cancel.check()
