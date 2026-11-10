@@ -82,7 +82,8 @@ source = "<this pack>"
   records what was installed. Older versions are collected; the pinned
   one, the most recently installed other one (to roll back to) and any a
   process still runs are kept, and nothing is removed when the process
-  table cannot be read.
+  table cannot be read. When the pinned build is already installed and
+  verifies against its `install.json`, nothing is fetched.
 - **`gc herdr-core status`** reports the pin, the install and the city's
   core (version, pid, live terminals, whether the pack started it).
   `status --env` prints the core's discovery tuple:
@@ -92,11 +93,12 @@ source = "<this pack>"
   over with `herdr-core server restart` under the pack's allowlist
   environment: hc keeps every program and its screen across a planned
   restart, so sessions keep running. A core started outside the pack is
-  refused (the restart would keep its environment).
+  refused (the restart would keep its environment), and so is a city that
+  drives its own `hc_bin` (the pack does not upgrade that build).
 - **`gc herdr-core restart-core`** stops the city's own core and starts a
   fresh one under the allowlist: the fix for a core started outside the
-  pack. Stopping a core ends its programs, so it refuses while any terminal
-  runs there (`gc stop` first). It refuses a core that is not the city's
+  pack. Stopping a core ends its programs, so it refuses while the city
+  runs or any terminal runs there (`gc stop` first). It refuses a core that is not the city's
   (another user's, or one with another hc session or state root).
 - **The binary.** The pinned install, unless the city's pack config
   (`<R>/pack/<city id>/config.json`) sets `hc_bin` and
@@ -113,9 +115,9 @@ warns). They only read: a check never starts a core or writes state.
 |---|---|---|
 | `hc-python` | no `python3`, or one older than 3.9 | |
 | `hc-binary` | not installed; changed since install; from another release; `hc_bin` without `allow_unpinned` | installed without `gc herdr-core install`; writable; `hc_bin` with `allow_unpinned` |
-| `hc-core` | down while the city runs (once a read found it down); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running another binary than the pack's | version differs from the pin (`upgrade`); an untested version; a package manager's hc; no systemd user manager; lingering off; inside gc's service cgroup |
+| `hc-core` | down while the city runs (once a read found it down); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
 | `hc-scope-hygiene` | the city's supervisor or controller, Dolt server or watchdog, or bd proxy carries `HC_SCOPE`, runs under a herdr-core holder or core, or in an `hc-hold-*`/`hc-serve-*` cgroup | its environment cannot be read |
-| `hc-state-perms` | hc's state directory or `terminals.json` is readable by others | |
+| `hc-state-perms` | hc's state directories are not this user's 0700 directories, or `terminals.json` is readable by others through them (hc writes it with the umask's mode, which 0700 directories keep private) | |
 
 `hc-scope-hygiene` attributes a process to the city by the city path in
 its argv or config (`--config`, `--root`, the watchdog's arguments), by
@@ -132,6 +134,10 @@ session's terminal is labelled `herdr.space=gc-<city>[-<rig>]` and
 screens. It is off by default: the app sets `keep=true` on what it adopts,
 so an agent that exits leaves a shell, which the pack reads as the
 session's death (gc restarts it).
+
+It is experimental: whether the Herdr app adopts ids in this style (it
+names its own spaces and tabs with ids such as `s1` and `t2`) has not been
+checked against the app yet, so the sessions may not appear there.
 
 ## How sessions run
 
