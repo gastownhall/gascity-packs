@@ -216,7 +216,7 @@ def test_fenced_subtrees_are_pruned_whole() -> None:
         1: proc(1, ("sh",), ppid=0),
         2: proc(2, ("gc", "__gc-managed-dolt-scope-watchdog"), ppid=1),
         3: proc(3, ("dolt", "sql-server"), ppid=2),  # the server under the watchdog
-        4: proc(4, ("bd", "db-proxy-child"), ppid=1),
+        4: proc(4, ("/usr/local/bin/bd", "db-proxy-child"), ppid=1),
         5: proc(5, ("helper",), ppid=4),
         6: proc(6, ("sleep", "600"), ppid=1),
     }
