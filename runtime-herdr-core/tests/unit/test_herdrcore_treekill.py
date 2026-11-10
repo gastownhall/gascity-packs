@@ -145,3 +145,18 @@ def test_descendants_die_even_when_hcs_kill_fails(city: City, leftovers: List[in
     done = city.run("stop", "mc-a")
     assert done.code == 1
     assert wait_dead(child), "the captured tree is killed whatever hc answered"
+
+
+def test_nothing_under_an_opaque_process_is_signalled(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.lifecycle import kill_targets
+    from gc_runtime_herdr_core.herdrcore.procs import Proc
+
+    def p(pid: int, ppid: int, opaque: bool = False) -> Proc:
+        return Proc(pid=pid, ppid=ppid, uid=os.getuid(), start="" if opaque else "1", comm="x", argv=() if opaque else ("x",), opaque=opaque)
+
+    # 10 is the agent; 11 cannot be read (it may be infrastructure whose
+    # command line hides); 12 is its readable child; 13 an ordinary child.
+    snapshot = {10: p(10, 1), 11: p(11, 10, opaque=True), 12: p(12, 11), 13: p(13, 10)}
+    signal, unsure = kill_targets(snapshot, list(snapshot.values()), keep=set())
+    assert [x.pid for x in signal] == [10, 13]
+    assert sorted(x.pid for x in unsure) == [11, 12]

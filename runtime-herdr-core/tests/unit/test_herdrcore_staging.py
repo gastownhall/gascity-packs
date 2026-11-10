@@ -218,10 +218,12 @@ def test_a_pre_start_may_create_the_work_dir(city: City) -> None:
     assert missing.code == 1 and "work_dir" in missing.stderr
 
 
-def test_session_live_runs_after_the_first_turn_with_warnings_only(city: City) -> None:
+def test_session_live_is_never_run_and_start_says_so(city: City) -> None:
+    # gc's session_live is tmux theming and keybindings; run here it would
+    # reach whatever tmux server it finds, a person's own included.
     marker = city.root / "live.txt"
-    config = {"command": "cat", "session_live": [f'echo "$GC_SESSION" > {marker}', "exit 4"]}
+    config = {"command": "cat", "session_live": [f"touch {marker}", f"touch {marker}.2"]}
     done = city.start("mc-a", json.dumps(config))
     assert done.code == 0, done.stderr
-    assert "session_live[1] exited 4" in done.stderr
-    assert marker.read_text().strip() == "mc-a"
+    assert not marker.exists() and not (city.root / "live.txt.2").exists()
+    assert done.stderr.count("session_live") == 1 and "no tmux server" in done.stderr

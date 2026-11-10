@@ -20,7 +20,8 @@ agent):
    terminal and then the metadata; the metadata stays while the terminal may
    outlive the start, as one without it reads ``identity: {}``.
 5. Unlocked: ``session_setup`` and the setup script (warnings only), then the
-   first turn, then ``session_live`` (warnings only, as tmux runs it): once the agent is ready (its prompt, its delay, its first
+   first turn. ``session_live`` (tmux theming and keybindings) is never run:
+   ``start`` warns that it is not applied. The first turn: once the agent is ready (its prompt, its delay, its first
    status report, or output that settled), the config's ``nudge`` is sent
    through the nudge path (written is delivered). A refusal types nothing and records
    ``GC_STARTUP_DELIVERY_UNCONFIRMED`` in the metadata.
@@ -35,7 +36,9 @@ found by the incarnation's ``GC_INSTANCE_TOKEN`` in their environment. When
 the process table cannot be read the kill still happens, but the op exits 1
 ("descendants may survive") so gc retries. A process of the tree that cannot
 be read (opaque: it has no start time to fence by) is never signalled, and
-is reported the same way.
+is reported the same way, together with everything under it: an
+infrastructure process that cannot be read cannot be recognised by its
+command line, so its children would lose the infrastructure fence.
 """
 
 from __future__ import annotations
@@ -66,7 +69,19 @@ from .core import core_env, ensure_core
 from .envplan import STRIPPED, scope_env, scope_prefix
 from .metastore import Meta, MetaError, seed
 from .naming import LABEL_OBJ, LABEL_PID, LABEL_SESSION, new_object_nonce, session_labels, terminal_name
-from .procs import Proc, ProcError, expand_names, fenced_pids, find_agent, is_launching, kill_captured, scan_environ, subtree
+from .procs import (
+    Proc,
+    ProcError,
+    Snapshot,
+    children_index,
+    expand_names,
+    fenced_pids,
+    find_agent,
+    is_launching,
+    kill_captured,
+    scan_environ,
+    subtree,
+)
 from .reads import agent_state, list_city, meta_store, session_arg, unreachable
 from .records import BROKEN_REASONS, box_object, is_broken, is_intact, newest, object_of
 from .staging import StagingError, stage
@@ -78,6 +93,12 @@ TERM_ENV: Final = {"TERM": "xterm-256color"}
 session's travels in the spawn file."""
 
 ONE_SHOT: Final = "one_shot"
+SESSION_LIVE_SKIPPED: Final = (
+    "session_live is not applied on this runtime: it styles and binds a tmux server, and herdr-core runs no tmux server"
+)
+"""gc's ``session_live`` is tmux theming, keybindings and status bars. Run on
+the host it would reach whatever tmux server it finds (an inherited
+``TMUX``, else the user's default one), so it is never run."""
 SETUP_TIMEOUT_S: Final = 30.0
 LAUNCH_WAIT_S: Final = 5.0
 AGENT_WAIT_S: Final = 30.0
@@ -161,17 +182,34 @@ def kill_incarnation(
         for other in protected:
             if other.address != record.address and other.pid is not None and is_intact(other):
                 keep.update(p.pid for p in subtree(snapshot, other.pid))
-        targets = [p for pid, p in captured.items() if pid not in keep]
-        opaque = [p for p in targets if p.opaque]
-        if opaque:
-            problems.append("cannot read, so never signalled: " + ", ".join(str(p.pid) for p in opaque[:8]))
-        survivors = kill_captured(procs, [p for p in targets if not p.opaque], pause=wait)
+        targets, unsure = kill_targets(snapshot, list(captured.values()), keep=keep)
+        if unsure:
+            problems.append("under a process that cannot be read, so never signalled: " + ", ".join(str(p.pid) for p in unsure[:8]))
+        survivors = kill_captured(procs, targets, pause=wait)
         if survivors:
             problems.append("still running: " + ", ".join(str(p.pid) for p in survivors[:8]))
     if kill_error is not None:
         raise kill_error  # the tree is dead either way; the record stays for the next try
     _remove_record(client, record, wait)
     return problems
+
+
+def kill_targets(snapshot: Snapshot, captured: List[Proc], *, keep: Set[int]) -> Tuple[List[Proc], List[Proc]]:
+    """Split ``captured`` (less ``keep``) into what may be signalled and what
+    may survive: every opaque process and its whole subtree is never
+    signalled, since an unreadable one may be city infrastructure."""
+    index = children_index(snapshot)
+    shadowed: Set[int] = set()
+    for proc in snapshot.values():
+        if proc.opaque and proc.pid not in shadowed:
+            shadowed.update(p.pid for p in subtree(snapshot, proc.pid, index))
+    signal: List[Proc] = []
+    unsure: List[Proc] = []
+    for proc in captured:
+        if proc.pid in keep:
+            continue
+        (unsure if proc.pid in shadowed else signal).append(proc)
+    return signal, unsure
 
 
 def _forget(ctx: OpContext, obj: Optional[str]) -> None:
@@ -505,10 +543,8 @@ def _start(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
         failed = first_turn(ctx, client, name, record, cfg)
         if failed is not None:
             warnings.append(failed)
-    for index, command in enumerate(cfg.session_live):
-        failed = _run_setup(ctx, command, setup_env, _setup_cwd(cfg))
-        if failed is not None:
-            warnings.append(f"session_live[{index}] {failed}")
+    if cfg.session_live:
+        warnings.append(SESSION_LIVE_SKIPPED)
     return OpResult(ExitCode.OK, b"", "; ".join(warnings))
 
 

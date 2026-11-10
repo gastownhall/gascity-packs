@@ -103,8 +103,10 @@ runtime-herdr-core/
   (fatal), creates the terminal in `work_dir` (which must exist by then;
   the home without one), runs `session_setup` and the setup script
   (warnings), then types `nudge` once the agent is ready (its prompt, its
-  delay, its first status report, or settled output), then runs
-  `session_live` (warnings). `terminal.run` is sent once: after a lost reply
+  delay, its first status report, or settled output). `session_live` (tmux
+  theming and keybindings) is never run: herdr-core runs no tmux server,
+  and run on the host it would reach a person's own; `start` warns that it
+  is not applied. `terminal.run` is sent once: after a lost reply
   the start takes the terminal its `gc.obj` names, so a command never runs
   twice, and a failed start keeps the metadata while its terminal may still
   run. An agent that exits
@@ -144,7 +146,9 @@ runtime-herdr-core/
   `GC_INSTANCE_TOKEN`, every process still the one captured (same start
   time) sent TERM then KILL. City infrastructure (gc's managed Dolt
   watchdog, bd's database proxy, gc's nudge poller) and its whole subtree is
-  never killed, and other live sessions' trees are protected. When the
+  never killed, and other live sessions' trees are protected. Nothing
+  under a process that cannot be read is signalled (an unreadable process
+  may be infrastructure); such a stop exits 1 so gc retries. When the
   process table cannot be read, the op still kills but exits 1.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's
   `attach` runs (it holds a lock) or a `herdr-core|hc attach` process of this
