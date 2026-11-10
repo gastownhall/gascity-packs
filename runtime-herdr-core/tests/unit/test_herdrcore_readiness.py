@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from gc_runtime_herdr_core.herdrcore.readiness import shows_dialog, shows_ready_prompt, withholds_first_turn
+from gc_runtime_herdr_core.herdrcore.readiness import delays_first_turn, shows_dialog, shows_ready_prompt, withholds_first_turn
 
 GLYPH = "❯"
 NBSP = "\u00a0"
@@ -57,17 +57,23 @@ def test_startup_dialogs_are_read_as_gc_reads_them(screen: str, dialog: bool) ->
 
 
 @pytest.mark.parametrize(
-    "screen, prefix, withheld",
+    "screen, prefix, withheld, delayed",
     [
-        (f"Do you trust the files in this folder?\n{GLYPH} 1. Yes, proceed\n  2. No, exit\n", f"{GLYPH} ", True),
-        ("You've hit your limit\nREADY> \n", "READY>", True),  # a rate-limit dialog, prompt or not
-        ("READY> \n  rate limit: 40% used\n", "READY>", False),  # a status line under the prompt
-        ("booting\n  rate limit: 40% used\n", "READY>", True),  # no prompt yet
-        (f"{GLYPH} \n  Rate limit resets at 5pm\n", "", False),  # any prompt line, with no prefix
-        ("Rate limit reached\nretrying...\n", "", True),
-        (f"rate limit\n{GLYPH} 1. Retry\n  2. Wait\n", f"{GLYPH} ", True),  # a menu's cursor row is no prompt
-        ("READY> \n", "READY>", False),
+        (f"Do you trust the files in this folder?\n{GLYPH} 1. Yes, proceed\n  2. No, exit\n", f"{GLYPH} ", True, True),
+        ("You've hit your limit\nREADY> \n", "READY>", True, True),  # a rate-limit dialog, prompt or not
+        ("READY> \n  rate limit: 40% used\n", "READY>", False, False),  # a status line under the prompt
+        ("booting\n  rate limit: 40% used\n", "READY>", False, True),  # no prompt yet: wait, never withhold
+        (f"{GLYPH} \n  Rate limit resets at 5pm\n", "", False, False),  # any prompt line, with no prefix
+        ("Rate limit reached\nretrying...\n", "", False, True),
+        ("Rate limit reached: 100%\n", "", False, True),  # the marker's own line is no prompt line
+        ("Welcome\nTip: avoid hitting the rate limit by...\n", f"{GLYPH} ", False, True),
+        (f"rate limit\n{GLYPH} 1. Retry\n  2. Wait\n", f"{GLYPH} ", False, True),  # a menu's cursor row is no prompt
+        ("READY> \n", "READY>", False, False),
     ],
 )
-def test_a_bare_rate_limit_mention_under_a_prompt_withholds_nothing(screen: str, prefix: str, withheld: bool) -> None:
+def test_only_a_known_dialog_withholds_the_first_turn(screen: str, prefix: str, withheld: bool, delayed: bool) -> None:
+    """A bare "rate limit" mention with no prompt line (on another line)
+    keeps the wait going, but its end types the turn: gc never reads those
+    bare markers to judge readiness."""
     assert withholds_first_turn(screen, prefix) is withheld
+    assert delays_first_turn(screen, prefix) is delayed

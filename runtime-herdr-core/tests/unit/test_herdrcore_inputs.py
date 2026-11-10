@@ -282,6 +282,13 @@ def test_a_status_line_mentioning_rate_limits_under_a_prompt_is_ready(city: City
     assert typed_after(city, config) < 4.0
 
 
+def test_a_tip_mentioning_rate_limits_gets_the_turn_at_the_waits_end(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A bare mention is no dialog gc knows: it delays the turn, never withholds it.
+    monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.5)
+    config = {"command": "printf 'Welcome\\nTip: avoid hitting the rate limit by...\\n'; exec cat", "ready_prompt_prefix": "❯ "}
+    assert typed_after(city, config) >= 1.5
+
+
 def test_a_prompt_with_a_non_breaking_space_is_ready(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(lifecycle, "READY_WAIT_S", 5.0)  # a miss fails fast
     config = {"command": "printf '❯\u00a0Try it\\n'; exec cat", "nudge": "first task", "ready_prompt_prefix": "❯ "}

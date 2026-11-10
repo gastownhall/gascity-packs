@@ -11,11 +11,16 @@ Enter would pick it.
   a space, a leading ``│``/``┃`` box border is skipped, the bare glyph counts,
   and the cursor row of a numbered menu is no prompt.
 * :func:`shows_dialog` is its ``containsStartupDialog``
-  (``internal/runtime/dialog.go``), with the same markers.
+  (``internal/runtime/dialog.go``), with the same markers. ``start`` does
+  not call it: it is the gc reference the tests pin, which the two
+  functions below narrow.
 * :func:`withholds_first_turn` is what keeps the first turn back: a dialog
-  gc knows, except that a bare "rate limit" mention (a status line's) is no
-  dialog once a prompt line shows. gc reads those markers only to answer a
-  dialog it already waits on, never to judge readiness.
+  gc knows, but not a bare "rate limit" mention (a status line's, a tip's).
+  gc reads those bare markers only to answer a dialog it already waits on,
+  never to judge readiness.
+* :func:`delays_first_turn`: a bare mention with no prompt line (on a line
+  of its own) may be a rate-limit screen gc's markers miss, so the wait
+  goes on; its end types the turn.
 """
 
 from __future__ import annotations
@@ -57,7 +62,8 @@ group of markers, it shows one of them."""
 RATE_LIMIT_DIALOG: Final = ("Usage limit reached", "You've hit your limit", "/rate-limit-options")
 BARE_RATE_LIMIT: Final = ("rate limit", "Rate limit")
 RATE_LIMIT: Final[Tuple[str, ...]] = RATE_LIMIT_DIALOG + BARE_RATE_LIMIT
-"""gc's ``ContainsRateLimitDialog`` markers."""
+"""gc's ``ContainsRateLimitDialog`` markers (:func:`shows_dialog`, the gc
+reference the tests pin)."""
 CODEX_BANNER: Final = "OpenAI Codex"
 CODEX_STATUS_SEPARATOR: Final = " · "
 
@@ -73,15 +79,23 @@ def shows_ready_prompt(screen: str, prefix: str) -> bool:
 
 def shows_dialog(screen: str) -> bool:
     """The screen shows a startup dialog gc knows. A rate-limit marker counts
-    unless Codex has finished starting (gc's ``ContainsRateLimitDialog``)."""
+    unless Codex has finished starting (gc's ``ContainsRateLimitDialog``).
+    Not used by ``start``: the gc reference the tests pin."""
     return _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT)
 
 
 def withholds_first_turn(screen: str, prefix: str) -> bool:
     """The screen shows a dialog the first turn must not land in: one gc
-    knows, but a bare "rate limit" mention under which a prompt line shows
-    (the ready prompt when ``prefix`` is set, else any prompt line)."""
-    if _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT_DIALOG):
+    knows, a bare "rate limit" mention aside (see :func:`delays_first_turn`)."""
+    return _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT_DIALOG)
+
+
+def delays_first_turn(screen: str, prefix: str) -> bool:
+    """The screen is not ready for the first turn, though no dialog holds it
+    back for good: a dialog (:func:`withholds_first_turn`), or a bare "rate
+    limit" mention with no prompt line on another line (the ready prompt
+    when ``prefix`` is set, else any prompt line)."""
+    if withholds_first_turn(screen, prefix):
         return True
     return _rate_limited(screen, BARE_RATE_LIMIT) and not _shows_prompt_line(screen, prefix)
 
@@ -98,9 +112,11 @@ def _rate_limited(screen: str, markers: Sequence[str]) -> bool:
 
 
 def _shows_prompt_line(screen: str, prefix: str) -> bool:
+    """A prompt line shows, other than one holding a bare rate-limit marker."""
+    lines = [line for line in screen.split("\n") if not any(marker in line for marker in BARE_RATE_LIMIT)]
     if prefix:
-        return shows_ready_prompt(screen, prefix)
-    return any(_prompt_indicator(line) for line in screen.split("\n"))
+        return shows_ready_prompt("\n".join(lines), prefix)
+    return any(_prompt_indicator(line) for line in lines)
 
 
 def _prompt_rest(line: str, prefix: str) -> Optional[str]:

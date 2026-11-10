@@ -107,15 +107,21 @@ runtime-herdr-core/
   as gc reads a pane: the bottom-most prompt line, NBSP as a space, a box
   border skipped, and a numbered menu's cursor row no prompt; else its
   delay, at most 60 s as in gc; else its first status report; else settled
-  output). A wait that ends without readiness (a boot slower than the
-  wait, a prompt prefix that never matches, a wait cut short by the op's
-  deadline) types the turn all the same, as gc's tmux and herdr providers
-  type it on a probe that timed out. gc answers startup dialogs only once
-  `start` returns, so a screen showing one of gc's known dialogs is never
-  ready, and a dialog still on screen when the wait settles or ends
-  withholds the turn with a warning and `GC_STARTUP_DELIVERY_UNCONFIRMED`
-  in the metadata. A bare "rate limit" mention (a status line's) is no
-  dialog once a prompt line shows. Known limit: a turn withheld over a
+  output). A wait that runs out without readiness (a boot slower than the
+  wait, a prompt prefix that never matches) types the turn all the same,
+  as gc's tmux and herdr providers type it on a probe that timed out. A
+  wait cut short by the op's deadline types it too, which is this pack's
+  own choice, not gc's: gc's tmux provider returns before it types, and
+  gc's herdr provider skips the turn and records it unconfirmed. The pack
+  stops waiting 5 s before its deadline, so with 5 s or less left it does
+  not wait at all, and the turn may land on a screen still booting. gc
+  answers startup dialogs only once `start` returns, so a screen showing
+  one of gc's known dialogs is never ready, and a dialog still on screen
+  when the wait settles or ends withholds the turn with a warning and
+  `GC_STARTUP_DELIVERY_UNCONFIRMED` in the metadata. A bare "rate limit"
+  mention (a status line's, a tip's) is no dialog: with no prompt line on
+  another line it keeps the wait going, and the wait's end types the
+  turn. Known limit: a turn withheld over a
   dialog is not typed later, as gc answers the dialog but does not type
   an exec runtime's first turn after `start`; the marker is for
   operators. A menu gc does not know as a dialog gets the turn at the

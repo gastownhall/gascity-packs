@@ -34,10 +34,15 @@ agent):
    ready (its prompt, read as gc reads it, see :mod:`.readiness`; else its
    delay, at most the wait's, as in gc; else its first status report; else
    output that settled), the config's ``nudge`` is sent through the nudge
-   path (a send hc got whole is delivered). A wait that ends without
+   path (a send hc got whole is delivered). A wait that runs out without
    readiness types it all the same, as gc's tmux and herdr providers do on
    a probe that timed out (nothing in gc types an exec runtime's first turn
-   later). gc answers startup dialogs only once ``start`` returns, so a
+   later). A wait the op's deadline cuts short (it ends
+   :data:`FIRST_TURN_RESERVE_S` before it, so with less left there is no
+   wait at all) types it too: the pack's own choice, as gc's tmux provider
+   returns before it types and gc's herdr provider skips the turn. A bare
+   "rate limit" mention delays the turn but never withholds it (see
+   :mod:`.readiness`). gc answers startup dialogs only once ``start`` returns, so a
    screen that shows one is never ready, and one still showing when the
    wait settles or ends withholds the turn (a known limit: nothing types it
    later). A withheld turn or a refusal types nothing, warns, and records
@@ -116,7 +121,7 @@ from .procs import (
     scan_environ,
     subtree,
 )
-from .readiness import shows_ready_prompt, withholds_first_turn
+from .readiness import delays_first_turn, shows_ready_prompt, withholds_first_turn
 from .reads import agent_state, list_city, meta_store, session_arg, unreachable
 from .records import box_object, is_intact, newest, object_of
 from .staging import StagingError, stage
@@ -890,7 +895,9 @@ def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig)
     cannot (a startup dialog shows), or None if it ended first. A screen
     showing a dialog is never ready, in any mode. A wait that ends with no
     dialog on screen gives the terminal too: gc's providers type the turn
-    on a probe that timed out, and nothing in gc types it later."""
+    on a probe that timed out, and nothing in gc types it later. A wait
+    the op's deadline cuts short does the same, by the pack's own choice
+    (gc's providers skip the turn then)."""
     begun = time.monotonic()
     end = begun + max(0.0, min(READY_WAIT_S, ctx.request.deadline.remaining() - FIRST_TURN_RESERVE_S))
     # A delay is a guess at readiness, cut to the wait as gc cuts it to its
@@ -908,10 +915,9 @@ def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig)
             last_screen, stable_since = screen, now
         settled = bool(screen.strip()) and now - stable_since >= SETTLE_S
         in_dialog = withholds_first_turn(screen, cfg.ready_prompt_prefix)
-        if in_dialog:
-            if settled:  # gc answers it once start returns: the wait would outlast it
-                return IN_DIALOG
-        elif _shows_ready(cfg, current, screen, settled, now, delay_until):
+        if in_dialog and settled:  # gc answers it once start returns: the wait would outlast it
+            return IN_DIALOG
+        if not delays_first_turn(screen, cfg.ready_prompt_prefix) and _shows_ready(cfg, current, screen, settled, now, delay_until):
             return current
         if now >= end:
             return IN_DIALOG if in_dialog else current
