@@ -215,7 +215,9 @@ runtime-herdr-core/
   unkillable process, one respawned from outside the kill, such as a user
   service that imported the box's environment, a process table that never
   reads) would refuse every start, so after that the start warns, naming
-  what may survive, removes the old box and goes ahead. A
+  what may survive, removes the old box and goes ahead beside it. The
+  refusal names the time it stops. A box with no metadata to record the
+  first refusal in counts the 15 minutes from its creation. A
   process that does not carry the token, or whose environment cannot be
   read, is not found that way.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's

@@ -561,7 +561,8 @@ def test_starts_refused_over_survivors_go_ahead_after_the_limit(
     assert city.run("stop", "mc-a").code == 1
     again = json.dumps({"command": "exec cat", "env": {"GC_INSTANCE_TOKEN": token("limit-2")}})
     refused = city.start("mc-a", again)
-    assert refused.code == 1 and "may survive" in refused.stderr and "minutes" in refused.stderr, refused.stderr
+    assert refused.code == 1 and "may survive" in refused.stderr, refused.stderr
+    assert "15 minutes after the first refusal, the start goes ahead beside them" in refused.stderr
     assert len(city.terminals()) == 1
     monkeypatch.setattr(lifecycle, "START_REFUSAL_LIMIT_MS", 0)
     done = city.start("mc-a", again)
@@ -570,6 +571,28 @@ def test_starts_refused_over_survivors_go_ahead_after_the_limit(
     [record] = city.terminals()
     assert record["state"] == "live", "only the new incarnation's box is left"
     assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
+
+
+def test_a_refused_record_without_metadata_is_not_refused_forever(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no metadata to record the first refusal in, the limit counts
+    from the record's creation."""
+    from gc_runtime_herdr_core.herdrcore import lifecycle
+
+    class Broken(LinuxProcs):
+        def snapshot(self) -> Dict[int, Proc]:
+            raise ProcError("no /proc")
+
+    assert city.start("mc-a", json.dumps({"command": "exec cat"})).code == 0
+    for meta in Path(city.context().state_dir("meta")).iterdir():
+        meta.unlink()
+    city.procs.inner = Broken()
+    assert city.run("stop", "mc-a").code == 1
+    monkeypatch.setattr(lifecycle, "START_REFUSAL_LIMIT_MS", 0)
+    done = city.start("mc-a", json.dumps({"command": "exec cat"}))
+    assert done.code == 0, done.stderr
+    assert "beside an earlier incarnation's processes" in done.stderr
+    [record] = city.terminals()
+    assert record["state"] == "live"
 
 
 def test_a_normally_exited_agents_detached_child_is_found_by_its_token(city: City, leftovers: List[int]) -> None:

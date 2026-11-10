@@ -11,8 +11,9 @@ agent):
    (tree kill, then removed), or gc would read "already exists" every pass
    while the broken record stays. While an earlier incarnation's processes
    may survive that kill, the start exits 1 and launches nothing beside them,
-   for up to :data:`START_REFUSAL_LIMIT_MS` from the first refusal; then it
-   warns, removes that record and goes ahead.
+   for up to :data:`START_REFUSAL_LIMIT_MS` from the first refusal (from the
+   record's creation when no refusal can be recorded); then it warns,
+   removes that record and goes ahead beside them.
 3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
@@ -344,10 +345,19 @@ def _read_meta(ctx: OpContext, record: Terminal) -> Optional[Meta]:
         return None
 
 
-def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, abandoned: Optional[List[str]] = None) -> List[str]:
+@dataclass
+class _Refusals:
+    """A start's recycle: what may survive a record the start goes ahead
+    beside, and when each record still refused stops being refused (ms)."""
+
+    abandoned: List[str]
+    until_ms: List[int]
+
+
+def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refusals: Optional[_Refusals] = None) -> List[str]:
     """End and remove ``records``; every other live box of the city is
     protected. Returns what may survive: that record stays, and so does its
-    metadata. With ``abandoned`` (a start's), a record whose processes have
+    metadata. With ``refusals`` (a start's), a record whose processes have
     kept surviving for :data:`START_REFUSAL_LIMIT_MS` is removed all the same,
     and what may survive it is reported there instead."""
     if not records:
@@ -357,49 +367,60 @@ def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, aband
     for record in records:
         meta = _read_meta(ctx, record)
         survived = kill_incarnation(ctx, client, record, meta, protected=city)
-        if survived and abandoned is not None and _refused_long_enough(ctx, record, meta):
-            _remove_record(client, record, ctx.request.cancel.pause)
-            abandoned += survived
-        elif survived:
+        if survived and refusals is not None:
+            until = _refused_since(ctx, record, meta) + START_REFUSAL_LIMIT_MS
+            if ctx.host.now_ms() >= until:
+                _remove_record(client, record, ctx.request.cancel.pause)
+                refusals.abandoned.extend(survived)
+                survived = []
+            else:
+                refusals.until_ms.append(until)
+        if survived:
             problems += survived
             continue
         _forget(ctx, object_of(record))
     return problems
 
 
-def _refused_long_enough(ctx: OpContext, record: Terminal, meta: Optional[Meta]) -> bool:
-    """Whether starts have been refused over ``record``'s survivors for
-    :data:`START_REFUSAL_LIMIT_MS`; the first refusal is recorded in its
-    metadata. One without metadata keeps being refused."""
-    obj = object_of(record)
-    if obj is None or meta is None:
-        return False
-    now = ctx.host.now_ms()
-    since = meta.values.get(REFUSED_SINCE_KEY, "")
+def _refused_since(ctx: OpContext, record: Terminal, meta: Optional[Meta]) -> int:
+    """When starts began to be refused over ``record``'s survivors (ms): the
+    first refusal, recorded in its metadata; when it cannot be recorded (no
+    metadata, a failed write), the record's creation, so no record is
+    refused forever."""
+    since = "" if meta is None else meta.values.get(REFUSED_SINCE_KEY, "")
     if since.isdigit():
-        return now - int(since) >= START_REFUSAL_LIMIT_MS
-    try:
-        meta_store(ctx).write(obj, meta.with_value(REFUSED_SINCE_KEY, str(now)))
-    except MetaError:
-        pass
-    return False
+        return int(since)
+    obj = object_of(record)
+    if obj is not None and meta is not None:
+        now = ctx.host.now_ms()
+        try:
+            meta_store(ctx).write(obj, meta.with_value(REFUSED_SINCE_KEY, str(now)))
+            return now
+        except MetaError:
+            pass
+    return record.created_ms
+
+
+def _utc(ms: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ms / 1000))
 
 
 def _recycle_before_start(ctx: OpContext, client: HcClient, name: str, records: List[Terminal], warnings: List[str]) -> None:
     """Recycle ``records`` for a new incarnation, which never runs beside an
     earlier one's processes, unless they have kept surviving for
     :data:`START_REFUSAL_LIMIT_MS`: the start then warns and goes ahead."""
-    abandoned: List[str] = []
-    survived = _recycle(ctx, client, records, abandoned=abandoned)
-    if abandoned:
+    refusals = _Refusals(abandoned=[], until_ms=[])
+    survived = _recycle(ctx, client, records, refusals=refusals)
+    if refusals.abandoned:
         warnings.append(
-            f"started {name!r} beside an earlier incarnation's processes, which may still run: " + "; ".join(abandoned)
+            f"started {name!r} beside an earlier incarnation's processes, which may still run: " + "; ".join(refusals.abandoned)
         )
     if survived:
         raise OpError(
             f"cannot start {name!r} while an earlier incarnation's processes may survive: "
             + "; ".join(survived)
-            + f" (end them, or the start goes ahead without them after {START_REFUSAL_LIMIT_MS // 60000} minutes)"
+            + f" (end them, or from {_utc(max(refusals.until_ms))}, {START_REFUSAL_LIMIT_MS // 60000} minutes after"
+            + " the first refusal, the start goes ahead beside them)"
         )
 
 
