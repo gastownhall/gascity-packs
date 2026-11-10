@@ -8,7 +8,7 @@ import os
 import pwd
 import stat
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pytest
 from releasekit import RELEASES, STUB, TARGET, archive, make_pin, pin_doc, publish, sha
@@ -269,3 +269,31 @@ def test_config_reports_an_unusable_pin(monkeypatch: pytest.MonkeyPatch) -> None
     with pytest.raises(ConfigError, match="not pinned"):
         config.pinned_binary(lambda: "/h")
 
+
+
+def test_an_installed_pin_needs_no_network(tmp_path: Path) -> None:
+    data = archive()
+    run_install(tmp_path, "0.1.19", data)
+    pin = make_pin("0.1.19", sha(data))
+    fetched: List[str] = []
+
+    def offline(url: str, limit: int) -> bytes:
+        fetched.append(url)
+        raise InstallError("offline")
+
+    outcome = install(pin, root=str(root_of(tmp_path)), target=TARGET, fetch=offline, procs=Procs(), cancel=CancelToken())
+    assert not outcome.installed and fetched == []
+
+
+def test_collecting_a_version_never_chmods_through_a_symlink(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside.chmod(0o755)
+    run_install(tmp_path, "0.1.17", archive(b"17"), now=1)
+    run_install(tmp_path, "0.1.18", archive(b"18"), now=2)
+    old = root_of(tmp_path) / "0.1.17"
+    old.chmod(0o755)
+    (old / "link").symlink_to(outside, target_is_directory=True)
+    run_install(tmp_path, "0.1.19", archive(b"19"), now=3)
+    assert not old.exists()
+    assert outside.is_dir() and stat.S_IMODE(outside.stat().st_mode) == 0o755

@@ -10,10 +10,12 @@
   hc keeps every program and its screen across a planned restart, so the
   city's sessions keep running. A core started outside the pack is refused
   (a planned restart would carry its environment over): ``restart-core``
-  is its fix.
+  is its fix. A city that drives the operator's ``hc_bin`` is refused: the
+  pack does not manage that build.
 * ``restart-core`` stops the city's own core and starts a fresh one under
   the allowlist. Stopping a core ends every program on it, so it refuses
-  while any terminal runs there (``gc stop`` the city first). It refuses a
+  while the city runs or any terminal runs there (``gc stop`` the city
+  first). It refuses a
   core that is not the city's (another user's, or one with another hc
   session or state root): the pack never stops a core it cannot tell is
   its own.
@@ -35,6 +37,7 @@ from ..rpp.statedir import StateDirError
 from .admin import (
     admin_context,
     admin_host,
+    city_running,
     city_terminals,
     client_for,
     core_reachable,
@@ -190,6 +193,11 @@ def cmd_restart_core(ctx: OpContext, args: Sequence[str], out: Out) -> None:
                 f"refusing to stop the core at {target}: it is not this city's core ({owner.reason}); "
                 "stop it yourself if it should not be there"
             )
+        if city_running(ctx.env):
+            raise CommandError(
+                "the city runs: it could start a session on the core while it stops; "
+                "stop the city first (`gc stop`), then run this again"
+            )
         live = live_terminals(client)
         if live:
             mine = len(city_terminals(ctx, live))
@@ -212,6 +220,15 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     if args:
         raise CommandError("usage: gc herdr-core upgrade (installs the pinned version and hands the core over)")
     pin = _pin()
+    try:
+        config = read_pack_config(ctx.pack_state)
+    except ConfigError as err:
+        raise CommandError(str(err)) from None
+    if config.hc_bin:
+        raise CommandError(
+            f"the city drives the operator's hc_bin ({config.hc_bin}), which the pack does not upgrade: "
+            "replace that build yourself and run `gc herdr-core restart-core`, or remove hc_bin to use the pin"
+        )
     _install(ctx, pin, out)
     try:
         hc_bin = ctx.hc_binary()

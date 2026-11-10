@@ -10,6 +10,7 @@ installs is fake-hc's launcher."""
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import tarfile
@@ -91,6 +92,14 @@ def test_restart_core_refuses_while_terminals_run(city: City) -> None:
     assert city.start("mc-a").code == 0
     code, _, err = run(city, "restart-core")
     assert code == 1 and "1 terminal(s)" in err[0] and "gc stop" in err[0]
+    assert city.fake is not None and city.fake.call_count("server.stop") == 0
+
+
+def test_restart_core_refuses_while_the_city_runs(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A running reconciler can start a session between the check and the stop.
+    monkeypatch.setattr("gc_runtime_herdr_core.herdrcore.commands.city_running", lambda env: True)
+    code, _, err = run(city, "restart-core")
+    assert code == 1 and "the city runs" in err[0] and "gc stop" in err[0]
     assert city.fake is not None and city.fake.call_count("server.stop") == 0
 
 
@@ -242,3 +251,29 @@ def test_the_real_pin_is_what_install_downloads(city: City, monkeypatch: pytest.
     code, _, err = run(city, "install", env=command_env(city, test_bin=False))
     assert code == 1 and "offline" in err[0]
     assert fetched == [f"https://releases.herdr.dev/core/{load_pin().version}/manifest.json"]
+
+
+def test_upgrade_works_offline_once_the_pin_is_installed(city: City, set_pin: PinSetter, tmp_path: Path) -> None:
+    env, _ = stub_release(city, tmp_path, version="0.1.19")
+    set_pin("0.1.19", archive_sha(tmp_path, "0.1.19"))
+    assert run(city, "install", env=env)[0] == 0
+    env["GC_HC_TEST_RELEASES"] = str(tmp_path / "no-releases")
+    code, out, err = run(city, "upgrade", env=env)
+    assert code == 0, err
+    assert out[0].startswith("herdr-core 0.1.19 is already installed")
+
+
+def test_upgrade_refuses_an_operator_chosen_hc(city: City, set_pin: PinSetter, tmp_path: Path) -> None:
+    env, _ = stub_release(city, tmp_path, version="0.1.19")
+    set_pin("0.1.19", archive_sha(tmp_path, "0.1.19"))
+    chosen = tmp_path / "my-hc"
+    chosen.write_text("#!/bin/sh\n")
+    chosen.chmod(0o755)
+    config = os.path.join(city.context().state_dir(), "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        json.dump({"hc_bin": str(chosen), "allow_unpinned": True}, handle)
+    os.chmod(config, 0o600)
+    code, _, err = run(city, "upgrade", env=env)
+    assert code == 1 and "hc_bin" in err[0] and "restart-core" in err[0]
+    assert city.fake is not None and city.fake.call_count("server.restart") == 0
+    assert not (Path(city.home) / ".local/share/gc-runtime-herdr-core/hc/0.1.19").exists()

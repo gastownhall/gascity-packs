@@ -4,7 +4,9 @@
 ``<install root>/<version>/herdr-core``, where the install root is
 ``<password-database home>/.local/share/gc-runtime-herdr-core/hc`` (never
 ``$HOME`` or ``XDG_DATA_HOME``: the supervisor, cron and ssh must all find
-the same binary). In order:
+the same binary). When the pinned build is already installed and verifies
+against its ``install.json``, nothing is fetched (``upgrade`` works offline).
+Otherwise, in order:
 
 1. The release manifest must name the pin's version and generation, and the
    sha256 the pin records for this platform's asset.
@@ -250,7 +252,9 @@ def _make_writable(path: str) -> None:
     for here, dirs, files in os.walk(path):
         os.chmod(here, 0o700)
         for name in dirs:
-            os.chmod(os.path.join(here, name), 0o700)
+            path = os.path.join(here, name)
+            if not os.path.islink(path):  # os.walk lists links to directories; chmod would follow them
+                os.chmod(path, 0o700)
 
 
 def remove_tree(path: str) -> None:
@@ -400,9 +404,9 @@ def install(
     """Install the pinned build under ``root`` (see the module docstring)."""
     entry = pin.target(target)
     version = str(pin.version)
-    check_manifest(pin, target, fetch(pin.url(MANIFEST_FILE), MANIFEST_LIMIT))
     binary: Optional[bytes] = None
     if verify_installed(pin, root, target) is not None:
+        check_manifest(pin, target, fetch(pin.url(MANIFEST_FILE), MANIFEST_LIMIT))
         archive = fetch(pin.url(entry.asset), ARCHIVE_LIMIT)
         got = sha256_hex(archive)
         if got != entry.sha256:
