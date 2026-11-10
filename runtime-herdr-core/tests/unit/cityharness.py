@@ -54,6 +54,9 @@ class CoreEnvProcs(ProcSource):
             return None if self.core_environ is None else dict(self.core_environ)
         return self.inner.environ(pid)
 
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        return self.inner.started_ms(proc)
+
     def kill(self, pid: int, sig: int) -> None:
         self.killed.append(pid)
         self.inner.kill(pid, sig)

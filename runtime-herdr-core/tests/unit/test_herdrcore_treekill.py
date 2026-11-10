@@ -401,6 +401,73 @@ def test_a_rollback_that_cannot_list_the_city_still_ends_the_created_tree(city: 
     assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
 
 
+def test_a_rollback_that_cannot_read_the_created_record_still_ends_its_tree(city: City, leftovers: List[int]) -> None:
+    """hc fails the rollback's fresh read of the created record (its core
+    went away during the label call): the created tree still dies, from the
+    record run gave, and the box keeps its token for gc's stop."""
+    from cityharness import in_thread
+
+    from gc_runtime_herdr_core.rpp.cancel import CancelToken
+
+    work = city.root / "w13"
+    work.mkdir()
+    env = {"GC_INSTANCE_TOKEN": token("unread")}
+    command = f"(setsid sleep 600 & echo $! > {work}/daemon.pid); sleep 600 & echo $! > {work}/child.pid; exec cat"
+    city.fake.delay_reply("terminal.label", 10.0)  # type: ignore[union-attr]
+    cancel = CancelToken()
+    results = []
+    stdin = json.dumps({"command": command, "env": env}).encode()
+    thread = in_thread(lambda: results.append(city.run("start", "mc-a", stdin=stdin, cancel=cancel)))
+    daemon = int(wait_file(work / "daemon.pid"))
+    child = int(wait_file(work / "child.pid"))
+    leftovers.extend([daemon, child])
+    [record] = city.terminals()
+    agent = int(str(record["pid"]))
+    end = time.monotonic() + 5
+    while not city.fake.call_count("terminal.label"):  # type: ignore[union-attr]
+        assert time.monotonic() < end, "the start never labelled its terminal"
+        time.sleep(0.05)
+    city.fake.fail_next("terminal.get", "internal")  # type: ignore[union-attr]
+    cancel.cancel("terminated")  # while the start waits for its label
+    thread.join(timeout=20)
+    assert results and results[0].code == 1
+    assert wait_dead(agent) and wait_dead(child), "the created tree dies though hc cannot read its record"
+    assert [t["address"] for t in city.terminals()] == [city.address("mc-a")], "the box stays"
+    done = city.run("stop", "mc-a")
+    assert done.code == 0, done.stderr
+    assert wait_dead(daemon), "gc's stop found the daemon by the token the box kept"
+    assert city.terminals() == []
+
+
+def _boot(root: Path, created_ms: int, *, offset_ticks: int) -> None:
+    """A fake ``/proc/stat`` whose boot time puts starttime ``offset_ticks``
+    (in clock ticks) at ``created_ms``."""
+    tick = os.sysconf("SC_CLK_TCK")
+    btime = (created_ms // 1000) - offset_ticks // tick
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "stat").write_text(f"cpu  0 0 0 0\nbtime {btime}\n")
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_a_rollback_without_hc_ends_only_the_box_that_started_at_its_creation(city: City, tmp_path: Path, stale: bool) -> None:
+    """With hc failing, the rollback ends the created tree from run's reply:
+    a pid that started well after the terminal was created is a recycled
+    one, and is never signalled."""
+    from gc_runtime_herdr_core.herdrcore import lifecycle
+
+    record = _live_box(777)
+    root = tmp_path / "proc"
+    tick = os.sysconf("SC_CLK_TCK")
+    _boot(root, record.created_ms, offset_ticks=1000 - (60 * tick if stale else 0))
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 777, ppid=1, argv=["cat"], start=1000)
+    add_proc(root, 778, ppid=777, argv=["sleep", "600"], start=1001)
+    source = _RecordingProcs(root)
+    city.procs.inner = source
+    lifecycle._reap_trees(city.context(), [record])
+    assert sorted(pid for pid, _ in source.signals) == ([] if stale else [777, 778])
+
+
 def test_a_child_the_kill_itself_starts_dies_too(city: City, leftovers: List[int]) -> None:
     """The agent ignores HUP, and its TERM handler starts a child in a new
     session: that child was in no capture and is outside hc's process

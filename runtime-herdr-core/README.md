@@ -126,9 +126,10 @@ runtime-herdr-core/
   the start takes the terminal its `gc.obj` names, so a command never runs
   twice, and a start that fails while it creates the terminal ends its
   processes as `stop` does, by their `GC_INSTANCE_TOKEN` too, and keeps
-  the metadata while its terminal may still run. When hc cannot list the
-  city's boxes, it ends the terminal's tree but scans nothing by the token,
-  and leaves the box to gc's stop. One that fails or is
+  the metadata while its terminal may still run. When hc cannot read the
+  created terminal afresh or list the city's boxes, it ends the terminal's
+  tree (unless its pid started after the terminal was created, a recycled
+  one) but scans nothing by the token, and leaves the box to gc's stop. One that fails or is
   canceled later leaves the box, which gc stops. An agent that exits
   during startup fails the start, unless its lifecycle is `one_shot`.
   Staging does not merge: the files gc JSON-merges (`.claude/settings.json`,

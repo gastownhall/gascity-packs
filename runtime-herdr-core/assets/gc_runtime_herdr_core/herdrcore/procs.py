@@ -40,6 +40,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -117,6 +118,11 @@ class ProcSource:
             if env is not None:
                 out[pid] = env
         return out
+
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        """When ``proc`` started, in wall-clock milliseconds; None when that
+        cannot be told."""
+        return None
 
     def kill(self, pid: int, sig: int) -> None:
         """Signal ``pid``; a process that is gone is not an error."""
@@ -235,6 +241,22 @@ class LinuxProcs(ProcSource):
             if proc.pid in parents:
                 out[proc.pid] = replace(proc, ppid=parents[proc.pid])
 
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        """The boot time (``btime`` in ``stat``) plus the start time's clock ticks."""
+        if not proc.start.isdigit():
+            return None
+        try:
+            with open(os.path.join(self._root, "stat"), "rb") as handle:
+                lines = handle.read().decode("ascii", "replace").splitlines()
+            ticks = os.sysconf("SC_CLK_TCK")
+        except (OSError, ValueError):
+            return None
+        for line in lines:
+            words = line.split()
+            if len(words) == 2 and words[0] == "btime" and words[1].isdigit() and ticks > 0:
+                return int(words[1]) * 1000 + int(proc.start) * 1000 // ticks
+        return None
+
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         try:
             raw = self._read(pid, "environ")
@@ -290,6 +312,13 @@ class PsProcs(ProcSource):
         if not out:
             raise ProcError("ps lists no process")
         return out
+
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        """``lstart`` ("Mon Nov 9 08:00:00 2026", local time), to the second."""
+        try:
+            return int(time.mktime(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y"))) * 1000
+        except (ValueError, OverflowError):
+            return None
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         # ps -E appends the environment to the command; values holding

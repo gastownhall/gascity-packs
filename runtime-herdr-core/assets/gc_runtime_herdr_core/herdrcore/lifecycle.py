@@ -22,8 +22,10 @@ agent):
    twice. A cancel or failure from here on removes the spawn file, the
    terminal and then the metadata; the metadata stays while the terminal may
    outlive the start, as one without it reads ``identity: {}``. When hc
-   cannot list the city's boxes, the terminal's tree is ended but the box
-   stays, its token unscanned, for gc's stop.
+   cannot read the created record afresh or list the city's boxes, the
+   terminal's tree is ended (unless its pid started after the terminal was
+   created: a recycled one) but the box stays, its token unscanned, for
+   gc's stop.
 5. Unlocked: ``session_setup`` and the setup script (warnings only), then the
    first turn. A cancel or failure from here on leaves the box, for gc stops
    the box a failed start leaves. ``session_live`` (tmux theming and
@@ -158,6 +160,10 @@ USERSCOPE_ENV: Final = "GC_HC_TEST_USERSCOPE"
 SYSTEMD_RUN_ENV: Final = "GC_HC_TEST_SYSTEMD_RUN"
 """Test-only: the systemd-run to probe and launch with."""
 SCOPE_FAILURE_BACKOFF_MS: Final = 5 * 60 * 1000
+ROOT_START_SLACK_MS: Final = 5_000
+"""How long after its terminal's creation a box's program may have started
+by the process table's clock (the launcher's exec, clock skew); a process
+at that pid that started later is another one."""
 CORE_START_SLACK_MS: Final = 5_000
 """Two reads of one core's start time differ by at most this; a wider gap
 (a suspend, a clock step) only costs one more probe."""
@@ -767,9 +773,9 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
     terminal tree (found by its ``gc.obj`` when ``run`` gave none) and every
     process carrying its instance token, as the program may already have
     started a daemon (every other live box of the city is protected, as in
-    ``stop``), then its metadata. When hc cannot list the city's boxes, the
-    tree is still ended (:func:`_reap_trees`) but nothing is looked for by
-    the token. The metadata stays when the terminal may outlive the start:
+    ``stop``), then its metadata. When hc cannot read the created record
+    afresh or list the city's boxes, the tree is still ended
+    (:func:`_reap_trees`) but nothing is looked for by the token. The metadata stays when the terminal may outlive the start:
     a rollback call failed, part of its tree may survive (the record stays
     too), or none was found for a ``pending`` run (one hc never answered).
     Inventory removes metadata that no record carries once it is old."""
@@ -782,7 +788,11 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
         if created is not None:
             # Read afresh: run's reply may be seconds old, and a pid that
             # ended since may already run an unrelated process.
-            targets = _current(rollback, created)
+            try:
+                targets = _current(rollback, created)
+            except HcError:
+                _reap_trees(ctx, [created])  # it may live on: end it from run's reply
+                return
         else:
             targets = list(rollback.list_terminals(labels={LABEL_OBJ: obj}, include_finished=True).terminals)
         try:
@@ -819,14 +829,22 @@ def _current(client: HcClient, record: Terminal) -> List[Terminal]:
 
 def _reap_trees(ctx: OpContext, targets: List[Terminal]) -> None:
     """End each live target's subtree, here: a rollback's kill when hc
-    cannot list the city's boxes. Without that list, another box carrying
-    the same token cannot be told from this one, so nothing is looked for
-    by the token. The record and its metadata stay: gc stops the box a
-    failed start leaves, and that stop finds the rest by the token."""
+    cannot read the created record or list the city's boxes. Without that
+    list, another box carrying the same token cannot be told from this one,
+    so nothing is looked for by the token. A target's pid may be stale (the
+    record may be seconds old): a root that did not start by the record's
+    creation (:data:`ROOT_START_SLACK_MS`), or whose start cannot be told,
+    is a recycled pid's and is never signalled. The record and its metadata
+    stay: gc stops the box a failed start leaves, and that stop finds the
+    rest by the token."""
     snapshot = ctx.host.procs.snapshot()
     for record in targets:
-        if record.pid is not None and record.is_live:
-            _reap(ctx, snapshot, subtree(snapshot, record.pid), _never_killed(snapshot, record, ()), time.sleep)
+        if record.pid is None or not record.is_live or record.pid not in snapshot:
+            continue
+        started = ctx.host.procs.started_ms(snapshot[record.pid])
+        if started is None or started > record.created_ms + ROOT_START_SLACK_MS:
+            continue
+        _reap(ctx, snapshot, subtree(snapshot, record.pid), _never_killed(snapshot, record, ()), time.sleep)
 
 
 def _await_agent(ctx: OpContext, record: Terminal, cfg: StartConfig) -> Optional[str]:
