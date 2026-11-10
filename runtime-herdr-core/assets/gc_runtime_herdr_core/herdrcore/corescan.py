@@ -11,7 +11,10 @@ process table holding no holder of the city's socket does: then no program
 of the city's core runs.
 
 The core itself is ``<hc> serve``, started with the pack's discovery tuple
-(:mod:`.core`), so its environment names the city's socket.
+(:mod:`.core`), so its environment names the city's socket. A core of the
+city's session may listen on another socket (``core.lock`` names it,
+herdr-core #200); its holders are then beside that one, so while it
+answers, what runs cannot be told from the city's socket.
 
 A process of this user that cannot be read is not taken for a holder or a
 core: hc's are ordinary processes of the user, whose command lines read.
@@ -20,9 +23,12 @@ core: hc's are ordinary processes of the user, whose command lines read.
 from __future__ import annotations
 
 import os
+import socket
 from typing import Final, List, Optional, Sequence
 
 from ..hc.paths import HcPaths
+from ..rpp.statedir import StateDirError
+from .config import read_private_file
 from .context import OpContext
 from .procs import Proc, ProcError, Snapshot
 
@@ -89,12 +95,43 @@ def core_processes(ctx: OpContext, snapshot: Snapshot) -> List[Proc]:
     return [proc for proc in candidates if envs.get(proc.pid, {}).get("HC_SOCKET") == ctx.paths.socket]
 
 
+LOCK_PROBE_S: Final = 0.5
+
+
+def listener_elsewhere(ctx: OpContext) -> Optional[str]:
+    """The socket a core of the city's session listens on when ``core.lock``
+    names one other than the city's and something answers there; None when
+    the lock names the city's socket, none or a stale one. Raises
+    StateDirError when the lock cannot be read."""
+    raw = read_private_file(ctx.paths.core_lock)
+    if not raw:
+        return None
+    listening = os.fsdecode(raw.strip())
+    if listening == ctx.paths.socket:
+        return None
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        probe.settimeout(LOCK_PROBE_S)
+        probe.connect(listening)
+    except OSError:
+        return None  # a stale lock: nobody listens there
+    finally:
+        probe.close()
+    return listening
+
+
 def nothing_runs(ctx: OpContext) -> bool:
-    """Whether no program of the city's core can run: the process table reads
-    and holds neither a holder of its socket nor its core (one that does not
-    answer may still run what it started). Asked only once the core did not
-    answer; False when it cannot be told."""
+    """Whether no program of the city's core can run: no core of the city's
+    session listens elsewhere, and the process table reads and holds neither
+    a holder of its socket nor its core (one that does not answer may still
+    run what it started). Asked only once the core did not answer; False
+    when it cannot be told."""
     if ctx.fault:
+        return False
+    try:
+        if listener_elsewhere(ctx) is not None:
+            return False
+    except StateDirError:
         return False
     try:
         snapshot = ctx.host.procs.snapshot()

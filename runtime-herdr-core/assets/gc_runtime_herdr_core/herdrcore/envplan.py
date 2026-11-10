@@ -12,7 +12,11 @@ carrier of, with all its descendants. So at the agent's root the launcher:
    directory and session bus stay, as a tmux pane has them: keyrings,
    ``systemctl --user`` and rootless containers need them;
 2. applies the session environment: a value sets, ``""`` unsets
-   (exec-session-provider.md "Session environment");
+   (exec-session-provider.md "Session environment"). ``start`` adds gc's
+   own ``HOME`` to it when the session does not set one
+   (:func:`with_gc_home`): under ``fs.host`` gc reads the agent's
+   transcripts below its own home, while the core runs with the
+   password-database one;
 3. puts the pack's ``hc`` shim first on ``PATH``, and keeps
    ``HC_TERMINAL_ID`` and ``HC_TERMINAL_SOCKET`` for in-agent ``hc`` use.
 
@@ -39,6 +43,19 @@ CORE_STATE: Final = ("XDG_STATE_HOME", "XDG_CONFIG_HOME")
 DEFAULT_PATH: Final = "/usr/local/bin:/usr/bin:/bin"
 SHELL: Final = "/bin/sh"
 SCOPE_DESCRIPTION: Final = "gascity agent"
+
+
+HOME_KEY: Final = "HOME"
+
+
+def with_gc_home(session: Mapping[str, str], op_env: Mapping[str, str]) -> Dict[str, str]:
+    """The session environment the spawn file carries: ``session``, with gc's
+    ``HOME`` (from the op's environment) unless the session sets or unsets it."""
+    out = dict(session)
+    home = op_env.get(HOME_KEY, "")
+    if HOME_KEY not in out and home:
+        out[HOME_KEY] = home
+    return out
 
 
 def agent_env(base: Mapping[str, str], session: Mapping[str, str], shim_dir: str) -> Dict[str, str]:

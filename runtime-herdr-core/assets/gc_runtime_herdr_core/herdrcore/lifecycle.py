@@ -34,9 +34,11 @@ agent):
    gc's stop. A created terminal hc no longer holds is still looked for by
    its token before its metadata goes.
 5. Unlocked: ``session_setup`` and the setup script, when the config
-   carries them (warnings only), then the
-   first turn. A cancel or failure from here on leaves the box, for gc stops
-   the box a failed start leaves. ``session_live`` (tmux theming and
+   carries them (warnings only), then the first turn. (A gc that knows
+   ``fs.host`` runs ``session_setup`` itself once ``start`` returns, so
+   after the first turn; run here, for an older gc, it comes before it.)
+   A cancel or failure from here on leaves the box, for gc stops the box a
+   failed start leaves. ``session_live`` (tmux theming and
    keybindings) is never run:
    ``start`` warns that it is not applied. The first turn: once the agent is
    ready (its prompt, read as gc reads it, see :mod:`.readiness`; else its
@@ -90,7 +92,7 @@ token. A process whose environment does not carry the token, or cannot be
 read, is not found that way.
 
 **stop** with the core not answering and nothing of it running (no holder
-of its socket, no core process: after ``server-stop``) reads no record and
+of its socket, no core process, as after ``server-stop``) reads no record and
 starts no core: the name's incarnations are ended by the pid, start time and
 token their metadata keeps (:func:`.server.sweep_without_core`).
 """
@@ -122,7 +124,7 @@ from .config import read_pack_config, read_private_file, write_private_file
 from .context import OpContext
 from .core import core_env, ensure_core
 from .corescan import nothing_runs
-from .envplan import STRIPPED, scope_env, scope_prefix
+from .envplan import STRIPPED, scope_env, scope_prefix, with_gc_home
 from .metastore import Meta, MetaError, seed
 from .naming import LABEL_OBJ, LABEL_PID, LABEL_REFUSED, LABEL_SESSION, new_object_nonce, session_labels, terminal_name
 from .procs import (
@@ -311,16 +313,18 @@ def kill_incarnation(
     protected: Iterable[Terminal] = (),
     pause: Optional[Callable[[float], None]] = None,
     remover: Optional[Callable[[], HcClient]] = None,
+    remove: bool = True,
 ) -> List[str]:
-    """End ``record``'s program tree, then remove the record; returns what may
-    survive. While anything may, the record stays (and the caller keeps its
-    metadata), so the next stop, kill or start finds what is left by the
-    instance token. A process the kill itself started (a TERM handler's
-    ``setsid`` child) was in no capture: before the record goes, the token
-    is scanned for again. ``pause`` waits between checks (default: the op's,
-    which a cancel ends); ``remover`` gives the client that removes the
-    record once the process work is done (default: ``client``), so a
-    rollback's short budget is not spent by the scans before it."""
+    """End ``record``'s program tree, then remove the record (unless not
+    ``remove``); returns what may survive. While anything may, the record
+    stays (and the caller keeps its metadata), so the next stop, kill or
+    start finds what is left by the instance token. A process the kill
+    itself started (a TERM handler's ``setsid`` child) was in no capture:
+    before the record goes, the token is scanned for again. ``pause`` waits
+    between checks (default: the op's, which a cancel ends); ``remover``
+    gives the client that removes the record once the process work is done
+    (default: ``client``), so a rollback's short budget is not spent by the
+    scans before it."""
     wait = ctx.request.cancel.pause if pause is None else pause
     others = list(protected)
     token = "" if meta is None else meta.values.get(INSTANCE_TOKEN_KEY, "")
@@ -339,7 +343,7 @@ def kill_incarnation(
         raise kill_error  # the tree is dead either way; the record stays for the next try
     if not problems and token:
         problems = rescan(ctx, frozenset({token}), lambda now: _never_killed(now, record, others, own), wait)
-    if not problems:
+    if not problems and remove:
         _remove_record(client if remover is None else remover(), record, wait)
     return problems
 
@@ -824,7 +828,7 @@ def _create(
             shim.install(ctx.shim_dir, pack_dir=ctx.host.pack_dir, python=ctx.host.python, hc_bin=hc_bin, env=ctx.paths.discovery_env())
             scope = _user_scope(ctx, client, hc_bin, cfg.env, warnings)
             spawn = spawnfile.SpawnSpec(
-                env=cfg.env,
+                env=with_gc_home(cfg.env, ctx.env),
                 command=cfg.command,
                 work_dir=cfg.work_dir,
                 shim_dir=ctx.shim_dir,
@@ -871,16 +875,22 @@ def _record_program(ctx: OpContext, obj: str, pid: int) -> None:
     """Keep the program's pid and start time in the incarnation's metadata:
     when the core does not answer, they find the program without its record
     (:mod:`.server`). The start time is left empty when the process table
-    cannot be read, or when the program already ended."""
-    store = meta_store(ctx)
-    meta = store.read(obj)
-    if meta is None:
-        return
+    cannot be read, or when the program already ended. The box runs either
+    way: metadata that cannot be read or written leaves the pid unrecorded
+    (the instance token and the launcher still find the program), never a
+    failed start."""
     try:
-        proc = ctx.host.procs.snapshot().get(pid)
-    except ProcError:
-        proc = None
-    store.write(obj, meta.with_program(pid, "" if proc is None or proc.opaque else proc.start))
+        store = meta_store(ctx)
+        meta = store.read(obj)
+        if meta is None:
+            return
+        try:
+            proc = ctx.host.procs.snapshot().get(pid)
+        except ProcError:
+            proc = None
+        store.write(obj, meta.with_program(pid, "" if proc is None or proc.opaque else proc.start))
+    except (MetaError, StateDirError, OSError):
+        return
 
 
 def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: bool) -> None:

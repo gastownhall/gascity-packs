@@ -156,7 +156,8 @@ checked against the app yet, so the sessions may not appear there.
   block. On macOS, where a process's environment is read cut at
   whitespace, a state root with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
-  most one at a time and none for five minutes after a failed start.
+  most one at a time and none for five minutes after a failed start, and
+  none while `server-stop` has parked the city (below).
 - **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
   typed notes into agents, 16 MB history, nothing from `~/.config/herdr-core`.
 - **Names and identity.** A session is the newest terminal labelled with its
@@ -194,9 +195,15 @@ checked against the app yet, so the sessions may not appear there.
   those fields out of the start config. `start` does exactly what its
   config carries: an omitted field is not staged or run, and a present one
   is, as below, so an older gc (or one whose cached handshake predates the
-  token) still gets its host work done once. `observe` reports
+  token) still gets its host work done once. The two paths differ in one
+  ordering: gc runs `session_setup` on the host after `start` returns,
+  which is after `start` has typed the first turn (`nudge`); run by the
+  pack for an older gc, it comes before the first turn. `observe` reports
   `agent_pid`, a host pid: the agent's when it is asked about process
-  names and finds one, else the box's program.
+  names and finds one, else the box's program. The agent gets gc's `HOME`
+  (unless the session environment sets it), so the transcripts gc reads
+  under its own home are the ones the agent writes; the core keeps the
+  password-database home.
 - **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
   (fatal), creates the terminal in `work_dir` (which must exist by then;
@@ -365,12 +372,25 @@ checked against the app yet, so the sessions may not appear there.
   city's core is gone (or kept only for a foreign terminal) and no program
   of the city's sessions runs, so a second call exits 0; exit 1 names what
   may survive: a process that outlives its kill or cannot be read, a
-  process table that cannot be read, a core that runs but does not answer,
-  or one that answers but fails. After `server-stop` (the core down, with
-  no holder or core process of the city left), `is-running` and
+  record whose metadata cannot be read, a process table that cannot be
+  read, a holder that runs a process that cannot be read (or a program
+  while an incarnation's metadata names neither its pid nor its instance
+  token), a core that runs but does not answer, or one that answers but
+  fails.
+- **A stopped city stays stopped.** When `server-stop` stops the core
+  itself, it first marks the city parked (`parked.json` in the city's pack
+  state). While the mark is there, no read starts the core again, and with
+  no holder or core process of the city left every read answers an empty
+  city: `inventory` complete and empty, `observe` absent, `list-running`
+  empty, `is-running`, `process-alive` and `is-attached` `false`, `peek`
+  exit 66. That is what gc's stop confirmation and `gc status` read after
+  a stop. It is the truth: every record was ended and removed before the
+  core stopped, and only `start`, which clears the mark before it creates
+  a record, brings the core back. A core that ends without `server-stop`
+  (a crash, a reboot) is not parked, and a read kicks a start as before.
+  With the core down and nothing of it running, `is-running` and
   `process-alive` answer `false` and `stop` ends what the metadata still
-  names, without starting a core: a stopped city stays stopped until the
-  next `start`.
+  names, parked or not, without starting a core.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
   reading stdin), `program-status` and session events.
 

@@ -10,6 +10,13 @@ core, reachable, holds no record of the name, live or finished (rule 7).
 ``is-running`` and ``process-alive`` answer only whether the name runs: with
 the core down and nothing of it running (no holder, no core process), they
 answer ``false`` and kick nothing.
+
+A city whose core ``server-stop`` stopped (parked, :mod:`.core`) stays
+stopped: no read kicks a start, and with nothing of the core running every
+read answers an empty city (``observe`` absent, ``inventory`` complete and
+empty, no session running, attached or on screen). That is the truth: the
+pack ended and removed every record before it stopped the core, and only a
+start, which clears the mark first, creates one.
 """
 
 from __future__ import annotations
@@ -35,7 +42,7 @@ from ..rpp.wire import (
 from . import activity
 from .attach import attached, viewer_targets
 from .context import Host, OpContext
-from .core import kick
+from .core import kick, parked
 from .corescan import nothing_runs
 from .metastore import Meta, MetaError, MetaStore
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
@@ -82,9 +89,16 @@ def read_meta(ctx: OpContext, record: Terminal) -> Tuple[Optional[Meta], bool]:
 
 
 def unreachable(ctx: OpContext, err: HcError) -> None:
-    """A read found the core down or failing: kick a start when it is down."""
+    """A read found the core down or failing: kick a start when it is down
+    (never while it is parked)."""
     if isinstance(err, HcUnreachable):
         kick(ctx)
+
+
+def city_stopped(ctx: OpContext, err: HcError) -> bool:
+    """Whether the core does not answer because ``server-stop`` stopped it,
+    and nothing of it runs: the city holds no session."""
+    return isinstance(err, HcUnreachable) and parked(ctx) and nothing_runs(ctx)
 
 
 def agent_state(
@@ -127,6 +141,8 @@ def op_observe(ctx: OpContext) -> OpResult:
     except (LockTimeout, LockFileError):
         return OpResult.answer(ObserveAnswer(state="unknown").encode())
     except HcError as err:
+        if city_stopped(ctx, err):
+            return OpResult.answer(ObserveAnswer(state="absent").encode())
         unreachable(ctx, err)
         return OpResult.answer(ObserveAnswer(state="unknown").encode())
     identity = None if not readable else ({} if meta is None else meta.identity())
@@ -183,6 +199,8 @@ def op_inventory(ctx: OpContext) -> OpResult:
     try:
         records = list_city(client, ctx)
     except HcError as err:
+        if city_stopped(ctx, err):
+            return OpResult.answer(InventoryAnswer(complete=True, sessions=()).encode())
         unreachable(ctx, err)
         return OpResult.answer(InventoryAnswer(complete=False, sessions=()).encode())
     snapshot = try_snapshot(ctx.host)
@@ -247,14 +265,14 @@ def current_record(ctx: OpContext, name: str, *, liveness: bool = False) -> Opti
 
     With ``liveness`` (the ops that answer only whether the name runs), a
     core that does not answer while nothing of it runs (no holder of its
-    socket, no core process: :func:`.corescan.nothing_runs`, as after
-    ``server-stop``) answers no record, and kicks no start: nothing of the
-    name runs, and a core started for that answer would outlive a stopped
-    city."""
+    socket, no core process: :func:`.corescan.nothing_runs`) answers no
+    record, and kicks no start: nothing of the name runs, and a core started
+    for that answer would outlive a stopped city. Every read answers no
+    record for a parked city (:func:`city_stopped`)."""
     try:
         return newest(list_city(ctx.client(read=True), ctx, name), name)
     except HcError as err:
-        if liveness and isinstance(err, HcUnreachable) and nothing_runs(ctx):
+        if isinstance(err, HcUnreachable) and (liveness or parked(ctx)) and nothing_runs(ctx):
             return None
         unreachable(ctx, err)
         raise OpError(f"cannot read the city's core: {err}") from None
@@ -291,6 +309,8 @@ def op_list_running(ctx: OpContext) -> OpResult:
     try:
         records = list_city(ctx.client(read=True), ctx, finished=False)
     except HcError as err:
+        if city_stopped(ctx, err):
+            return OpResult.ok()
         unreachable(ctx, err)
         raise OpError(f"cannot read the city's core: {err}") from None
     names = sorted(

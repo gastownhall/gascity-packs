@@ -72,6 +72,21 @@ def test_observe_reports_a_host_agent_pid(city: City) -> None:
     assert "agent_pid" not in observe(city, "mc-a", "no-such-agent"), "a dead agent has no pid"
 
 
+def test_the_agent_gets_gcs_home(city: City) -> None:
+    # fs.host: gc reads transcripts under its own HOME, so the agent writes them there.
+    work = city.root / "home-probe"
+    work.mkdir()
+    command = f'echo "$HOME" > {work}/{{name}}; exec cat'
+    gc_home = str(city.root / "gc-home")
+    assert city.start("mc-a", start_config(command=command.format(name="a")), extra={"HOME": gc_home}).code == 0
+    wait_for(lambda: (work / "a").exists() and (work / "a").read_text().strip() != "")
+    assert (work / "a").read_text().strip() == gc_home
+    env = dict(IDENTITY, HOME=str(city.root / "session-home"))
+    assert city.start("mc-b", start_config(command=command.format(name="b"), env=env), extra={"HOME": gc_home}).code == 0
+    wait_for(lambda: (work / "b").exists() and (work / "b").read_text().strip() != "")
+    assert (work / "b").read_text().strip() == str(city.root / "session-home"), "the session's HOME wins"
+
+
 def test_terminal_carries_labels_name_and_no_session_env(city: City) -> None:
     secret = "sk-very-secret-value-1234"
     config = start_config(env=dict(IDENTITY, ANTHROPIC_API_KEY=secret))

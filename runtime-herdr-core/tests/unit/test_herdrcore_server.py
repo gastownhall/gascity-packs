@@ -7,8 +7,10 @@ stand-in holder processes."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import socket as unix_socket
 import signal
 import subprocess
 import sys
@@ -19,11 +21,21 @@ from typing import Dict, Iterator, List, Optional, Sequence
 import pytest
 from cityharness import City
 from fakehc.rawclient import raw_call
-from test_herdrcore_treekill import alive, token, wait_dead, wait_file
+from test_herdrcore_treekill import PROXY, alive, token, wait_dead, wait_file
 
+from gc_runtime_herdr_core.herdrcore import core
+from gc_runtime_herdr_core.herdrcore.config import write_private_file
 from gc_runtime_herdr_core.herdrcore.corescan import holder_prefix
-from gc_runtime_herdr_core.herdrcore.metastore import Meta, MetaStore
-from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, ProcSource
+from gc_runtime_herdr_core.herdrcore.infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB
+from gc_runtime_herdr_core.herdrcore.metastore import Meta, MetaError, MetaStore
+from gc_runtime_herdr_core.herdrcore.procs import (
+    LAUNCHER_NAME,
+    LinuxProcs,
+    Proc,
+    ProcError,
+    ProcSource,
+)
+from gc_runtime_herdr_core.herdrcore.server import sweep_without_core
 
 HOLDER = """\
 import json, os, signal, subprocess, sys, time
@@ -34,7 +46,7 @@ for program in json.load(open(spec)):
     env = dict(os.environ)
     env.update(program.get("env", {}))
     children.append(subprocess.Popen(program["argv"], env=env).pid)
-open(out + ".tmp", "w").write(" ".join(str(pid) for pid in children))
+open(out + ".tmp", "w").write(" ".join(["ready"] + [str(pid) for pid in children]))
 os.rename(out + ".tmp", out)
 signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
 while True:
@@ -79,18 +91,22 @@ def core_down(city: City) -> None:
     city.fake = None
 
 
-def start_holder(city: City, programs: List[Dict[str, object]], spawned: List[int]) -> List[int]:
-    """A stand-in holder of the city's core (``hold --socket <holder socket>``)
-    running ``programs``; returns their pids."""
+def start_holder(
+    city: City, programs: List[Dict[str, object]], spawned: List[int], socket: Optional[str] = None
+) -> List[int]:
+    """A stand-in holder (``hold --socket <holder socket>``) running
+    ``programs``, of the city's core unless ``socket`` is given; returns the
+    holder's pid and then theirs."""
     script = city.root / "holder.py"
     script.write_text(HOLDER)
     spec = city.root / f"programs-{len(spawned)}.json"
     spec.write_text(json.dumps(programs))
     out = city.root / f"programs-{len(spawned)}.pids"
-    socket = holder_prefix(city.paths) + "0123abcd.sock"
+    if socket is None:
+        socket = holder_prefix(city.paths) + "0123abcd.sock"
     holder = subprocess.Popen([sys.executable, str(script), "hold", "--socket", socket, str(spec), str(out)])
     spawned.append(holder.pid)
-    pids = [int(p) for p in wait_file(out).split()]
+    pids = [int(p) for p in wait_file(out).split()[1:]]
     spawned.extend(pids)
     return [holder.pid] + pids
 
@@ -186,6 +202,20 @@ def test_a_foreign_terminal_survives_and_keeps_the_core(city: City, spawned: Lis
     fake = city.fake
     assert fake is not None and fake.call_count("server.stop") == 0, "the core keeps running for it"
     assert [(t["address"], t["state"]) for t in city.terminals(all_records=False)] == [(foreign["address"], "live")]
+
+
+def test_a_foreign_terminal_carrying_a_sessions_token_survives(city: City, spawned: List[int]) -> None:
+    # One an agent opened through the in-agent hc may inherit its session's token.
+    tok = token("srv-foreign-token")
+    assert city.start("mc-a", start_config("exec cat", tok)).code == 0
+    reply = raw_call(
+        city.paths.socket, "terminal.run", {"argv": ["sleep", "600"], "env": {"GC_INSTANCE_TOKEN": tok}, "keep": False}
+    )
+    foreign_pid = int(str(reply["result"]["pid"]))
+    spawned.append(foreign_pid)
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert alive(foreign_pid), "a live terminal the city did not start is never killed by a session's kill"
 
 
 class DropKills(ProcSource):
@@ -357,3 +387,219 @@ def test_server_stop_under_the_conformance_fault_cannot_tell(city: City) -> None
     done = city.run("server-stop", extra={"GC_RPP_FAULT": "unavailable"})
     assert done.code == 1
     assert "may survive" in done.stderr
+
+
+# --- a stopped city stays stopped -------------------------------------------------------------
+
+
+def test_after_server_stop_reads_start_no_core_and_answer_an_empty_city(city: City) -> None:
+    assert city.start("mc-a", start_config("exec cat")).code == 0
+    assert city.run("server-stop").code == 0
+    inventory = city.run("inventory")
+    assert inventory.code == 0, inventory.stderr
+    assert json.loads(inventory.stdout) == {"complete": True, "sessions": []}
+    observed = city.run("observe", "mc-a", stdin=b"cat\n")
+    assert json.loads(observed.stdout) == {"state": "absent"}
+    listed = city.run("list-running")
+    assert (listed.code, listed.text) == (0, ""), listed.stderr
+    assert city.run("is-attached", "mc-a").text.strip() == "false"
+    assert city.run("peek", "mc-a").code == 66
+    assert city.run("is-running", "mc-a").text.strip() == "false"
+    assert no_core_started(city, wait_s=2.0), "no read brings a stopped city's core back"
+
+
+def test_a_start_after_server_stop_lets_a_crashed_core_be_kicked_again(city: City) -> None:
+    assert city.run("server-stop").code == 0
+    city.fake = None
+    assert city.start("mc-a", start_config("exec cat")).code == 0
+    raw_call(city.paths.socket, "server.stop", {})  # the core ends without server-stop: a crash
+    end = time.monotonic() + 10
+    while os.path.exists(city.paths.socket) and time.monotonic() < end:
+        time.sleep(0.05)
+    inventory = city.run("inventory")
+    assert json.loads(inventory.stdout)["complete"] is False
+    end = time.monotonic() + 20
+    while not os.path.exists(city.paths.socket) and time.monotonic() < end:
+        time.sleep(0.05)
+    assert os.path.exists(city.paths.socket), "a core that ended without server-stop is started again"
+
+
+def test_a_core_that_ended_without_server_stop_is_still_kicked(city: City) -> None:
+    core_down(city)
+    inventory = city.run("inventory")
+    assert json.loads(inventory.stdout)["complete"] is False
+    end = time.monotonic() + 20
+    while not os.path.exists(city.paths.socket) and time.monotonic() < end:
+        time.sleep(0.05)
+    assert os.path.exists(city.paths.socket)
+
+
+def test_server_stop_parks_only_when_it_stopped_the_core(city: City) -> None:
+    run_foreign(city, ["sleep", "600"])
+    assert city.run("server-stop").code == 0
+    assert not core.parked(city.context()), "a core kept for a foreign terminal is not parked"
+
+
+# --- what the sweep without the core never touches -----------------------------------------------
+
+
+def test_holders_of_other_sockets_survive_server_stop(city: City, spawned: List[int]) -> None:
+    core_down(city)
+    other_city = str(city.root / "other" / "hc.holder.0123abcd.sock")
+    [elsewhere] = start_holder(city, [], spawned, socket=other_city)
+    [unrelated] = start_holder(city, [], spawned, socket=str(city.root / "unrelated.sock"))
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert alive(elsewhere), "an idle holder of another core's socket survives"
+    assert alive(unrelated), "a hold process whose socket is not a holder of the city's core survives"
+
+
+def infrastructure(city: City, verb: str, tok: str, spawned: List[int]) -> List[int]:
+    """A city-infrastructure stand-in (argv[1] is its verb) and its child,
+    carrying the instance token ``tok``; returns their pids."""
+    work = city.root / "infra"
+    work.mkdir(exist_ok=True)
+    (work / verb).write_text(PROXY)
+    out = work / f"{verb}.pids"
+    proc = subprocess.Popen(
+        [sys.executable, verb, str(out)], cwd=work, env=dict(os.environ, GC_INSTANCE_TOKEN=tok), start_new_session=True
+    )
+    spawned.append(proc.pid)
+    pids = [int(p) for p in wait_file(out).split()]
+    spawned.extend(pids)
+    return pids
+
+
+@pytest.mark.parametrize("verb", [BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB])
+def test_infrastructure_carrying_the_token_survives_stop_and_server_stop_without_the_core(
+    city: City, spawned: List[int], verb: str
+) -> None:
+    tok = token(f"srv-infra-{verb}")
+    core_down(city)
+    fenced = infrastructure(city, verb, tok, spawned)
+    agent = subprocess.Popen(["sleep", "600"], env=dict(os.environ, GC_INSTANCE_TOKEN=tok), start_new_session=True)
+    spawned.append(agent.pid)
+    write_meta(city, "a" * 32, Meta(session="mc-a", values={"GC_INSTANCE_TOKEN": tok}))
+    done = city.run("stop", "mc-a")
+    assert done.code == 0, done.stderr
+    agent.wait(timeout=5)
+    assert all(alive(pid) for pid in fenced), "stop never ends city infrastructure"
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert all(alive(pid) for pid in fenced), "nor does server-stop"
+
+
+def test_a_pid_without_a_start_time_outside_the_citys_holders_is_never_taken(city: City, spawned: List[int]) -> None:
+    core_down(city)
+    stranger = subprocess.Popen(["sleep", "600"])
+    spawned.append(stranger.pid)
+    write_meta(city, "c" * 32, Meta(session="mc-a", pid=stranger.pid, pid_start=""))
+    assert city.run("server-stop").code == 0
+    assert alive(stranger.pid), "without a start time, only a city holder's program is taken for it"
+
+
+def launcher(city: City, obj: str) -> Dict[str, object]:
+    """A program still in the pack's launcher, whose spawn file names ``obj``."""
+    script = city.root / LAUNCHER_NAME
+    script.write_text("import time\ntime.sleep(600)\n")
+    return {"argv": [sys.executable, str(script), str(city.root / "spawn" / f"{obj}.json")]}
+
+
+def test_launchers_under_the_citys_holders(city: City, spawned: List[int]) -> None:
+    core_down(city)
+    mine, theirs = "a" * 32, "b" * 32
+    holder, launching_mine, launching_theirs = start_holder(city, [launcher(city, mine), launcher(city, theirs)], spawned)
+    write_meta(city, mine, Meta(session="mc-a"))
+    write_meta(city, theirs, Meta(session="mc-b"))
+    assert sweep_without_core(city.context(), session="mc-a", end_holders=False) == []
+    assert wait_dead(launching_mine), "a session's own launcher under a city holder ends with it"
+    assert alive(launching_theirs), "a single session's sweep leaves another session's launcher"
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert wait_dead(launching_theirs), "server-stop ends every launcher under a city holder"
+    assert wait_dead(holder)
+
+
+# --- what may survive is reported -------------------------------------------------------------------
+
+
+def test_unreadable_metadata_with_the_core_answering_is_reported_and_kept(city: City, spawned: List[int]) -> None:
+    work = city.root / "w"
+    work.mkdir()
+    tok = token("srv-unreadable")
+    assert city.start("mc-a", start_config(f"(setsid sleep 600 & echo $! > {work}/daemon); exec cat", tok)).code == 0
+    spawned.append(int(wait_file(work / "daemon")))
+    meta_dir = Path(city.context().state_dir("meta"))
+    [meta_file] = list(meta_dir.iterdir())
+    meta_file.write_text("{not json")
+    done = city.run("server-stop")
+    assert done.code == 1
+    assert "metadata" in done.stderr and "may survive" in done.stderr
+    assert meta_file.exists(), "the metadata stays for a retry"
+    assert [t["labels"]["gc.session"] for t in city.terminals()] == ["mc-a"]  # type: ignore[index]
+    fake = city.fake
+    assert fake is not None and fake.call_count("server.stop") == 0
+
+
+class MarkOpaque(ProcSource):
+    """The live process table, except that ``hidden`` read as opaque."""
+
+    def __init__(self, inner: ProcSource) -> None:
+        self.inner = inner
+        self.hidden: List[int] = []
+
+    def snapshot(self) -> Dict[int, Proc]:
+        table = self.inner.snapshot()
+        return {pid: dataclasses.replace(p, opaque=True) if pid in self.hidden else p for pid, p in table.items()}
+
+    def environ(self, pid: int) -> Optional[Dict[str, str]]:
+        return None if pid in self.hidden else self.inner.environ(pid)
+
+
+def test_a_city_holder_running_a_process_that_cannot_be_read_may_survive(city: City, spawned: List[int]) -> None:
+    core_down(city)
+    holder, program = start_holder(city, [{"argv": ["sleep", "600"]}], spawned)
+    hiding = MarkOpaque(city.procs.inner)
+    hiding.hidden.append(program)
+    city.procs.inner = hiding
+    done = city.run("server-stop")
+    assert done.code == 1
+    assert "cannot be read" in done.stderr and str(holder) in done.stderr
+    assert alive(holder) and alive(program)
+
+
+def test_a_holder_program_with_an_incarnation_that_names_no_program_may_survive(city: City, spawned: List[int]) -> None:
+    core_down(city)
+    holder, program = start_holder(city, [{"argv": ["sleep", "600"]}], spawned)
+    write_meta(city, "a" * 32, Meta(session="mc-a"))  # neither pid nor instance token
+    done = city.run("server-stop")
+    assert done.code == 1
+    assert str(holder) in done.stderr
+    assert alive(holder) and alive(program)
+
+
+def test_a_core_of_the_session_on_another_socket_is_not_nothing_running(city: City, spawned: List[int]) -> None:
+    listening = str(city.root / "elsewhere.sock")
+    server = unix_socket.socket(unix_socket.AF_UNIX, unix_socket.SOCK_STREAM)
+    server.bind(listening)
+    server.listen(1)
+    try:
+        core_down(city)
+        write_private_file(city.paths.core_lock, listening.encode())
+        done = city.run("is-running", "mc-a")
+        assert done.code == 1, "a core listening elsewhere may run the city's programs"
+    finally:
+        server.close()
+
+
+def test_a_failure_to_record_the_program_keeps_the_start(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(self: Meta, pid: int, start: str) -> Meta:
+        raise MetaError("cannot write")
+
+    monkeypatch.setattr(Meta, "with_program", broken)
+    done = city.start("mc-a", start_config("exec cat"))
+    assert done.code == 0, done.stderr
+    assert city.run("is-running", "mc-a").text.strip() == "true"
+    [record] = city.terminals()
+    meta = MetaStore(city.context().state_dir("meta")).read(str(record["labels"]["gc.obj"]))  # type: ignore[index]
+    assert meta is not None and meta.pid == 0
