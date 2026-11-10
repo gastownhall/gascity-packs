@@ -258,8 +258,11 @@ def fenced(snapshot: Snapshot, own: Iterable[Proc]) -> Set[int]:
     process. ``own`` are the programs the kill ends, as first captured: a
     tmux server above one fences none of its tree while its pid still runs
     that process (a pid reused since, a tmux pane's, is fenced as every
-    pane is). Every kill (``stop``'s, a rollback's, ``server-stop``'s with
-    or without the core) and every rescan after it fences through here."""
+    pane is). Every kill of a program (``stop``'s, a rollback's,
+    ``server-stop``'s with or without the core) and every rescan after it
+    fences through here. One exception: ``server-stop`` ends the city's own
+    idle holders directly, matched by their exact ``hold --socket`` argv
+    with the city's socket prefix (never a tmux or infrastructure process)."""
     still: Set[int] = set()
     for root in own:
         current = snapshot.get(root.pid)

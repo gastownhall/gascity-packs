@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import pytest
-from cityharness import City
+from cityharness import City, in_thread
 from fakehc.procfs import add_proc
 from fakehc.rawclient import raw_call
 from test_herdrcore_treekill import PROXY, alive, token, wait_dead, wait_file
@@ -749,3 +749,92 @@ def test_no_kick_while_parked_and_a_start_unparks_even_when_it_fails(city: City,
     assert failed.code != 0
     assert not core.parked(city.context()), "a start is the way out of a parked city, whatever its core does"
     assert core.kick_due(city.context())
+
+
+# --- a parked city is never stranded --------------------------------------------------------------
+
+
+def wait_core_started(city: City, wait_s: float = 20.0) -> bool:
+    end = time.monotonic() + wait_s
+    while time.monotonic() < end:
+        if os.path.exists(city.paths.socket):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_holder_left_running_by_a_core_down_server_stop_leaves_the_city_unparked(city: City, spawned: List[int]) -> None:
+    """A holder still running a program server-stop could not attribute (an
+    agent's background terminal, a person's) keeps the core's business
+    open: gc reads unknown while it runs and so never sends a start. So the
+    city is not left parked, and a read kicks the core back to adopt it."""
+    core_down(city)
+    holder, foreign = start_holder(city, [{"argv": ["sleep", "600"]}], spawned)
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert alive(holder) and alive(foreign)
+    assert not core.parked(city.context()), "a core kept for a foreign program is not parked"
+    city.fake = None
+    assert json.loads(city.run("inventory").stdout)["complete"] is False
+    assert wait_core_started(city), "a read kicks the core back"
+
+
+def test_a_parked_city_with_a_holder_running_is_kicked(city: City, spawned: List[int]) -> None:
+    """The escape from a park that outlived its server-stop (one killed at
+    its deadline): while anything of the core runs, the mark does not stop
+    a kick; it does once nothing runs."""
+    core_down(city)
+    ctx = city.context()
+    core.park(ctx)
+    assert not core.kick_due(ctx), "nothing runs: a parked city stays stopped"
+    start_holder(city, [{"argv": ["sleep", "600"]}], spawned)
+    assert core.kick_due(ctx), "a holder still runs: the core is kicked back for it"
+
+
+def test_a_known_program_the_fence_keeps_is_reported_and_the_city_unparked(city: City, tmp_path: Path) -> None:
+    """A box whose program is a tmux client is fenced, and with the core down
+    nothing else can end it: server-stop names it, exits 1 and leaves the
+    city unparked so the core comes back for it."""
+    root = tmp_path / "proc"
+    tok = token("sweep-fenced-program")
+    carry = {INSTANCE_TOKEN_KEY: tok}
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 150, ppid=1, argv=["hc", "hold", "--socket", holder_prefix(city.paths) + "0123abcd.sock"])
+    add_proc(root, 200, ppid=150, argv=["tmux", "attach"], comm="tmux: client", env=carry, start=2000)
+    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000"))
+    source = RecordingProcs(root)
+    core_down(city)
+    city.procs.inner = source
+    done = city.run("server-stop")
+    assert done.code == 1
+    assert "200" in done.stderr and "never signalled" in done.stderr, done.stderr
+    assert source.signalled() == [], source.signals
+    assert not core.parked(city.context())
+
+
+def test_server_stop_waits_for_a_kick_in_flight(city: City, spawned: List[int]) -> None:
+    """A kick that passed its park check before server-stop parked could
+    start the core after server-stop's last look: server-stop holds the
+    kick lock, so a kick in flight finishes first and none starts during it."""
+    core_down(city)
+    held = city.context().lock("kick", shared=False, wait_s=0.0)
+    held.__enter__()
+    try:
+        blocked = city.run("server-stop", deadline_ms=1500)
+        assert blocked.code == 1
+        assert "a start of the city's core is in flight" in blocked.stderr, blocked.stderr
+    finally:
+        held.__exit__(None, None, None)
+    releasing = city.context().lock("kick", shared=False, wait_s=0.0)
+    releasing.__enter__()
+
+    def release() -> None:
+        time.sleep(0.5)
+        releasing.__exit__(None, None, None)
+
+    timer = in_thread(release)
+    started = time.monotonic()
+    done = city.run("server-stop")
+    timer.join()
+    assert done.code == 0, done.stderr
+    assert time.monotonic() - started >= 0.4, "server-stop waited for the kick"

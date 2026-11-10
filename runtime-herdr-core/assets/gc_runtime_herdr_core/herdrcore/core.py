@@ -25,15 +25,19 @@ the pack ended every record of the city and then the core, on purpose. While
 it is there no read kicks a start (a stopped city stays stopped), and a read
 that finds nothing of the core running answers an empty city. A
 ``server-stop`` that finds the core already down parks the city too, so
-gc's confirming read after its stop does not start it again. Only a start
+gc's confirming read after its stop does not start it again. A start
 (:func:`ensure_core`) clears the mark, first, before it tries the core and
-before any record is created, so a start is always the way out: one whose
-core start then fails (a core lock naming another socket, a holder that
-outlived a failed ``server-stop``) leaves the city unparked, and reads kick
-again as for any core that is down. While a parked city's holder still runs
-(a ``server-stop`` that exited 1), reads answer unknown and kick nothing
-until that start. A core that ends any other way (a crash, a reboot) is
-kicked as before.
+before any record is created: one whose core start then fails (a core lock
+naming another socket) leaves the city unparked, and reads kick again as
+for any core that is down. The mark holds only while nothing of the core
+runs: ``server-stop`` clears it at its end when a holder or a core still
+runs, and a read that finds a parked city with a holder or core still
+running (a ``server-stop`` killed at its deadline) answers unknown and
+kicks, since gc never sends a start for a session it reads unknown, so
+the city is never stranded. ``server-stop`` holds the kick lock
+(:data:`KICK_LOCK`) throughout, so no kick starts the core while it
+sweeps. A core that ends any other way (a crash, a reboot) is kicked as
+before.
 """
 
 from __future__ import annotations
@@ -55,7 +59,7 @@ from .attach import ATTACH_TERMINAL_KEYS
 from .command import run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
-from .corescan import listener_elsewhere
+from .corescan import listener_elsewhere, nothing_runs
 from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0
@@ -65,6 +69,8 @@ KICK_FILE: Final = "kick.json"
 PARK_FILE: Final = "parked.json"
 KICK_BACKOFF_MS: Final = 5 * 60 * 1000
 KICK_OP: Final = "x-kick-core"
+KICK_LOCK: Final = "kick"
+"""Held by a kick while it starts the core, and by ``server-stop`` throughout."""
 
 BASE_PATH: Final = "/usr/local/bin:/usr/bin:/bin"
 
@@ -383,9 +389,13 @@ def write_kick(ctx: OpContext, record: KickRecord) -> None:
 
 
 def kick_due(ctx: OpContext) -> bool:
-    """Whether a kick may start the core: never while it is parked, nor
-    within the backoff after a failed one."""
-    if parked(ctx):
+    """Whether a kick may start the core: never while it is parked and
+    nothing of it runs, nor within the backoff after a failed one. A parked
+    city whose holder or core still runs is kicked: gc reads unknown while
+    it runs and never sends the start that unparks, so the core comes back
+    to adopt what runs (``server-stop`` holds the kick lock, so none starts
+    while it sweeps)."""
+    if parked(ctx) and nothing_runs(ctx):
         return False
     record = read_kick(ctx)
     return record is None or record.ok or ctx.host.now_ms() - record.at_ms >= KICK_BACKOFF_MS
@@ -398,7 +408,7 @@ def kick(ctx: OpContext) -> bool:
         return False
     try:
         ctx.hc_binary()
-        with ctx.lock("kick", shared=False, wait_s=0.0):
+        with ctx.lock(KICK_LOCK, shared=False, wait_s=0.0):
             pass  # a kick in flight holds it
     except (ConfigError, LockTimeout, OSError):
         return False
@@ -419,7 +429,7 @@ def kick(ctx: OpContext) -> bool:
 def run_kick(ctx: OpContext) -> None:
     """The detached kick: start the core unless another kick is at it."""
     try:
-        with ctx.lock("kick", shared=False, wait_s=0.0):
+        with ctx.lock(KICK_LOCK, shared=False, wait_s=0.0):
             if not kick_due(ctx):
                 return
             try:

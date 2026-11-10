@@ -26,10 +26,20 @@ for is found by its program's pid and start time and by its instance token,
 and its tree is ended; a holder left with no program is ended too, and one
 still running a foreign program is left for it. A core process that runs
 but does not answer, a process table that cannot be read, a process that
-outlives its kill, a holder that runs a process that cannot be read, or one
+outlives its kill, a holder that runs a process that cannot be read, one
 that still runs a program while an incarnation's metadata names neither its
-program nor a token, makes the op exit 1. A core that answers but fails (a
-wedged core) is not swept around: its programs may run, and the op exits 1.
+program nor a token, or an incarnation's program the fence keeps (a box
+whose program is a tmux client), makes the op exit 1. A core that answers
+but fails (a wedged core) is not swept around: its programs may run, and
+the op exits 1. The records stay in hc's registry: a start that brings the
+core back finds them finished, and recycles them.
+
+**Parking.** The whole op holds the kick lock (:mod:`.core`), so a kick
+in flight finishes first and none starts the core while the op sweeps. At
+its end, whatever its exit, the mark is cleared again when anything of the
+core still runs (a holder, a core): a core kept for what runs is not
+parked, so reads kick it back to adopt what is left, and gc reads definite
+answers again instead of an unknown that never lets it send a start.
 """
 
 from __future__ import annotations
@@ -42,11 +52,12 @@ from ..hc.client import HcClient
 from ..hc.errors import HcError, HcUnreachable
 from ..hc.types import Terminal
 from ..rpp.exitcodes import ExitCode
-from ..rpp.ops import OpResult
+from ..rpp.flock import LockFileError, LockTimeout
+from ..rpp.ops import OpError, OpResult
 from ..rpp.statedir import StateDirError
 from . import corescan
 from .context import OpContext
-from .core import park
+from .core import CORE_START_WAIT_S, KICK_LOCK, park, unpark
 from .lifecycle import INSTANCE_TOKEN_KEY, fenced, forget, kill_incarnation, reap, rescan
 from .metastore import Meta, MetaError
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
@@ -58,6 +69,8 @@ from .spawnfile import SUFFIX as SPAWN_SUFFIX
 CORE_GONE_WAIT_S: Final = 10.0
 """How long a stopped core may take to close its socket and exit."""
 CORE_GONE_POLL_S: Final = 0.1
+KICK_WAIT_S: Final = CORE_START_WAIT_S + 1.0
+"""How long a kick in flight may take to finish its core start."""
 
 UNREACHABLE_SURVIVORS: Final = "the city's sessions may survive"
 
@@ -68,12 +81,20 @@ def op_server_stop(ctx: OpContext) -> OpResult:
     client = ctx.client()
     warnings: List[str] = []
     try:
-        problems = _stop_with_core(ctx, client, warnings)
-    except HcUnreachable:
-        _park(ctx, warnings)  # gc reads right after its stop: no read may start the core again
-        problems = sweep_without_core(ctx, session=None, end_holders=True)
-    except HcError as err:
-        return OpResult.fail(f"the city's core does not answer as it should ({err}): {UNREACHABLE_SURVIVORS}")
+        # A kick in flight finishes first, and none starts until server-stop
+        # is done: a core it started after the last look would outlive the stop.
+        with ctx.lock(KICK_LOCK, shared=False, wait_s=max(0.0, ctx.request.deadline.budget(KICK_WAIT_S))):
+            try:
+                problems = _stop_with_core(ctx, client, warnings)
+            except HcUnreachable:
+                _park(ctx, warnings)  # gc reads right after its stop: no read may start the core again
+                problems = sweep_without_core(ctx, session=None, end_holders=True)
+            except HcError as err:
+                problems = [f"the city's core does not answer as it should ({err})"]
+            problems += _unpark_if_running(ctx)
+    except (LockTimeout, LockFileError) as err:
+        detail = "" if isinstance(err, LockTimeout) else f" ({err})"
+        return OpResult.fail(f"a start of the city's core is in flight{detail}: {UNREACHABLE_SURVIVORS}")
     if problems:
         return OpResult.fail("the city's sessions may survive: " + "; ".join(problems))
     return OpResult(ExitCode.OK, b"", "; ".join(warnings))
@@ -113,6 +134,20 @@ def _park(ctx: OpContext, warnings: List[str]) -> None:
         park(ctx)
     except (StateDirError, OSError) as err:
         warnings.append(f"the city is not marked stopped, so the next read may start its core again ({err})")
+
+
+def _unpark_if_running(ctx: OpContext) -> List[str]:
+    """Clear the mark when anything of the core still runs (a holder, a
+    core): what it runs keeps the city's business open, and gc, reading
+    unknown while it runs, would never send the start that unparks. A core
+    kept for what runs is not parked; reads kick it back to adopt it."""
+    if corescan.nothing_runs(ctx):
+        return []
+    try:
+        unpark(ctx)
+    except OpError as err:
+        return [err.message]
+    return []
 
 
 def _end_session(ctx: OpContext, client: HcClient, name: str) -> List[str]:
@@ -244,8 +279,8 @@ def sweep_without_core(
     holder_pids = {proc.pid for proc in corescan.holders(snapshot, ctx.paths)}
     tokens = frozenset(meta.values.get(INSTANCE_TOKEN_KEY, "") for meta in metas.values()) - {""}
     captured: Dict[int, Proc] = {}
-    roots = [proc for proc in (_program(snapshot, meta, holder_pids) for meta in metas.values()) if proc is not None]
-    roots += _launching(snapshot, holder_pids, frozenset(metas), every=session is None)
+    programs = [proc for proc in (_program(snapshot, meta, holder_pids) for meta in metas.values()) if proc is not None]
+    roots = programs + _launching(snapshot, holder_pids, frozenset(metas), every=session is None)
     for root in roots:
         captured.update((p.pid, p) for p in subtree(snapshot, root.pid))
     captured.update((p.pid, p) for p in scan_environ_any(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, tokens))
@@ -253,10 +288,16 @@ def sweep_without_core(
     def keep_of(now: Snapshot) -> Set[int]:
         return fenced(now, roots) | holder_pids
 
+    keep = keep_of(snapshot)
     if captured:
-        problems += reap(ctx, snapshot, list(captured.values()), keep_of(snapshot), pause)
+        problems += reap(ctx, snapshot, list(captured.values()), keep, pause)
     if not problems and tokens:
         problems += rescan(ctx, tokens, keep_of, pause)
+    kept = [proc for proc in programs if proc.pid in keep]
+    if kept:
+        # Known by pid and start time, yet fenced (a box whose program is a
+        # tmux client): only the core can end it.
+        problems.append("an incarnation's program is infrastructure, so never signalled: " + ", ".join(str(p.pid) for p in kept[:8]))
     if end_holders:
         blind = any(meta.pid <= 0 and not meta.values.get(INSTANCE_TOKEN_KEY, "") for meta in metas.values())
         problems += _end_holders(ctx, pause, blind=blind)
