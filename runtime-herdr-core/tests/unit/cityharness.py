@@ -13,9 +13,9 @@ import os
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional
+from typing import Dict, FrozenSet, List, Mapping, Optional, Set, Tuple
 
 from fakehc import FakeHc
 from fakehc.cli import write_launcher
@@ -24,7 +24,7 @@ from gc_runtime_herdr_core.hc.paths import HcPaths, ensure_dirs, resolve_paths
 from gc_runtime_herdr_core.herdrcore.context import Host, OpContext
 from gc_runtime_herdr_core.herdrcore.core import core_env
 from gc_runtime_herdr_core.herdrcore.ops_table import build_ops
-from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcSource
+from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, ProcSource, is_tmux
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Cancelled, Deadline
 from gc_runtime_herdr_core.rpp.ops import OpError, OpRequest
 from gc_runtime_herdr_core.rpp.perop import run_per_op
@@ -37,9 +37,31 @@ MACHINE = machine_identity()
 start) resolves the city with it too."""
 
 
+def _ambient_tmux() -> FrozenSet[Tuple[int, str]]:
+    """The tmux server or client the test run itself runs under, if any (a
+    developer's pane), as (pid, start): not part of any scenario."""
+    try:
+        snapshot = LinuxProcs().snapshot()
+    except ProcError:
+        return frozenset()
+    found: Set[Tuple[int, str]] = set()
+    pid = os.getpid()
+    while pid in snapshot and pid > 1:
+        proc = snapshot[pid]
+        if is_tmux(proc):
+            found.add((proc.pid, proc.start))
+        pid = proc.ppid
+    return frozenset(found)
+
+
+AMBIENT_TMUX = _ambient_tmux()
+
+
 class CoreEnvProcs(ProcSource):
     """The live process table, except that the in-process core's pid (this
-    process) reads as having ``core_environ``."""
+    process) reads as having ``core_environ``, and a tmux the test run
+    itself runs under reads as an ordinary process: tmux is fenced with its
+    whole subtree, which would fence every process a test starts."""
 
     def __init__(self, inner: ProcSource) -> None:
         self.inner = inner
@@ -47,7 +69,12 @@ class CoreEnvProcs(ProcSource):
         self.killed: List[int] = []
 
     def snapshot(self) -> Dict[int, Proc]:
-        return self.inner.snapshot()
+        out = self.inner.snapshot()
+        for pid, start in AMBIENT_TMUX:
+            proc = out.get(pid)
+            if proc is not None and proc.start == start:
+                out[pid] = replace(proc, comm="test-runner", argv=("test-runner",))
+        return out
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         if pid == os.getpid():

@@ -271,7 +271,7 @@ def test_a_tmux_server_above_the_killed_program_fences_none_of_its_tree() -> Non
         7: proc(7, ("tmux", "new", "-d"), comm="tmux: client", ppid=5),
         8: proc(8, ("sleep", "600"), ppid=7),
     }
-    assert fenced_pids(snap, own=5) == {2, 3, 4, 7, 8}
+    assert fenced_pids(snap, own={5}) == {2, 3, 4, 7, 8}
     assert fenced_pids(snap) == {2, 3, 4, 5, 6, 7, 8}
 
 

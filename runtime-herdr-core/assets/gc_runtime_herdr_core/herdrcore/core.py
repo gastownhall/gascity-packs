@@ -23,9 +23,17 @@ liveness (always probed live).
 A core ``server-stop`` stopped is **parked**: ``parked.json`` records that
 the pack ended every record of the city and then the core, on purpose. While
 it is there no read kicks a start (a stopped city stays stopped), and a read
-that finds nothing of the core running answers an empty city. Only a start
-of the core (:func:`ensure_core`) clears it, before any record is created;
-a core that ends any other way (a crash, a reboot) is kicked as before.
+that finds nothing of the core running answers an empty city. A
+``server-stop`` that finds the core already down parks the city too, so
+gc's confirming read after its stop does not start it again. Only a start
+(:func:`ensure_core`) clears the mark, first, before it tries the core and
+before any record is created, so a start is always the way out: one whose
+core start then fails (a core lock naming another socket, a holder that
+outlived a failed ``server-stop``) leaves the city unparked, and reads kick
+again as for any core that is down. While a parked city's holder still runs
+(a ``server-stop`` that exited 1), reads answer unknown and kick nothing
+until that start. A core that ends any other way (a crash, a reboot) is
+kicked as before.
 """
 
 from __future__ import annotations
@@ -329,7 +337,9 @@ def check_foreign(ctx: OpContext, hc_bin: str) -> None:
 
 def ensure_core(ctx: OpContext) -> str:
     """The city's core, started if down and checked as the pack's own.
-    Returns the hc binary."""
+    Returns the hc binary. It clears the stopped mark first, whatever then
+    becomes of the start: a start is the way out of a parked city."""
+    unpark(ctx)  # before any record: a parked city holds none
     try:
         hc_bin = ctx.hc_binary()
     except ConfigError as err:
@@ -342,7 +352,6 @@ def ensure_core(ctx: OpContext) -> str:
         if ctx.fault:
             raise OpError("the backend is unavailable (GC_RPP_FAULT=unavailable)") from None
         start_core(ctx, hc_bin)
-    unpark(ctx)  # before any record: a parked city holds none
     check_foreign(ctx, hc_bin)
     return hc_bin
 

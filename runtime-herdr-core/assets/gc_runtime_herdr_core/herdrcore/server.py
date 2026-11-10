@@ -19,7 +19,8 @@ next start), the core is stopped (``server.stop``) once nothing of the city
 may survive, and the pack waits until it is gone; what its holders still
 run is then looked for as below.
 
-**With the core not answering its socket**, its programs may still run under
+**With the core not answering its socket**, the city is parked as well (a
+core already down at teardown stays down), and its programs may still run under
 their holders (:mod:`.corescan`). Each incarnation the pack keeps metadata
 for is found by its program's pid and start time and by its instance token,
 and its tree is ended; a holder left with no program is ended too, and one
@@ -46,10 +47,10 @@ from ..rpp.statedir import StateDirError
 from . import corescan
 from .context import OpContext
 from .core import park
-from .lifecycle import INSTANCE_TOKEN_KEY, forget, kill_incarnation, reap, rescan
+from .lifecycle import INSTANCE_TOKEN_KEY, fenced, forget, kill_incarnation, reap, rescan
 from .metastore import Meta, MetaError
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
-from .procs import LAUNCHER_NAME, Proc, ProcError, Snapshot, fenced_pids, kill_captured, scan_environ_any, subtree
+from .procs import LAUNCHER_NAME, Proc, ProcError, Snapshot, kill_captured, scan_environ_any, subtree
 from .reads import meta_store, read_meta
 from .records import object_of
 from .spawnfile import SUFFIX as SPAWN_SUFFIX
@@ -69,6 +70,7 @@ def op_server_stop(ctx: OpContext) -> OpResult:
     try:
         problems = _stop_with_core(ctx, client, warnings)
     except HcUnreachable:
+        _park(ctx, warnings)  # gc reads right after its stop: no read may start the core again
         problems = sweep_without_core(ctx, session=None, end_holders=True)
     except HcError as err:
         return OpResult.fail(f"the city's core does not answer as it should ({err}): {UNREACHABLE_SURVIVORS}")
@@ -98,15 +100,19 @@ def _stop_with_core(ctx: OpContext, client: HcClient, warnings: List[str]) -> Li
         return ["still listed: " + ", ".join(t.address for t in left[:8])]
     if live:
         return []  # foreign terminals run on it: the core stays for them
-    try:
-        park(ctx)  # before the stop: no read in between kicks a start
-    except (StateDirError, OSError) as err:
-        warnings.append(f"the city is not marked stopped, so the next read may start its core again ({err})")
+    _park(ctx, warnings)  # before the stop: no read in between kicks a start
     client.server_stop()
     problems = _await_core_gone(ctx)
     if problems:
         return problems
     return sweep_without_core(ctx, session=None, end_holders=True)
+
+
+def _park(ctx: OpContext, warnings: List[str]) -> None:
+    try:
+        park(ctx)
+    except (StateDirError, OSError) as err:
+        warnings.append(f"the city is not marked stopped, so the next read may start its core again ({err})")
 
 
 def _end_session(ctx: OpContext, client: HcClient, name: str) -> List[str]:
@@ -219,8 +225,11 @@ def sweep_without_core(
 ) -> List[str]:
     """End, without the core, the programs of every incarnation the pack
     keeps metadata for (``session``'s only, when given): found by pid and
-    start time, by the launcher's spawn file and by instance token, city
-    infrastructure fenced. With ``end_holders``, a holder of the city's core
+    start time, by the launcher's spawn file and by instance token, then
+    the token scanned for again as ``stop`` does (:func:`.lifecycle.rescan`).
+    Infrastructure (city infrastructure and tmux) is fenced as every kill
+    fences it (:func:`.lifecycle.fenced`, the programs found the kill's
+    own), and so are the city's holders. With ``end_holders``, a holder of the city's core
     left with no program is ended too, one still running a foreign program
     is left for it, and a core process that does not answer is reported.
     Returns what may survive. The metadata stays: a core that starts again
@@ -242,7 +251,7 @@ def sweep_without_core(
     captured.update((p.pid, p) for p in scan_environ_any(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, tokens))
 
     def keep_of(now: Snapshot) -> Set[int]:
-        return set(fenced_pids(now)) | {os.getpid()} | holder_pids
+        return fenced(now, roots) | holder_pids
 
     if captured:
         problems += reap(ctx, snapshot, list(captured.values()), keep_of(snapshot), pause)

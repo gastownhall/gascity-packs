@@ -252,15 +252,26 @@ def _own_root(snapshot: Snapshot, record: Terminal) -> Optional[Proc]:
     return snapshot.get(record.pid) if record.pid is not None and record.is_live else None
 
 
+def fenced(snapshot: Snapshot, own: Iterable[Proc]) -> Set[int]:
+    """What no kill signals: infrastructure (city infrastructure and tmux,
+    each with its whole subtree, :func:`.procs.fenced_pids`) and this
+    process. ``own`` are the programs the kill ends, as first captured: a
+    tmux server above one fences none of its tree while its pid still runs
+    that process (a pid reused since, a tmux pane's, is fenced as every
+    pane is). Every kill (``stop``'s, a rollback's, ``server-stop``'s with
+    or without the core) and every rescan after it fences through here."""
+    still: Set[int] = set()
+    for root in own:
+        current = snapshot.get(root.pid)
+        if current is not None and bool(root.start) and current.start == root.start:
+            still.add(root.pid)
+    return set(fenced_pids(snapshot, own=still)) | {os.getpid()}
+
+
 def _never_killed(snapshot: Snapshot, record: Terminal, protected: Iterable[Terminal], own: Optional[Proc]) -> Set[int]:
-    """Infrastructure (city infrastructure and tmux, each with its whole
-    subtree), this process, and every other intact incarnation's tree.
-    ``own`` is the record's program as first captured: a tmux server above
-    it fences none of its tree while its pid still runs that process (a
-    pid reused since, a tmux pane's, is fenced as every pane is)."""
-    current = None if own is None else snapshot.get(own.pid)
-    same = own is not None and current is not None and bool(own.start) and current.start == own.start
-    keep: Set[int] = set(fenced_pids(snapshot, own=own.pid if same and own is not None else None)) | {os.getpid()}
+    """:func:`fenced` (``own`` the record's program as first captured), and
+    every other intact incarnation's tree."""
+    keep = fenced(snapshot, () if own is None else (own,))
     for other in protected:
         if other.address != record.address and other.pid is not None and is_intact(other):
             keep.update(p.pid for p in subtree(snapshot, other.pid))

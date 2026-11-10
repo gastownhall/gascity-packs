@@ -50,7 +50,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, replace
-from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Callable, Collection, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .infra_argv import is_infrastructure_argv
 
@@ -479,9 +479,9 @@ def children_index(snapshot: Snapshot) -> Dict[int, List[int]]:
 
 
 def subtree(
-    snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None, *, prune: Optional[int] = None
+    snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None, *, prune: Collection[int] = ()
 ) -> List[Proc]:
-    """``root`` and every descendant, in breadth-first order; a descendant
+    """``root`` and every descendant, in breadth-first order; a descendant in
     ``prune`` is left out, and so is everything under it."""
     if root not in snapshot:
         return []
@@ -495,7 +495,7 @@ def subtree(
             continue
         seen.add(pid)
         out.append(snapshot[pid])
-        queue.extend(kid for kid in kids.get(pid, ()) if kid != prune)
+        queue.extend(kid for kid in kids.get(pid, ()) if kid not in prune)
     return out
 
 
@@ -506,11 +506,11 @@ def is_tmux(proc: Proc) -> bool:
     return any(os.path.basename(head.strip()) in TMUX_NAMES for head in heads if head.strip())
 
 
-def fenced_pids(snapshot: Snapshot, *, own: Optional[int] = None) -> FrozenSet[int]:
+def fenced_pids(snapshot: Snapshot, *, own: Collection[int] = ()) -> FrozenSet[int]:
     """Every infrastructure process (city infrastructure, tmux) and its whole
-    subtree. A tmux server above ``own`` (the program a kill ends: its
-    core was started from a tmux pane) fences none of ``own``'s tree; one
-    inside it still fences its own subtree."""
+    subtree. A tmux server above one of ``own`` (the programs a kill ends:
+    their core was started from a tmux pane) fences none of that program's
+    tree; one inside it still fences its own subtree."""
     index = children_index(snapshot)
     fenced: Set[int] = set()
     for proc in snapshot.values():

@@ -14,12 +14,14 @@ import socket as unix_socket
 import signal
 import subprocess
 import sys
+import shutil
 import time
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import pytest
 from cityharness import City
+from fakehc.procfs import add_proc
 from fakehc.rawclient import raw_call
 from test_herdrcore_treekill import PROXY, alive, token, wait_dead, wait_file
 
@@ -27,6 +29,7 @@ from gc_runtime_herdr_core.herdrcore import core
 from gc_runtime_herdr_core.herdrcore.config import write_private_file
 from gc_runtime_herdr_core.herdrcore.corescan import holder_prefix
 from gc_runtime_herdr_core.herdrcore.infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB
+from gc_runtime_herdr_core.herdrcore.lifecycle import INSTANCE_TOKEN_KEY
 from gc_runtime_herdr_core.herdrcore.metastore import Meta, MetaError, MetaStore
 from gc_runtime_herdr_core.herdrcore.procs import (
     LAUNCHER_NAME,
@@ -36,6 +39,7 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     ProcSource,
 )
 from gc_runtime_herdr_core.herdrcore.server import sweep_without_core
+from gc_runtime_herdr_core.rpp.ops import OpError
 
 HOLDER = """\
 import json, os, signal, subprocess, sys, time
@@ -434,7 +438,7 @@ def test_a_core_that_ended_without_server_stop_is_still_kicked(city: City) -> No
     assert os.path.exists(city.paths.socket)
 
 
-def test_server_stop_parks_only_when_it_stopped_the_core(city: City) -> None:
+def test_a_core_kept_for_a_foreign_terminal_is_not_parked(city: City) -> None:
     run_foreign(city, ["sleep", "600"])
     assert city.run("server-stop").code == 0
     assert not core.parked(city.context()), "a core kept for a foreign terminal is not parked"
@@ -603,3 +607,145 @@ def test_a_failure_to_record_the_program_keeps_the_start(city: City, monkeypatch
     [record] = city.terminals()
     meta = MetaStore(city.context().state_dir("meta")).read(str(record["labels"]["gc.obj"]))  # type: ignore[index]
     assert meta is not None and meta.pid == 0
+
+
+# --- the sweep fences tmux as every kill does (a fake /proc; nothing is signalled for real) ---------
+
+
+class RecordingProcs(LinuxProcs):
+    """A fake ``/proc`` whose kill is recorded, never sent: a signalled
+    process leaves the fake tree as if it died; ``on_kill`` may add what the
+    kill starts (a TERM handler's ``setsid`` child)."""
+
+    def __init__(self, root: Path, on_kill: Optional[Callable[[int], None]] = None) -> None:
+        LinuxProcs.__init__(self, str(root))
+        self.root = root
+        self.on_kill = on_kill
+        self.signals: List[Tuple[int, int]] = []
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.signals.append((pid, sig))
+        shutil.rmtree(self.root / str(pid), ignore_errors=True)
+        if self.on_kill is not None:
+            self.on_kill(pid)
+
+    def signalled(self) -> List[int]:
+        return sorted({pid for pid, _ in self.signals})
+
+
+def tmux_scene(city: City, root: Path, tok: str, *, holder: bool) -> None:
+    """A box whose core was started from a pane of the operator's tmux
+    server (100), its program 200 (with a child and a tmux client, and a
+    daemon re-parented to init) under the city's holder 150 when ``holder``
+    (else left under the pane), and three tmux servers carrying the box's
+    token: one founded from inside the box (300, with the user's pane and
+    editor) and another city's (500, with its agent)."""
+    carry = {INSTANCE_TOKEN_KEY: tok}
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 100, ppid=1, argv=["tmux"], comm="tmux: server")
+    add_proc(root, 101, ppid=100, argv=["-zsh"], env=carry)  # the pane that ran gc in the box
+    parent = 101
+    if holder:
+        add_proc(root, 150, ppid=101, argv=["hc", "hold", "--socket", holder_prefix(city.paths) + "0123abcd.sock"])
+        parent = 150
+    add_proc(root, 200, ppid=parent, argv=["cat"], env=carry, start=2000)  # the box's agent
+    add_proc(root, 201, ppid=200, argv=["sleep", "600"], env=carry)
+    add_proc(root, 205, ppid=200, argv=["tmux", "attach"], comm="tmux: client", env=carry)
+    add_proc(root, 206, ppid=205, argv=["sleep", "600"], env=carry)
+    add_proc(root, 210, ppid=1, argv=["sleep", "600"], env=carry)  # a daemon, re-parented
+    add_proc(root, 300, ppid=1, argv=["tmux", "new", "-d"], comm="tmux: server", env=carry)
+    add_proc(root, 301, ppid=300, argv=["-bash"], env=carry)  # the user's pane
+    add_proc(root, 302, ppid=301, argv=["vim", "notes.md"], env=carry)  # and their editor
+    add_proc(root, 500, ppid=1, argv=["/usr/bin/tmux", "-L", "city-t", "new-session", "-d"], comm="tmux: server", env=carry)
+    add_proc(root, 501, ppid=500, argv=["claude"], env=carry)  # another city's agent
+    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000"))
+
+
+def test_server_stop_with_the_core_down_never_signals_tmux(city: City, tmp_path: Path) -> None:
+    """A tmux server copies its founder's environment, so one founded from
+    inside a box, and every pane and editor under it, carries the box's
+    token; so does another city's server a gc command run in the box
+    founded. server-stop's sweep fences them as ``stop``'s kill does; the
+    box's own processes, and the holder left with none, still end."""
+    tok = token("sweep-tmux-server-stop")
+    root = tmp_path / "proc"
+    tmux_scene(city, root, tok, holder=True)
+    source = RecordingProcs(root)
+    core_down(city)
+    city.procs.inner = source
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert source.signalled() == [150, 200, 201, 210], source.signals
+    assert core.parked(city.context()), "a core already down at teardown is parked too"
+
+
+def test_stop_with_the_core_down_never_signals_tmux(city: City, tmp_path: Path) -> None:
+    tok = token("sweep-tmux-stop")
+    root = tmp_path / "proc"
+    tmux_scene(city, root, tok, holder=False)
+    source = RecordingProcs(root)
+    core_down(city)
+    city.procs.inner = source
+    done = city.run("stop", "mc-a")
+    assert done.code == 0, done.stderr
+    assert source.signalled() == [200, 201, 210], source.signals
+
+
+def test_the_sweeps_rescan_ends_what_the_kill_started_and_still_fences_tmux(city: City, tmp_path: Path) -> None:
+    """A process the kill itself starts (a TERM handler's ``setsid`` child)
+    was in no capture: the sweep scans for the token again, through the
+    same fence, so a tmux server the handler founds is never signalled."""
+    tok = token("sweep-rescan")
+    carry = {INSTANCE_TOKEN_KEY: tok}
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 200, ppid=1, argv=["cat"], env=carry, start=2000)
+    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000"))
+
+    def spawn(pid: int) -> None:
+        if pid == 200:
+            add_proc(root, 220, ppid=1, argv=["sleep", "600"], env=carry)
+            add_proc(root, 230, ppid=1, argv=["tmux", "new", "-d"], comm="tmux: server", env=carry)
+
+    source = RecordingProcs(root, on_kill=spawn)
+    core_down(city)
+    city.procs.inner = source
+    assert sweep_without_core(city.context(), session="mc-a", end_holders=False, wait=lambda _: None) == []
+    assert source.signalled() == [200, 220], source.signals
+
+
+def test_server_stop_ends_only_launchers_whose_parent_is_a_city_holder(city: City, tmp_path: Path) -> None:
+    """server-stop takes every launcher (``every``), but only one a city
+    holder runs: another city's, or a stray process named like the
+    launcher, is not the city's."""
+    root = tmp_path / "proc"
+    spawn = str(city.root / "spawn" / ("c" * 32 + ".json"))
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 150, ppid=1, argv=["hc", "hold", "--socket", holder_prefix(city.paths) + "0123abcd.sock"])
+    add_proc(root, 151, ppid=150, argv=[sys.executable, LAUNCHER_NAME, spawn])
+    add_proc(root, 400, ppid=1, argv=["hc", "hold", "--socket", "/elsewhere/hc.holder.0123abcd.sock"])
+    add_proc(root, 401, ppid=400, argv=[sys.executable, LAUNCHER_NAME, spawn])
+    add_proc(root, 402, ppid=1, argv=[sys.executable, LAUNCHER_NAME, spawn])
+    source = RecordingProcs(root)
+    core_down(city)
+    city.procs.inner = source
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert source.signalled() == [150, 151], source.signals
+
+
+def test_no_kick_while_parked_and_a_start_unparks_even_when_it_fails(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = city.context()
+    core.park(ctx)
+    assert not core.kick_due(ctx), "a parked city's reads kick no start"
+    assert not core.kick(ctx)
+    core_down(city)
+
+    def cannot_start(ctx: object, hc_bin: str) -> None:
+        raise OpError("hc server start failed")
+
+    monkeypatch.setattr(core, "start_core", cannot_start)
+    failed = city.start("mc-a", start_config("exec cat"))
+    assert failed.code != 0
+    assert not core.parked(city.context()), "a start is the way out of a parked city, whatever its core does"
+    assert core.kick_due(city.context())
