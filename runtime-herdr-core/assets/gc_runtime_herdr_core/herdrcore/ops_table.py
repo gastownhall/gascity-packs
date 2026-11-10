@@ -1,8 +1,8 @@
 """The op table and the handshake of runtime ``herdr-core``.
 
 The handshake declares observe.v1 with ``report-attachment`` (v2-ready),
-``report-activity``, ``city-scoped`` (each city key has its own core) and
-``conformance-faults``. It never declares ``proc.exec``, ``proc.provision``
+``report-activity``, ``city-scoped`` (each city key has its own core),
+``conformance-faults``, ``server-lifecycle`` (``server-stop``) and ``fs.host``. It never declares ``proc.exec``, ``proc.provision``
 or ``input-fence``: under ``proc.exec`` gc would drive the box by piping tmux
 commands to ``exec``. ``exec``, ``provision`` and ``check-image`` are absent
 from the table, so they exit 2 without reading stdin.
@@ -27,7 +27,7 @@ from ..rpp.ops import (
 )
 from ..rpp.statedir import StateDirError
 from ..handshake import HANDSHAKE
-from . import attach, inputs, lifecycle, reads, screen
+from . import attach, inputs, lifecycle, reads, screen, server
 from .config import ConfigError
 from .context import Host, OpContext
 from .core import KICK_OP, run_kick
@@ -85,6 +85,7 @@ def build_ops(host: Host) -> OpTable:
         "watch-startup": spec(screen.op_watch_startup, deadline="start"),
         "attach": spec(attach.op_attach, deadline="start"),
         "copy-to": spec(screen.op_copy_to),
+        "server-stop": spec(server.op_server_stop),
         KICK_OP: spec(_kick, housekeeping=False),
     }
     return table

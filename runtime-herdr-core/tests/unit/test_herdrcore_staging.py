@@ -337,3 +337,57 @@ def test_session_live_is_never_run_and_start_says_so(city: City) -> None:
     assert done.code == 0, done.stderr
     assert not marker.exists() and not (city.root / "live.txt.2").exists()
     assert done.stderr.count("session_live") == 1 and "no tmux server" in done.stderr
+
+
+# --- fs.host: exactly what the start config carries -----------------------------------------------
+#
+# Under fs.host a gc that knows the token stages the work dir and runs
+# pre_start and session_setup on the host itself, and leaves those fields
+# out of the start config; an older gc sends them. The pack does exactly what
+# the config carries, so both get each piece of host work done once.
+
+HOST_WORK = ("pack_overlay_dirs", "overlay_dir", "copy_files", "pre_start", "session_setup", "session_setup_script")
+
+
+def host_work(city: City, field: str, work: Path) -> "tuple[object, Path]":
+    """A value of ``field`` and the file in ``work`` that shows it was done."""
+    source = city.root / f"src-{field}"
+    source.mkdir()
+    marker = work / f"done-{field}"
+    if field in ("pack_overlay_dirs", "overlay_dir"):
+        (source / marker.name).write_text(field)
+        return ([str(source)] if field == "pack_overlay_dirs" else str(source)), marker
+    if field == "copy_files":
+        (source / "file").write_text(field)
+        return [{"src": str(source / "file"), "rel_dst": marker.name}], marker
+    if field == "session_setup_script":
+        script = source / "setup.sh"
+        script.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        script.chmod(0o755)
+        return str(script), marker
+    return [f"touch {marker}"], marker
+
+
+@pytest.mark.parametrize("field", HOST_WORK)
+def test_host_work_the_config_carries_is_done(city: City, field: str) -> None:
+    work = city.root / "work"
+    work.mkdir()
+    value, marker = host_work(city, field, work)
+    done = city.start("mc-a", json.dumps({"command": "cat", "work_dir": str(work), field: value}))
+    assert done.code == 0, done.stderr
+    assert marker.exists(), f"a gc that did not do it on the host sent {field}, and the pack does it"
+
+
+def test_host_work_the_config_omits_is_not_done(city: City) -> None:
+    work = city.root / "work"
+    work.mkdir()
+    for field in HOST_WORK:
+        host_work(city, field, work)  # what an older gc would have sent: none of it is
+    # What gc staged on the host before the start, a merged settings file too.
+    (work / ".claude").mkdir()
+    (work / ".claude" / "settings.json").write_text('{"merged":true}')
+    before = {rel: (work / rel).read_bytes() for rel in tree(work)}
+    done = city.start("mc-a", json.dumps({"command": "cat", "work_dir": str(work)}))
+    assert done.code == 0, done.stderr
+    assert done.stderr == "", "nothing staged, so nothing kept or skipped"
+    assert {rel: (work / rel).read_bytes() for rel in tree(work)} == before

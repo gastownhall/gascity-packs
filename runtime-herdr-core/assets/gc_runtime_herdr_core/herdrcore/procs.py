@@ -678,7 +678,16 @@ def scan_environ(source: ProcSource, snapshot: Snapshot, key: str, value: str) -
     A process whose environment cannot be read is skipped: a non-dumpable
     process of the user (ssh-agent, for one) has a root-owned ``environ``,
     and failing on it would fail every scan."""
+    return scan_environ_any(source, snapshot, key, frozenset({value}))
+
+
+def scan_environ_any(source: ProcSource, snapshot: Snapshot, key: str, values: FrozenSet[str]) -> List[Proc]:
+    """This user's processes whose environment holds ``key`` set to one of
+    ``values`` (never an empty one), read as :func:`scan_environ` reads."""
+    wanted = values - {""}
+    if not wanted:
+        return []
     uid = os.getuid()
     mine = [proc for proc in snapshot.values() if proc.uid == uid and proc.pid != os.getpid()]
     envs = source.environs(proc.pid for proc in mine)
-    return [proc for proc in mine if envs.get(proc.pid, {}).get(key) == value]
+    return [proc for proc in mine if envs.get(proc.pid, {}).get(key, "") in wanted]

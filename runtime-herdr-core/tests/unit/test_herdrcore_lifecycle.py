@@ -59,6 +59,19 @@ def test_start_then_observe_running_with_identity_and_agent(city: City) -> None:
     assert "agent" not in observe(city, "mc-mayor")  # no names: not judged
 
 
+def test_observe_reports_a_host_agent_pid(city: City) -> None:
+    # fs.host: agent_pid is a live host process of the caller's user.
+    assert city.start("mc-a", start_config()).code == 0
+    [record] = city.terminals()
+    unjudged = observe(city, "mc-a")
+    assert unjudged["agent_pid"] == str(record["pid"]), "without names, the box's program"
+    os.kill(int(unjudged["agent_pid"]), 0)
+    judged = observe(city, "mc-a", "cat")
+    assert judged["agent"] == "alive"
+    os.kill(int(judged["agent_pid"]), 0)  # the agent's own process, in the box's tree
+    assert "agent_pid" not in observe(city, "mc-a", "no-such-agent"), "a dead agent has no pid"
+
+
 def test_terminal_carries_labels_name_and_no_session_env(city: City) -> None:
     secret = "sk-very-secret-value-1234"
     config = start_config(env=dict(IDENTITY, ANTHROPIC_API_KEY=secret))
@@ -96,12 +109,17 @@ def test_stop_is_idempotent_and_leaves_absent(city: City) -> None:
     assert not (Path(city.context().state_dir("meta")) / f"{obj}.json").exists()
 
 
-def test_stop_with_the_core_down_exits_1(city: City) -> None:
+def test_stop_with_the_core_gone_and_nothing_of_it_running_exits_0(city: City) -> None:
+    # The core went down with its programs (no holder, no core process left):
+    # the name runs nothing, and stop starts no core to say so. With a holder
+    # still running, stop cannot tell (test_herdrcore_server).
     assert city.start("mc-a", start_config()).code == 0
     city.fake.close()  # type: ignore[union-attr]
-    done = city.run("stop", "mc-a", extra={"GC_RPP_FAULT": ""})
-    assert done.code == 1
     city.fake = None
+    done = city.run("stop", "mc-a", extra={"GC_RPP_FAULT": ""})
+    assert done.code == 0, done.stderr
+    time.sleep(0.5)
+    assert not os.path.exists(city.paths.socket), "no core was started"
 
 
 def test_exited_program_reads_dead_and_its_screen_stays_readable(city: City) -> None:

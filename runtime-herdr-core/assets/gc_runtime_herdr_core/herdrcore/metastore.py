@@ -8,7 +8,9 @@ the first ``observe`` that sees the box (observe.v1 rule 5). ``set-meta``,
 ``get-meta`` of an identity key and ``observe``'s identity always agree
 (rule 4). The file also keeps what the pack needs about the incarnation and
 never puts on the wire: the base name of the session's gc binary (a process
-name alias) and its work directory.
+name alias), its work directory, and the pid and start time of the program
+``terminal.run`` started (written once ``run`` returned), which find the
+incarnation's program in the process table when the core does not answer.
 
 Writes are whole-file replacements (temp file, then rename) under the
 name's exclusive lock; ``stop`` deletes the file once nothing of the
@@ -41,6 +43,11 @@ class Meta:
     values: Mapping[str, str] = field(default_factory=dict)
     gc_bin: str = ""
     work_dir: str = ""
+    pid: int = 0
+    """The program's pid once ``run`` returned; 0 before."""
+    pid_start: str = ""
+    """The program's start-time token (:attr:`.procs.Proc.start`); empty when
+    it could not be read."""
 
     def identity(self) -> Dict[str, str]:
         """The identity keys the incarnation has a value for."""
@@ -58,8 +65,18 @@ class Meta:
             values[key] = value
         return replace(self, values=values)
 
+    def with_program(self, pid: int, start: str) -> Meta:
+        return replace(self, pid=pid, pid_start=start)
+
     def encode(self) -> bytes:
-        doc = {"session": self.session, "values": dict(self.values), "gc_bin": self.gc_bin, "work_dir": self.work_dir}
+        doc = {
+            "session": self.session,
+            "values": dict(self.values),
+            "gc_bin": self.gc_bin,
+            "work_dir": self.work_dir,
+            "pid": self.pid,
+            "pid_start": self.pid_start,
+        }
         return (dumps(doc) + "\n").encode("ascii")
 
 
@@ -95,6 +112,8 @@ class MetaStore:
                 values=doc.str_map("values"),
                 gc_bin=doc.str_or("gc_bin", ""),
                 work_dir=doc.str_or("work_dir", ""),
+                pid=doc.int_or("pid", 0),
+                pid_start=doc.str_or("pid_start", ""),
             )
         except JsonShapeError as err:
             raise MetaError(f"metadata file for {obj}: {err}") from None

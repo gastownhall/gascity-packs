@@ -64,7 +64,15 @@ def test_entry_point_ships_executable() -> None:
 
 HANDSHAKE = {
     "version": 0,
-    "capabilities": ["observe.v1", "report-attachment", "report-activity", "city-scoped", "conformance-faults"],
+    "capabilities": [
+        "observe.v1",
+        "report-attachment",
+        "report-activity",
+        "city-scoped",
+        "conformance-faults",
+        "server-lifecycle",
+        "fs.host",
+    ],
     "locality": "local",
 }
 
@@ -74,6 +82,12 @@ def test_protocol_answers_the_v2_ready_handshake(tmp_path: Path) -> None:
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout) == HANDSHAKE
     assert done.stderr == b""
+
+
+def test_fs_host_is_declared_with_locality_local(tmp_path: Path) -> None:
+    # fs.host narrows locality local; without it gc reads fs.host as undeclared.
+    doc = json.loads(invoke("protocol", cwd=tmp_path).stdout)
+    assert "fs.host" in doc["capabilities"] and doc["locality"] == "local"
 
 
 def test_the_handshake_never_declares_exec_or_provision(tmp_path: Path) -> None:

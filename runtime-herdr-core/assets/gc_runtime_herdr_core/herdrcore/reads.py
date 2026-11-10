@@ -7,6 +7,9 @@ core down answers unknown (``observe``), incomplete (``inventory``) or exit
 shared with a bounded wait, so it answers within gc's 4 s while a start,
 stop or a held nudge works on the name. Absence is answered only when the
 core, reachable, holds no record of the name, live or finished (rule 7).
+``is-running`` and ``process-alive`` answer only whether the name runs: with
+the core down and nothing of it running (no holder, no core process), they
+answer ``false`` and kick nothing.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from . import activity
 from .attach import attached, viewer_targets
 from .context import Host, OpContext
 from .core import kick
+from .corescan import nothing_runs
 from .metastore import Meta, MetaError, MetaStore
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
 from .procs import ProcError, Snapshot, expand_names, find_agent, is_launching, opaque_under
@@ -129,6 +133,8 @@ def op_observe(ctx: OpContext) -> OpResult:
     if not is_intact(record):
         return OpResult.answer(ObserveAnswer(state="dead", box=box_object(record), identity=identity).encode())
     state, pid = agent_state(try_snapshot(ctx.host) if names else None, record, names, meta)
+    if not names and record.pid is not None:
+        pid = str(record.pid)  # no names to judge by: the box's program, a host process (fs.host)
     return OpResult.answer(
         ObserveAnswer(state="running", box=box_object(record), agent=state, agent_pid=pid, identity=identity).encode()
     )
@@ -236,11 +242,20 @@ def _inventory_entry(
 # --- liveness --------------------------------------------------------------------------------
 
 
-def current_record(ctx: OpContext, name: str) -> Optional[Terminal]:
-    """The name's newest record, live or finished; exit 1 when the core cannot be read."""
+def current_record(ctx: OpContext, name: str, *, liveness: bool = False) -> Optional[Terminal]:
+    """The name's newest record, live or finished; exit 1 when the core cannot be read.
+
+    With ``liveness`` (the ops that answer only whether the name runs), a
+    core that does not answer while nothing of it runs (no holder of its
+    socket, no core process: :func:`.corescan.nothing_runs`, as after
+    ``server-stop``) answers no record, and kicks no start: nothing of the
+    name runs, and a core started for that answer would outlive a stopped
+    city."""
     try:
         return newest(list_city(ctx.client(read=True), ctx, name), name)
     except HcError as err:
+        if liveness and isinstance(err, HcUnreachable) and nothing_runs(ctx):
+            return None
         unreachable(ctx, err)
         raise OpError(f"cannot read the city's core: {err}") from None
 
@@ -252,14 +267,14 @@ def live_record(ctx: OpContext, name: str) -> Optional[Terminal]:
 
 
 def op_is_running(ctx: OpContext) -> OpResult:
-    record = current_record(ctx, session_arg(ctx.request))
+    record = current_record(ctx, session_arg(ctx.request), liveness=True)
     return OpResult.answer(encode_bool(record is not None and is_intact(record)))
 
 
 def op_process_alive(ctx: OpContext) -> OpResult:
     name = session_arg(ctx.request)
     names = stdin_names(ctx.request)
-    record = current_record(ctx, name)
+    record = current_record(ctx, name, liveness=True)
     if record is None or not is_intact(record):
         return OpResult.answer("false")
     if not names:

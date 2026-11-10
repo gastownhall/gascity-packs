@@ -17,6 +17,9 @@ agent):
    refused at all); then it warns, removes that record and goes ahead beside
    them.
 3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
+   Only what the config carries: under ``fs.host`` a gc that knows the
+   token did this host work itself (and runs ``session_setup`` after the
+   start) and leaves those fields out; an older gc sends them.
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
    ``terminal.run`` the launcher and label the pid. The run is sent once: hc
@@ -30,7 +33,8 @@ agent):
    created: a recycled one) but the box stays, its token unscanned, for
    gc's stop. A created terminal hc no longer holds is still looked for by
    its token before its metadata goes.
-5. Unlocked: ``session_setup`` and the setup script (warnings only), then the
+5. Unlocked: ``session_setup`` and the setup script, when the config
+   carries them (warnings only), then the
    first turn. A cancel or failure from here on leaves the box, for gc stops
    the box a failed start leaves. ``session_live`` (tmux theming and
    keybindings) is never run:
@@ -84,6 +88,11 @@ table cannot be read (hc's kill still happens), the op exits 1
 retry (the next stop or start, or a corpse kill) finds what is left by the
 token. A process whose environment does not carry the token, or cannot be
 read, is not found that way.
+
+**stop** with the core not answering and nothing of it running (no holder
+of its socket, no core process: after ``server-stop``) reads no record and
+starts no core: the name's incarnations are ended by the pid, start time and
+token their metadata keeps (:func:`.server.sweep_without_core`).
 """
 
 from __future__ import annotations
@@ -93,10 +102,10 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass, replace
-from typing import Callable, Dict, Final, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from ..hc.client import HcClient
-from ..hc.errors import HcCancelled, HcError, HcProtocolError, HcRpcError
+from ..hc.errors import HcCancelled, HcError, HcProtocolError, HcRpcError, HcUnreachable
 from ..hc.types import RunSpec, Terminal
 from ..rpp.cancel import Cancelled
 from ..rpp.exitcodes import ExitCode
@@ -112,6 +121,7 @@ from .command import run_bounded
 from .config import read_pack_config, read_private_file, write_private_file
 from .context import OpContext
 from .core import core_env, ensure_core
+from .corescan import nothing_runs
 from .envplan import STRIPPED, scope_env, scope_prefix
 from .metastore import Meta, MetaError, seed
 from .naming import LABEL_OBJ, LABEL_PID, LABEL_REFUSED, LABEL_SESSION, new_object_nonce, session_labels, terminal_name
@@ -126,6 +136,7 @@ from .procs import (
     is_launching,
     kill_captured,
     scan_environ,
+    scan_environ_any,
     subtree,
 )
 from .readiness import delays_first_turn, shows_ready_prompt, withholds_first_turn
@@ -254,7 +265,7 @@ def _never_killed(snapshot: Snapshot, record: Terminal, protected: Iterable[Term
     return keep
 
 
-def _reap(ctx: OpContext, snapshot: Snapshot, captured: List[Proc], keep: Set[int], wait: Callable[[float], None]) -> List[str]:
+def reap(ctx: OpContext, snapshot: Snapshot, captured: List[Proc], keep: Set[int], wait: Callable[[float], None]) -> List[str]:
     """Kill what was captured, less ``keep``; returns what may survive."""
     problems: List[str] = []
     targets, unsure = kill_targets(snapshot, captured, keep=keep)
@@ -266,27 +277,27 @@ def _reap(ctx: OpContext, snapshot: Snapshot, captured: List[Proc], keep: Set[in
     return problems
 
 
-def _rescan(
-    ctx: OpContext, record: Terminal, own: Optional[Proc], token: str, protected: List[Terminal], wait: Callable[[float], None]
+def rescan(
+    ctx: OpContext, tokens: FrozenSet[str], keep_of: Callable[[Snapshot], Set[int]], wait: Callable[[float], None]
 ) -> List[str]:
-    """Kill what carries ``token`` now, fenced afresh as the first kill was,
-    until a scan finds nothing; returns what may survive, as does a carrier
-    still found after :data:`RESCANS` kills."""
+    """Kill what carries one of ``tokens`` now, less ``keep_of`` the fresh
+    snapshot, until a scan finds nothing; returns what may survive, as does
+    a carrier still found after :data:`RESCANS` kills."""
     kills = 0
     while True:
         try:
             snapshot = ctx.host.procs.snapshot()
         except ProcError as err:
             return [f"cannot read the process table ({err})"]
-        keep = _never_killed(snapshot, record, protected, own)
-        found = [p for p in scan_environ(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, token) if p.pid not in keep]
+        keep = keep_of(snapshot)
+        found = [p for p in scan_environ_any(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, tokens) if p.pid not in keep]
         if not found:
             return []
         if kills == RESCANS:
             # No "token" in the text: the redactor takes the word after it for a secret.
             return ["still respawning after the kill: " + ", ".join(str(p.pid) for p in found[:8])]
         kills += 1
-        problems = _reap(ctx, snapshot, found, keep, wait)
+        problems = reap(ctx, snapshot, found, keep, wait)
         if problems:
             return problems
 
@@ -323,11 +334,11 @@ def kill_incarnation(
     own = None if snapshot is None else _own_root(snapshot, record)
     kill_error = _hc_kill(client, record)
     if snapshot is not None:
-        problems += _reap(ctx, snapshot, captured, _never_killed(snapshot, record, others, own), wait)
+        problems += reap(ctx, snapshot, captured, _never_killed(snapshot, record, others, own), wait)
     if kill_error is not None:
         raise kill_error  # the tree is dead either way; the record stays for the next try
     if not problems and token:
-        problems = _rescan(ctx, record, own, token, others, wait)
+        problems = rescan(ctx, frozenset({token}), lambda now: _never_killed(now, record, others, own), wait)
     if not problems:
         _remove_record(client if remover is None else remover(), record, wait)
     return problems
@@ -351,7 +362,8 @@ def kill_targets(snapshot: Snapshot, captured: List[Proc], *, keep: Set[int]) ->
     return signal, unsure
 
 
-def _forget(ctx: OpContext, obj: Optional[str]) -> None:
+def forget(ctx: OpContext, obj: Optional[str]) -> None:
+    """Drop an ended incarnation's metadata and activity."""
     if obj is None:
         return
     try:
@@ -406,7 +418,7 @@ def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refus
         if survived:
             problems += survived
             continue
-        _forget(ctx, object_of(record))
+        forget(ctx, object_of(record))
     return problems
 
 
@@ -480,11 +492,24 @@ def op_stop(ctx: OpContext) -> OpResult:
             records = list_city(client, ctx, name)
             problems = _recycle(ctx, client, records)
     except HcError as err:
-        unreachable(ctx, err)
-        raise OpError(f"cannot stop {name!r}: {err}") from None
+        if not (isinstance(err, HcUnreachable) and nothing_runs(ctx)):
+            unreachable(ctx, err)
+            raise OpError(f"cannot stop {name!r}: {err}") from None
+        problems = _stop_without_core(ctx, name)
     if problems:
         return OpResult.fail(f"stopped {name!r}, but descendants may survive (the box stays for a retry): " + "; ".join(problems))
     return OpResult.ok()
+
+
+def _stop_without_core(ctx: OpContext, name: str) -> List[str]:
+    """``stop`` while the core does not answer and nothing of it runs (as
+    after ``server-stop``): no record can be read and no box runs, so the
+    name's incarnations are ended by what the pack keeps for them (pid and
+    start time, instance token), and no core is started for it."""
+    from .server import sweep_without_core  # it builds on this module's kill
+
+    with ctx.name_lock(name, shared=False):
+        return sweep_without_core(ctx, session=name, end_holders=False)
 
 
 # --- kill-object --------------------------------------------------------------------------------
@@ -540,7 +565,7 @@ def _kill_object(ctx: OpContext, client: HcClient, name: str, address: str, crea
     problems = kill_incarnation(ctx, client, record, meta, protected=list_city(client, ctx, finished=False))
     if problems:
         return OpResult.fail("killed, but descendants may survive (the box stays for a retry): " + "; ".join(problems))
-    _forget(ctx, object_of(record))
+    forget(ctx, object_of(record))
     return "killed"
 
 
@@ -830,14 +855,32 @@ def _create(
                 if not found:
                     raise
                 created = found[0]
-            if created.pid is not None:
-                created = client.label(created.address, {LABEL_PID: str(created.pid)})
+            pid = created.pid
+            if pid is not None:
+                created = client.label(created.address, {LABEL_PID: str(pid)})
+                _record_program(ctx, obj, pid)
             return created, scope is not None
         except BaseException:
             if spawn_path:
                 spawnfile.remove(spawn_path)  # a run hc still starts late finds nothing to launch
             _undo(ctx, created, obj, pending=pending)
             raise
+
+
+def _record_program(ctx: OpContext, obj: str, pid: int) -> None:
+    """Keep the program's pid and start time in the incarnation's metadata:
+    when the core does not answer, they find the program without its record
+    (:mod:`.server`). The start time is left empty when the process table
+    cannot be read, or when the program already ended."""
+    store = meta_store(ctx)
+    meta = store.read(obj)
+    if meta is None:
+        return
+    try:
+        proc = ctx.host.procs.snapshot().get(pid)
+    except ProcError:
+        proc = None
+    store.write(obj, meta.with_program(pid, "" if proc is None or proc.opaque else proc.start))
 
 
 def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: bool) -> None:
@@ -889,7 +932,7 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
     if pending and not targets:
         return
     try:
-        _forget(ctx, obj)
+        forget(ctx, obj)
     except (OSError, StateDirError):
         pass
 
@@ -922,7 +965,7 @@ def _reap_trees(ctx: OpContext, targets: List[Terminal]) -> None:
         if started is None or started > record.created_ms + ROOT_START_SLACK_MS:
             continue
         keep = _never_killed(snapshot, record, (), _own_root(snapshot, record))
-        _reap(ctx, snapshot, subtree(snapshot, record.pid), keep, time.sleep)
+        reap(ctx, snapshot, subtree(snapshot, record.pid), keep, time.sleep)
 
 
 def _await_agent(ctx: OpContext, record: Terminal, cfg: StartConfig) -> Optional[str]:

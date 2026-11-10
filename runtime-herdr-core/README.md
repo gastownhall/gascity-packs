@@ -10,7 +10,8 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
-`city-scoped` and `conformance-faults` (locality `local`), and passes
+`city-scoped`, `conformance-faults`, `server-lifecycle` and `fs.host`
+(locality `local`), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
@@ -46,7 +47,7 @@ runtime-herdr-core/
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
         lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
-        inputs.py screen.py readiness.py
+        inputs.py screen.py readiness.py server.py corescan.py
         pin.py install.py admin.py commands.py doctor.py appvis.py infra_argv.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
@@ -186,11 +187,21 @@ checked against the app yet, so the sessions may not appear there.
   city, in the city's pack state) gives in-agent `hc` the city core's exact
   tuple and refuses while the core is down instead of starting a second
   one.
+- **Host work (`fs.host`).** Boxes run on gc's host as gc's user with
+  gc's view of the filesystem, so the pack declares `fs.host`: a gc that
+  knows the token stages the work directory, runs `pre_start` (fatal) and
+  then `session_setup` and the setup script on the host itself, and leaves
+  those fields out of the start config. `start` does exactly what its
+  config carries: an omitted field is not staged or run, and a present one
+  is, as below, so an older gc (or one whose cached handshake predates the
+  token) still gets its host work done once. `observe` reports
+  `agent_pid`, a host pid: the agent's when it is asked about process
+  names and finds one, else the box's program.
 - **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
   (fatal), creates the terminal in `work_dir` (which must exist by then;
   the home without one), runs `session_setup` and the setup script
-  (warnings), then types `nudge` once the agent is ready (its prompt, read
+  (warnings), each only when the config carries it, then types `nudge` once the agent is ready (its prompt, read
   as gc reads a pane: the bottom-most prompt line, NBSP as a space, a box
   border skipped, and a numbered menu's cursor row no prompt; else its
   delay, at most 60 s as in gc; else its first status report; else settled
@@ -241,8 +252,8 @@ checked against the app yet, so the sessions may not appear there.
   `.agents/hooks.json`, `.github/hooks/gascity.json`) and a Kiro
   `AGENTS.md` already in the work directory are kept, with a warning. Only
   `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
-  and `install_agent_hooks`' extra slots are not (gaps until gc stages on
-  the host for runtime packs). Staging and `copy-to` write nothing outside
+  and `install_agent_hooks`' extra slots are not (gaps only for a gc
+  without `fs.host`, which stages on the host itself). Staging and `copy-to` write nothing outside
   the work directory: nothing is written through a symlink below it (one
   where a file or directory would go fails the staging or the copy; gc
   writes through it), and a `copy_files` destination that leaves the work
@@ -338,8 +349,30 @@ checked against the app yet, so the sessions may not appear there.
   tell, including when such a process's environment cannot be read.
   `attach` checks the core answers first and runs `hc attach` with the
   core's allowlist environment, so it never starts a core on gc's.
+- **Server teardown** (`server-lifecycle`). gc runs `server-stop` after
+  it stops the city's sessions, at `gc stop` and at the orchestrator's
+  shutdown, as a backstop: a session its own stops could not see ends with
+  the core. With the core answering, every record of the city is ended as
+  `stop` ends it (tree, token scan, infrastructure fenced); a terminal the
+  city did not start (a person's, or one an agent opened through the
+  in-agent `hc`) survives, and while one runs the core keeps running for
+  it; otherwise the core is stopped and the op waits until it is gone.
+  With the core not answering its socket, its programs may still run
+  under their holders (`herdr-core hold --socket <session>.holder.<id>.sock`), so
+  the process table is scanned: each incarnation is found by the pid and
+  start time its metadata keeps and by its `GC_INSTANCE_TOKEN`, its tree is
+  ended, and a holder left with no program is ended too. Exit 0 means the
+  city's core is gone (or kept only for a foreign terminal) and no program
+  of the city's sessions runs, so a second call exits 0; exit 1 names what
+  may survive: a process that outlives its kill or cannot be read, a
+  process table that cannot be read, a core that runs but does not answer,
+  or one that answers but fails. After `server-stop` (the core down, with
+  no holder or core process of the city left), `is-running` and
+  `process-alive` answer `false` and `stop` ends what the metadata still
+  names, without starting a core: a stopped city stays stopped until the
+  next `start`.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
-  reading stdin), `server-stop`, `program-status` and session events.
+  reading stdin), `program-status` and session events.
 
 ## Foundations
 
