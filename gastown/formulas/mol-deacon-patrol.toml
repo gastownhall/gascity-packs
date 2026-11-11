@@ -155,7 +155,11 @@ Monitor whether work is flowing through rig coordination agents.
 The controller handles "is the agent running?" The deacon handles
 "is work progressing?"
 
-**Skip docked/parked rigs.** Only check active rigs.
+**Only check operator-active rigs.** The heartbeat helper joins the native rig
+roster to session scope. Retained session activity does not prove rig activity.
+Skip suspended targets; unknown scope or a failed read supplies no warrant
+eligibility. Recheck immediately before a recovery nudge or warrant using the
+same guard below. Never run `gc rig resume` to make recovery work actionable.
 
 **Deterministic first pass — witness heartbeat freshness.**
 
@@ -186,7 +190,7 @@ findings, one TSV row per witness
 | `no-heartbeat` | no usable timestamp recorded yet | do NOT warrant. A freshly-spawned witness has no heartbeat yet; only a no-heartbeat that persists across cycles is a real signal |
 
 Exit 2 means the check could not run — bad config, an unreadable session
-roster, or a `gc session list` schema drift that hid `last_active`. That is
+or rig roster, unresolved scope, or a `gc session list` schema drift that hid `last_active`. That is
 "freshness was NOT measured", not health. Escalate the drift the way
 `recover-orphaned-beads` does in `mol-witness-patrol`:
 
@@ -199,7 +203,49 @@ but it takes the same escalation route as everything else in this step — nudge
 first, so a witness that is merely wedged mid-turn gets to recover on its own:
 
 ```bash
-gc session nudge "$STALLED_SESSION" "Heartbeat silent for <age>. Run gc hook and resume your patrol."
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
+if recovery_target_allowed "$STALLED_SESSION"; then
+  gc session nudge "$STALLED_SESSION" "Heartbeat silent for <age>. Run gc hook and resume your patrol."
+fi
 ```
 
 If the next cycle still reports the same session `stalled`, file a deduped
@@ -234,7 +280,50 @@ Check for an existing open warrant against the same target first — a duplicate
 warrant spawns a second shutdown dance racing the first (duplicate kills,
 wasted dog cycles). Skip filing if one is already open or in progress:
 ```bash
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
 TARGET_SESSION="<session>"
+if ! recovery_target_allowed "$TARGET_SESSION"; then
+  echo "Skipping warrant: rig suspended or scope unresolved."
+else
 EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
   | jq -r --arg t "$TARGET_SESSION" \
       '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
@@ -244,6 +333,7 @@ else
   gc bd create --type=task --labels=warrant \
     --title="Stuck: <session>" \
     --metadata '{"target":"<session>","reason":"<reason>","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+fi
 fi
 ```
 
@@ -274,13 +364,69 @@ closes that gap.
 - `B` = the most recent bead.updated_at across those beads (work signal)
 
 ```bash
-gc agents list --json --active | jq -r '.[] | .agent_id' | while read -r AGENT; do
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
+# Use the supported native session roster. A roster failure is not an empty queue.
+QUEUE_SESSIONS="$(gc session list --state=all --json)" || exit 1
+QUEUE_AGENTS="$(printf '%s' "$QUEUE_SESSIONS" | jq -r '
+  if type == "object" and (.sessions | type) == "array" then
+    [.sessions[] | select(.closed != true)
+     | select(.state == "active" or .state == "awake" or .state == "asleep" or .state == "running")
+     | (.agent_name // .id) | select(type == "string" and length > 0)] | .[]
+  else error("unreadable session roster") end')" || exit 1
+while IFS= read -r AGENT; do
+    [ -n "$AGENT" ] || continue
+    recovery_target_allowed "$AGENT" || continue
     ASSIGNED=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
     LATEST=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 \\
         | jq -r '[.[].updated_at] | max // ""')
     printf '%s\\t%s\\t%s\\n' "$AGENT" "$ASSIGNED" "$LATEST"
-done
+done <<EOF
+$QUEUE_AGENTS
+EOF
 ```
+
+This example preserves the existing assigned-bead query and store scope. It
+does not solve cross-store queue visibility. Suspended or unresolved targets
+never enter this assessment, even when their sessions still report active.
 
 The latest bead.updated_at is the cheapest proxy for "did this session
 move work recently?" — every claim, status transition, metadata update,
@@ -303,7 +449,49 @@ is exactly why an LLM does it, not Go code. Consider:
 **Step 3: For flagged sessions, nudge first, then warrant:**
 
 ```bash
-gc session nudge "$STUCK_SESSION" "Queue has $ASSIGNED open beads, no bead activity for <duration>. Run gc hook."
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
+if recovery_target_allowed "$STUCK_SESSION"; then
+  gc session nudge "$STUCK_SESSION" "Queue has $ASSIGNED open beads, no bead activity for <duration>. Run gc hook."
+fi
 ```
 
 If the nudge doesn't unstick within the next patrol cycle, escalate
@@ -312,7 +500,50 @@ against the same target first — a duplicate warrant spawns a second shutdown
 dance racing the first:
 
 ```bash
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
 TARGET_SESSION="<session>"
+if ! recovery_target_allowed "$TARGET_SESSION"; then
+  echo "Skipping warrant: rig suspended or scope unresolved."
+else
 EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
     | jq -r --arg t "$TARGET_SESSION" \
         '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
@@ -322,6 +553,7 @@ else
     gc bd create --type=task --labels=warrant \
         --title="Stuck queue: <session> — $ASSIGNED beads, no activity $duration" \
         --metadata '{"target":"<session>","reason":"queue starvation: N beads, no bead.updated_at progress","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+fi
 fi
 ```
 
@@ -364,7 +596,50 @@ No hardcoded thresholds. Use judgment.
 Check for an existing open warrant against the same target first — a duplicate
 warrant spawns a second shutdown dance racing the first:
 ```bash
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
 TARGET_SESSION="<session>"
+if ! recovery_target_allowed "$TARGET_SESSION"; then
+  echo "Skipping warrant: rig suspended or scope unresolved."
+else
 EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
   | jq -r --arg t "$TARGET_SESSION" \
       '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
@@ -374,6 +649,7 @@ else
   gc bd create --type=task --labels=warrant \
     --title="Stuck dog: <agent>" \
     --metadata '{"target":"<session>","reason":"<reason>","requester":"deacon","gc.routed_to":"{{binding_prefix}}dog"}'
+fi
 fi
 ```
 

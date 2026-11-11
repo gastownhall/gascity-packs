@@ -16,9 +16,12 @@ write_gc_stub() {
     mkdir -p "$bin"
     cat >"$bin/gc" <<'SH'
 #!/usr/bin/env sh
-# Only `gc session list --state=all --json` is exercised here.
+# Read-only session and rig roster inputs.
 case "$*" in
     *"session"*"list"*"--json"*) cat "$GC_SESSIONS_JSON" ;;
+    "rig list --json")
+        [ "${GC_RIGS_FAIL:-0}" = 0 ] || exit 1
+        cat "$GC_RIGS_JSON" ;;
     *) printf '{}' ;;
 esac
 SH
@@ -35,7 +38,7 @@ run_check() {
     set +e
     # ${1+"$@"} rather than "$@": bash 3.2 under `set -u` treats an empty "$@"
     # as an unbound variable.
-    OUT=$(env GC_CITY="$CITY" GC_SESSIONS_JSON="$SESSIONS" PATH="$BIN:$PATH" ${1+"$@"} \
+    OUT=$(env GC_CITY="$CITY" GC_SESSIONS_JSON="$SESSIONS" GC_RIGS_JSON="$RIGS" PATH="$BIN:$PATH" ${1+"$@"} \
         bash "$SCRIPT" 2>"$ERRFILE")
     RC=$?
     set -e
@@ -53,10 +56,12 @@ trap 'rm -rf "$tmp"' EXIT
 CITY="$tmp/city"
 BIN="$tmp/bin"
 SESSIONS="$tmp/sessions.json"
+RIGS="$tmp/rigs.json"
 ERRFILE="$tmp/stderr.txt"
 mkdir -p "$CITY"
 : >"$CITY/city.toml"
 write_gc_stub "$BIN"
+printf '%s' '{"ok":true,"rigs":[{"name":"city","hq":true,"suspended":false},{"name":"alpha","hq":false,"suspended":false},{"name":"a","hq":false,"suspended":false},{"name":"b","hq":false,"suspended":false},{"name":"c","hq":false,"suspended":false}]}' >"$RIGS"
 
 FRESH=$(ts_ago 45)
 STALE=$(ts_ago 72000)   # 20h — inside the 14h-63h band this check exists for
@@ -180,10 +185,10 @@ test_non_witness_sessions_are_ignored() {
 }
 
 test_binding_prefixed_template_matches() {
-    run_check "$(printf '{"sessions":[{"id":"s1","state":"asleep","template":"gastown.witness","last_active":"%s","closed":false}]}' "$STALE")"
+    run_check "$(printf '{"sessions":[{"id":"s1","name":"gastown.witness","agent_name":"gastown.witness","state":"asleep","template":"gastown.witness","last_active":"%s","closed":false}]}' "$STALE")"
     [ "$RC" -eq 1 ] || fail "a binding-prefixed template should still match, got $RC ($OUT)"
-    printf '%s' "$OUT" | grep -q '^stalled	-	s1	asleep	' ||
-        fail "a session with no name/rig should fall back to its id, got: $OUT"
+    printf '%s' "$OUT" | grep -q '^stalled	-	gastown.witness	asleep	' ||
+        fail "a proven HQ session should retain city scope, got: $OUT"
 }
 
 test_role_override() {
@@ -278,6 +283,7 @@ case "$*" in
     "session list --state=all --json")
         cat "$GC_SESSIONS_JSON"
         ;;
+    "rig list --json") cat "$GC_RIGS_JSON" ;;
     *)
         echo "unexpected gc invocation: $*" >&2
         exit 91
@@ -289,7 +295,7 @@ SH
     printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","template":"gastown.witness","state":"asleep","last_active":"%s","closed":false}]}' "$FRESH" >"$SESSIONS"
     set +e
     OUT=$(env -u GC_PACK_DIR GC_CITY="$CITY" GC_TEST_PACK_DIR="$ROOT/gastown" \
-        GC_SESSIONS_JSON="$SESSIONS" PATH="$dispatch_bin:$PATH" \
+        GC_SESSIONS_JSON="$SESSIONS" GC_RIGS_JSON="$RIGS" PATH="$dispatch_bin:$PATH" \
         GASTOWN_WITNESS_STALE_MIN=90 gc gastown witness-heartbeat-check 2>"$ERRFILE")
     RC=$?
     set -e
@@ -301,6 +307,29 @@ SH
         fail "pack-command dispatch should reach the heartbeat implementation, got: $OUT"
 }
 
+test_rig_suspension_is_independent_of_session_state() {
+    local saved_rigs payload
+    saved_rigs=$(cat "$RIGS")
+    payload=$(printf '{"sessions":[{"id":"s1","name":"alpha/witness","rig":"alpha","state":"asleep","last_active":"%s","closed":false}]}' "$STALE")
+    printf '%s' '{"ok":true,"rigs":[{"name":"alpha","suspended":true}]}' >"$RIGS"
+    run_check "$payload"
+    [ "$RC" -eq 0 ] && [ -z "$OUT" ] || fail "suspended rigs must emit no finding: $RC $OUT"
+    for roster in '{"ok":true,"rigs":[]}' '{"ok":true,"rigs":[{"name":"alpha"}]}' '{"ok":true,"rigs":[{"name":"alpha","suspended":false},{"name":"alpha","suspended":true}]}' '{"ok":true,"rigs":[{"name":"alpha","suspended":"false"}]}' 'bad-json'; do
+        printf '%s' "$roster" >"$RIGS"
+        run_check "$payload"
+        [ "$RC" -eq 2 ] || fail "unresolved rig scope must exit 2: $RC $OUT"
+        ! printf '%s' "$OUT" | grep -q '^stalled' || fail "unknown scope is never stalled"
+    done
+    printf '%s' "$saved_rigs" >"$RIGS"
+    run_check "$payload" GC_RIGS_FAIL=1
+    [ "$RC" -eq 2 ] || fail "a failed rig read must exit 2"
+    run_check '{"sessions":[{"id":"s1","template":"gastown.witness","state":"asleep","last_active":"0001-01-01T00:00:00Z"}]}'
+    [ "$RC" -eq 2 ] || fail "missing rig without configured HQ identity must fail closed"
+    run_check '{"sessions":[{"id":"s1","name":"alpha/witness","agent_name":"b/witness","rig":"alpha","state":"asleep","last_active":"0001-01-01T00:00:00Z"}]}'
+    [ "$RC" -eq 2 ] || fail "conflicting rig identities must fail closed"
+}
+
+test_rig_suspension_is_independent_of_session_state
 test_fresh_heartbeat_is_not_flagged
 test_stale_heartbeat_is_stalled
 test_zero_time_sentinel_is_no_heartbeat_not_stalled

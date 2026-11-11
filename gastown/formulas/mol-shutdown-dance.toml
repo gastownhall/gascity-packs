@@ -51,6 +51,11 @@ if [ -z "$target" ] || [ -z "$reason" ]; then
 fi
 ```
 
+A dog has no authority to run `gc rig resume`. Suspension belongs to the
+operator or an explicitly authorized control workflow. Never resume a rig to
+make a warrant actionable. If the target is suspended or its scope cannot be
+proved, record NO_ACTION, notify the requester and drain.
+
 ## State Machine
 
 ```
@@ -132,7 +137,64 @@ the requester cancelled), there is nothing to transition: do not
 attempt any step or bead updates against the closed warrant. Run
 `gc runtime drain-ack`, then exit.
 
-**3. Check if target session is alive:**
+**3. Check current operator suspension before handling the target:**
+
+Resolve the exact target through the native session identities, then join its
+rig to `gc rig list --json`. A missing rig is city scope only when the session
+has unqualified template and configured agent identities and the roster has
+one explicit HQ row. Missing, conflicting, malformed or failed reads stop the
+dance with no target action. Do not infer activation from session state.
+
+```bash
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
+if ! recovery_target_allowed "$target"; then
+  gc bd close "$GC_BEAD_ID" --reason "NO_ACTION: target rig suspended or scope unresolved"
+  gc session nudge "$requester_endpoint" "DOG_DONE: $target - NO_ACTION (rig suspended or scope unresolved)" || true
+  gc runtime drain-ack
+  exit 0
+fi
+```
+
+**4. Check if target session is alive:**
 ```bash
 gc session peek "$target" --lines 1
 ```
@@ -141,7 +203,7 @@ If target session doesn't exist (already dead):
 - Nudge requester: `gc session nudge "$requester_endpoint" "DOG_DONE: $target - already dead"`
 - Run `gc runtime drain-ack`, then exit
 
-**4. If target is alive:** close this step and proceed to interrogation."""
+**5. If target is alive:** close this step and proceed to interrogation."""
 
 [[steps]]
 id = "interrogate-1"
@@ -482,8 +544,60 @@ gc session peek "$target" --lines 100
 ```
 Save this output — it's the last evidence of what the agent was doing.
 
-**2. Kill the session:**
+**2. Re-read suspension, then kill only an eligible target:**
+
+Repeat the native reads immediately before the kill, even if receipt-time
+checks passed. Reload warrant metadata from the preamble in a fresh shell.
+This guard reduces the check-to-kill window; it is not atomic enforcement.
+An operator can still suspend a rig between the final read and the kill.
+
 ```bash
+# BEGIN RECOVERY_TARGET_GUARD
+recovery_target_allowed() {
+  local recovery_sessions recovery_rigs
+  recovery_sessions="$(gc session list --state=all --json)" || return 1
+  recovery_rigs="$(gc rig list --json)" || return 1
+  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+def recovery_state($rigs):
+  if type != "object" then "unknown"
+  elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
+    then "unknown"
+  elif any([.rig, .template, .agent_name, .name, .alias][];
+           . != null and type != "string") then "unknown"
+  else
+    ([.rig // "", ([.template, .agent_name, .name, .alias][]
+      | select(type == "string" and contains("/")) | split("/")[0])]
+      | map(select(. != "")) | unique) as $scopes
+    | (if ($scopes | length) == 1 and
+            (((.rig // "") | length > 0) or
+             ((.template // "") | contains("/")) or
+             ((.agent_name // "") | contains("/"))) then
+         [$rigs.rigs[] | select(.name == $scopes[0])]
+       elif ($scopes | length) == 0 and
+            ((.template // "") | length > 0) and
+            ((.agent_name // "") | length > 0) and
+            ([.template, .agent_name] | all(contains("/") | not)) then
+         [$rigs.rigs[] | select(.hq == true)]
+       else [] end) as $matches
+    | if ($matches | length) != 1 then "unknown"
+      elif ($matches[0].suspended | type) != "boolean" then "unknown"
+      elif $matches[0].suspended then "suspended" else "active" end
+  end;
+    if type != "object" or .ok == false or (.sessions | type) != "array" then false
+    else [.sessions[] | select(type == "object")
+      | select([.id, .name, .session_name, .alias, .agent_name]
+          | any(. == $target))] as $matches
+      | if ($matches | length) != 1 then false
+        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
+    end' >/dev/null
+}
+# END RECOVERY_TARGET_GUARD
+if ! recovery_target_allowed "$target"; then
+  gc bd close "$GC_BEAD_ID" --reason "NO_ACTION: target rig suspended or scope unresolved"
+  gc session nudge "$requester_endpoint" "DOG_DONE: $target - NO_ACTION (rig suspended or scope unresolved)" || true
+  gc runtime drain-ack
+  exit 0
+fi
 gc session kill "$target"
 ```
 This kills the session directly. The reconciler will see the agent
