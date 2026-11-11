@@ -329,6 +329,39 @@ test_rig_suspension_is_independent_of_session_state() {
     [ "$RC" -eq 2 ] || fail "conflicting rig identities must fail closed"
 }
 
+test_stable_api_uses_canonical_template_scope() {
+    local saved_rigs payload
+    saved_rigs=$(cat "$RIGS")
+    # v1.5.1 CLI SessionView omits closed, rig and agent_name.
+    payload=$(printf '{"_cache_age_s":0.25,"sessions":[{"id":"s1","template":"alpha/gastown.witness","state":"asleep","reason":"","title":"","alias":"alpha/witness","session_name":"alpha--gastown__witness","work_dir":"","created_at":"2026-11-11T00:00:00Z","last_active":"%s","attached":false,"running":false,"last_output":""}]}' "$STALE")
+    printf '%s' '{"ok":true,"rigs":[{"name":"alpha","suspended":false}]}' >"$RIGS"
+    run_check "$payload"
+    [ "$RC" -eq 1 ] || fail "stable API active rig must reach heartbeat assessment: $RC $ERR"
+    printf '%s' "$OUT" | grep -q '^stalled' || fail "stable API old heartbeat must be measured: $OUT"
+    printf '%s' '{"ok":true,"rigs":[{"name":"alpha","suspended":true}]}' >"$RIGS"
+    run_check "$payload"
+    [ "$RC" -eq 0 ] && [ -z "$OUT" ] || fail "stable API suspended rig must be skipped: $RC $OUT"
+    printf '%s' '{"ok":true,"rigs":[{"name":"alpha","suspended":"false"}]}' >"$RIGS"
+    run_check "$payload"
+    [ "$RC" -eq 2 ] || fail "stable API unknown suspension must fail closed: $RC $OUT"
+    payload=$(printf '{"_cache_age_s":0,"sessions":[{"id":"hq","template":"gastown.witness","state":"active","alias":"gastown.witness","session_name":"gastown__witness","last_active":"%s"}]}' "$FRESH")
+    printf '%s' '{"ok":true,"rigs":[{"name":"city","hq":true,"suspended":false}]}' >"$RIGS"
+    run_check "$payload"
+    [ "$RC" -eq 0 ] || fail "stable API city template plus explicit HQ must be measured: $RC $ERR"
+    printf '%s' "$OUT" | grep -q '^fresh' || fail "stable API HQ healthy control must emit fresh: $OUT"
+    for roster in '{"ok":true,"rigs":[]}' '{"ok":true,"rigs":[{"name":"city","suspended":false}]}' '{"ok":true,"rigs":[{"name":"city","hq":true,"suspended":false},{"name":"other","hq":true,"suspended":false}]}'; do
+        printf '%s' "$roster" >"$RIGS"
+        run_check "$payload"
+        [ "$RC" -eq 2 ] || fail "stable API ambiguous HQ must fail closed: $RC $OUT"
+    done
+    printf '%s' "$saved_rigs" >"$RIGS"
+    for bad in '{"_cache_age_s":-1,"sessions":[]}' '{"_cache_age_s":"0","sessions":[]}' '{"_cache_age_s":true,"sessions":[]}' '{"_cache_age_s":0,"sessions":{}}' '{"_cache_age_s":0,"sessions":[],"ok":false}' '{"_cache_age_s":0,"sessions":[],"error":{"message":"failed"}}'; do
+        run_check "$bad"
+        [ "$RC" -eq 2 ] || fail "malformed or failed stable envelope must fail closed: $RC $OUT"
+    done
+}
+
+test_stable_api_uses_canonical_template_scope
 test_rig_suspension_is_independent_of_session_state
 test_fresh_heartbeat_is_not_flagged
 test_stale_heartbeat_is_stalled

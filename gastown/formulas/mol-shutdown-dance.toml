@@ -152,44 +152,56 @@ recovery_target_allowed() {
   recovery_sessions="$(gc session list --state=all --json)" || return 1
   recovery_rigs="$(gc rig list --json)" || return 1
   printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
-def recovery_state($rigs):
+def session_roster_valid:
+  if type != "object" then false
+  elif has("error") or (.sessions | type) != "array" then false
+  elif has("ok") then .ok == true
+  else (._cache_age_s | type) == "number" and ._cache_age_s >= 0 end;
+def recovery_state($rigs; $api):
   if type != "object" then "unknown"
   elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
     then "unknown"
-  elif any([.rig, .template, .agent_name, .name, .alias][];
+  elif any([.id, .rig, .template, .agent_name, .name, .alias, .session_name][];
            . != null and type != "string") then "unknown"
+  elif $api and ((.template // "") | test("^[^/[:space:]]+(/[^/[:space:]]+)?$") | not)
+    then "unknown"
   else
     ([.rig // "", ([.template, .agent_name, .name, .alias][]
       | select(type == "string" and contains("/")) | split("/")[0])]
       | map(select(. != "")) | unique) as $scopes
     | (if ($scopes | length) == 1 and
+            (($api | not) or ((.template | split("/")) | length == 2 and .[0] == $scopes[0])) and
             (((.rig // "") | length > 0) or
              ((.template // "") | contains("/")) or
              ((.agent_name // "") | contains("/"))) then
          [$rigs.rigs[] | select(.name == $scopes[0])]
        elif ($scopes | length) == 0 and
             ((.template // "") | length > 0) and
-            ((.agent_name // "") | length > 0) and
-            ([.template, .agent_name] | all(contains("/") | not)) then
+            ($api or ((.agent_name // "") | length > 0)) and
+            ([.template, .agent_name // ""] | all(contains("/") | not)) then
          [$rigs.rigs[] | select(.hq == true)]
        else [] end) as $matches
     | if ($matches | length) != 1 then "unknown"
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-def session_status_known:
-  (.closed | type) == "boolean" and (.state | type) == "string" and
-  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
-    | index($state) != null);
+def session_status_known($api):
+  (if $api then has("closed") | not else (.closed | type) == "boolean" end)
+  and ((.state | type) == "string" and
+    ((.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+      | index($state) != null) or (($api | not) and .closed == true and .state == "")));
+def session_closed($api):
+  if $api then .state == "closed" else .closed end;
 def recovery_target_active($target; $rigs):
-  if type != "object" or .ok != true or (.sessions | type) != "array" then false
-  else [.sessions[] | select(type == "object")
-    | select([.id, .name, .session_name, .alias, .agent_name]
-        | any(. == $target))] as $matches
-    | if any($matches[]; session_status_known | not) then false
-      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+  if session_roster_valid | not then false
+  else (has("ok") | not) as $api
+    | [.sessions[] | select(type == "object")
+       | select([.id, .name, .session_name, .alias, .agent_name]
+           | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known($api) | not) then false
+      else [$matches[] | select(session_closed($api) | not) | select(.state != "closed")] as $live
         | if ($live | length) != 1 then false
-          else $live[0] | recovery_state($rigs) == "active" end
+          else $live[0] | recovery_state($rigs; $api) == "active" end
       end
   end;
     recovery_target_active($target; $rigs)' >/dev/null
@@ -567,44 +579,56 @@ recovery_target_allowed() {
   recovery_sessions="$(gc session list --state=all --json)" || return 1
   recovery_rigs="$(gc rig list --json)" || return 1
   printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
-def recovery_state($rigs):
+def session_roster_valid:
+  if type != "object" then false
+  elif has("error") or (.sessions | type) != "array" then false
+  elif has("ok") then .ok == true
+  else (._cache_age_s | type) == "number" and ._cache_age_s >= 0 end;
+def recovery_state($rigs; $api):
   if type != "object" then "unknown"
   elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
     then "unknown"
-  elif any([.rig, .template, .agent_name, .name, .alias][];
+  elif any([.id, .rig, .template, .agent_name, .name, .alias, .session_name][];
            . != null and type != "string") then "unknown"
+  elif $api and ((.template // "") | test("^[^/[:space:]]+(/[^/[:space:]]+)?$") | not)
+    then "unknown"
   else
     ([.rig // "", ([.template, .agent_name, .name, .alias][]
       | select(type == "string" and contains("/")) | split("/")[0])]
       | map(select(. != "")) | unique) as $scopes
     | (if ($scopes | length) == 1 and
+            (($api | not) or ((.template | split("/")) | length == 2 and .[0] == $scopes[0])) and
             (((.rig // "") | length > 0) or
              ((.template // "") | contains("/")) or
              ((.agent_name // "") | contains("/"))) then
          [$rigs.rigs[] | select(.name == $scopes[0])]
        elif ($scopes | length) == 0 and
             ((.template // "") | length > 0) and
-            ((.agent_name // "") | length > 0) and
-            ([.template, .agent_name] | all(contains("/") | not)) then
+            ($api or ((.agent_name // "") | length > 0)) and
+            ([.template, .agent_name // ""] | all(contains("/") | not)) then
          [$rigs.rigs[] | select(.hq == true)]
        else [] end) as $matches
     | if ($matches | length) != 1 then "unknown"
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-def session_status_known:
-  (.closed | type) == "boolean" and (.state | type) == "string" and
-  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
-    | index($state) != null);
+def session_status_known($api):
+  (if $api then has("closed") | not else (.closed | type) == "boolean" end)
+  and ((.state | type) == "string" and
+    ((.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+      | index($state) != null) or (($api | not) and .closed == true and .state == "")));
+def session_closed($api):
+  if $api then .state == "closed" else .closed end;
 def recovery_target_active($target; $rigs):
-  if type != "object" or .ok != true or (.sessions | type) != "array" then false
-  else [.sessions[] | select(type == "object")
-    | select([.id, .name, .session_name, .alias, .agent_name]
-        | any(. == $target))] as $matches
-    | if any($matches[]; session_status_known | not) then false
-      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+  if session_roster_valid | not then false
+  else (has("ok") | not) as $api
+    | [.sessions[] | select(type == "object")
+       | select([.id, .name, .session_name, .alias, .agent_name]
+           | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known($api) | not) then false
+      else [$matches[] | select(session_closed($api) | not) | select(.state != "closed")] as $live
         | if ($live | length) != 1 then false
-          else $live[0] | recovery_state($rigs) == "active" end
+          else $live[0] | recovery_state($rigs; $api) == "active" end
       end
   end;
     recovery_target_active($target; $rigs)' >/dev/null

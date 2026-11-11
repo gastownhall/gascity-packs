@@ -220,5 +220,117 @@ fi
         self.assertEqual(len(queries), 2)
         self.assertTrue(all("--assignee=beta/witness" in c for c in queries))
 
+    def stable_sessions(self, rows, **envelope):
+        payload = {"_cache_age_s": 0.25, "sessions": rows}
+        payload.update(envelope)
+        (self.root / "sessions").write_text(json.dumps(payload))
+
+    def stable_row(self, **changes):
+        # Exact CLI SessionView fields from Gas City v1.5.1 decode_sessions.go.
+        row = {"id": "s1", "template": "alpha/gastown.witness", "state": "asleep",
+               "reason": "", "title": "", "alias": "alpha/witness",
+               "session_name": "alpha--gastown__witness", "work_dir": "",
+               "created_at": "2026-11-11T00:00:00Z", "last_active": "2026-11-11T00:00:00Z",
+               "attached": False, "running": False, "last_output": ""}
+        row.update(changes)
+        return row
+
+    def test_stable_api_and_local_controls_at_every_action(self):
+        cases = [(SHUTDOWN, step, code) for step in ("receive-warrant", "execute")
+                 for code in guarded(SHUTDOWN, step)]
+        cases += [(DEACON, step, code) for step in
+                  ("health-scan", "queue-starvation-check", "utility-agent-health")
+                  for code in guarded(DEACON, step)]
+        for formula, step, code in cases:
+            code = code.replace('TARGET_SESSION="<session>"', 'TARGET_SESSION="alpha/witness"')
+            pre = 'STALLED_SESSION="alpha/witness"\nSTUCK_SESSION="alpha/witness"\nASSIGNED=2\nduration=1h\n'
+            is_queue = "QUEUE_SESSIONS=" in code
+            for shape in ("api", "local"):
+                live = self.stable_row() if shape == "api" else self.session
+                old = dict(live, id="old-s1", state="closed" if shape == "api" else "")
+                if shape == "local":
+                    old["closed"] = True
+                for suspended in (False, True):
+                    with self.subTest(step=step, shape=shape, suspended=suspended):
+                        self.roster(suspended)
+                        if shape == "api":
+                            self.stable_sessions([old, live])
+                        else:
+                            self.sessions([old, live])
+                        calls = self.run_guard(pre + code)
+                        actions = [c for c in calls if c[:2] in
+                                   (["bd", "list"], ["session", "kill"], ["bd", "create"])
+                                   or c[:2] == ["session", "nudge"] and c[2] != "deacon/"]
+                        if formula is SHUTDOWN and step == "receive-warrant":
+                            self.assertEqual(any(c[:2] == ["runtime", "drain-ack"] for c in calls), suspended)
+                        else:
+                            self.assertEqual(bool(actions), not suspended, calls)
+                        if is_queue:
+                            self.assertEqual(sum(c == ["session", "list", "--state=all", "--json"] for c in calls), 1)
+                            self.assertEqual(sum(c == ["rig", "list", "--json"] for c in calls), 1)
+                            if not suspended:
+                                expected = "alpha--gastown__witness" if shape == "api" else "alpha/witness"
+                                self.assertTrue(all("--assignee=" + expected in c for c in actions))
+        self.roster(False)
+        # The named runtime identity, alias and physical id are wire identities.
+        for changes, identity in (({}, "alpha--gastown__witness"),
+                                  ({"session_name": ""}, "alpha/witness"),
+                                  ({"session_name": "", "alias": ""}, "s1")):
+            self.stable_sessions([self.stable_row(**changes)])
+            calls = self.run_guard(guarded(DEACON, "queue-starvation-check")[0])
+            queries = [c for c in calls if c[:2] == ["bd", "list"]]
+            self.assertEqual(len(queries), 2)
+            self.assertTrue(all("--assignee=" + identity in c for c in queries))
+
+    def test_stable_api_malformed_envelopes_rows_and_hq_scope(self):
+        execute = guarded(SHUTDOWN, "execute")[0]
+        queue = guarded(DEACON, "queue-starvation-check")[0]
+        good = self.stable_row()
+        bad_envelopes = [{"sessions": [good]}, {"_cache_age_s": 0, "sessions": {}},
+                         {"_cache_age_s": 0, "sessions": [good], "error": {"message": "failed"}}]
+        bad_envelopes += [{"_cache_age_s": age, "sessions": [good]}
+                          for age in (-1, None, "0", True, [], {})]
+        bad_envelopes += [{"_cache_age_s": 0, "sessions": [good], "ok": ok}
+                          for ok in (False, None, "true", 1)]
+        for code in (execute, queue):
+            for payload in bad_envelopes:
+                with self.subTest(payload=payload, queue=code == queue):
+                    (self.root / "sessions").write_text(json.dumps(payload))
+                    calls = self.run_guard(code, expected_status=1 if code == queue else 0)
+                    self.assert_no_target_action(calls)
+                    self.assertFalse(any(c[:2] == ["bd", "list"] for c in calls))
+            for bad in ({"state": "unknown"}, {"state": ""}, {"state": None},
+                        {"closed": False}, {"closed": "false"}, {"template": ""},
+                        {"template": "alpha/"}, {"alias": "beta/witness"},
+                        {"session_name": []}):
+                self.stable_sessions([self.stable_row(**bad)])
+                calls = self.run_guard(code)
+                self.assert_no_target_action(calls)
+                self.assertFalse(any(c[:2] == ["bd", "list"] for c in calls))
+            # A malformed matching historical row keeps even a healthy match unresolved.
+            self.stable_sessions([good, self.stable_row(id="old-s1", state="")])
+            self.assert_no_target_action(self.run_guard(code))
+            # Two open rows sharing runtime identity are ambiguous at assessment and actions.
+            self.stable_sessions([good, self.stable_row(id="other-s1")])
+            calls = self.run_guard(code)
+            self.assert_no_target_action(calls)
+            self.assertFalse(any(c[:2] == ["bd", "list"] for c in calls))
+        hq = self.stable_row(template="gastown.dog", alias="gastown.dog", session_name="gastown__dog")
+        for rigs, allowed in (([{"name": "city", "hq": True, "suspended": False}], True),
+                              ([{"name": "city", "hq": True, "suspended": True}], False),
+                              ([{"name": "city", "suspended": False}], False),
+                              ([{"name": "city", "hq": True, "suspended": False},
+                                {"name": "other", "hq": True, "suspended": False}], False)):
+            (self.root / "rigs").write_text(json.dumps({"ok": True, "rigs": rigs}))
+            self.stable_sessions([hq])
+            calls = self.run_guard('target="s1"\n' + execute)
+            self.assertEqual(any(c[:2] == ["session", "kill"] for c in calls), allowed)
+        # A slash-bearing alias cannot turn a city template into rig proof.
+        self.roster(False)
+        self.stable_sessions([dict(hq, alias="alpha/witness")])
+        self.assert_no_target_action(self.run_guard('target="s1"\n' + execute))
+        self.stable_sessions([dict(hq, rig="alpha")])
+        self.assert_no_target_action(self.run_guard('target="s1"\n' + execute))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

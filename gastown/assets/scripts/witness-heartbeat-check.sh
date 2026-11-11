@@ -131,7 +131,17 @@ fi
 # `gc session list --json` (schema 1.1.1) returns an OBJECT with a `sessions`
 # array. Tolerate a bare top-level array too: that shape shipped previously and
 # the schema has drifted before (gc-3tn8g).
-JQ_SESSIONS='def sessions_of: (.sessions? // .) | if type == "array" then . else error("invalid session roster") end;'
+JQ_SESSIONS='def stable_api:
+  type == "object" and (has("ok") | not) and has("_cache_age_s");
+def sessions_of:
+  if type == "object" then
+    if has("error") or (has("ok") and .ok != true) or
+       (has("_cache_age_s") and
+         ((._cache_age_s | type) != "number" or ._cache_age_s < 0)) then
+      error("invalid session envelope")
+    else .sessions end
+  else . end
+  | if type == "array" then . else error("invalid session roster") end;'
 
 if ! TOTAL=$(printf '%s' "$ROSTER" | jq -r "$JQ_SESSIONS sessions_of | length" 2>/dev/null); then
   echo "witness-heartbeat-check: could not parse the session roster — heartbeat freshness NOT measured" >&2
@@ -145,25 +155,28 @@ if ! RIGS=$(gc rig list --json 2>/dev/null) ||
   echo "witness-heartbeat-check: unreadable rig roster — heartbeat freshness NOT measured" >&2
   exit 2
 fi
-JQ_RECOVERY='def recovery_state($rigs):
+JQ_RECOVERY='def recovery_state($rigs; $api):
   if type != "object" then "unknown"
   elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
     then "unknown"
-  elif any([.rig, .template, .agent_name, .name, .alias][];
+  elif any([.id, .rig, .template, .agent_name, .name, .alias, .session_name][];
            . != null and type != "string") then "unknown"
+  elif $api and ((.template // "") | test("^[^/[:space:]]+(/[^/[:space:]]+)?$") | not)
+    then "unknown"
   else
     ([.rig // "", ([.template, .agent_name, .name, .alias][]
       | select(type == "string" and contains("/")) | split("/")[0])]
       | map(select(. != "")) | unique) as $scopes
     | (if ($scopes | length) == 1 and
+            (($api | not) or ((.template | split("/")) | length == 2 and .[0] == $scopes[0])) and
             (((.rig // "") | length > 0) or
              ((.template // "") | contains("/")) or
              ((.agent_name // "") | contains("/"))) then
          [$rigs.rigs[] | select(.name == $scopes[0])]
        elif ($scopes | length) == 0 and
             ((.template // "") | length > 0) and
-            ((.agent_name // "") | length > 0) and
-            ([.template, .agent_name] | all(contains("/") | not)) then
+            ($api or ((.agent_name // "") | length > 0)) and
+            ([.template, .agent_name // ""] | all(contains("/") | not)) then
          [$rigs.rigs[] | select(.hq == true)]
        else [] end) as $matches
     | if ($matches | length) != 1 then "unknown"
@@ -183,7 +196,8 @@ ROWS=$(printf '%s' "$ROSTER" | jq -r --arg role "$ROLE" --argjson rigs "$RIGS" "
       (.session_name // \"\"), (.alias // \"\") ]
     | map(select(. != \"\"))
     | any(. == \$r or endswith(\".\" + \$r) or endswith(\"/\" + \$r));
-  sessions_of
+  stable_api as \$api
+  | sessions_of
   | .[]
   | select((.closed // false) | not)
   | select(is_role(\$role))
@@ -193,7 +207,7 @@ ROWS=$(printf '%s' "$ROSTER" | jq -r --arg role "$ROLE" --argjson rigs "$RIGS" "
       (if (.rig // \"\") != \"\" then .rig else \"-\" end),
       (.state // \"\"),
       (if has(\"last_active\") then \"1\" else \"0\" end),
-      recovery_state(\$rigs),
+      recovery_state(\$rigs; \$api),
       ([ (.last_active // \"\"), (.last_nudge_delivered_at // \"\") ]
        | map(select(. != null and . != \"\")) | join(\",\"))
     ]
