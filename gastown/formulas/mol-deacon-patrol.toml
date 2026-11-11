@@ -234,13 +234,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 if recovery_target_allowed "$STALLED_SESSION"; then
@@ -311,13 +320,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 TARGET_SESSION="<session>"
@@ -365,11 +383,10 @@ closes that gap.
 
 ```bash
 # BEGIN RECOVERY_TARGET_GUARD
-recovery_target_allowed() {
-  local recovery_sessions recovery_rigs
-  recovery_sessions="$(gc session list --state=all --json)" || return 1
-  recovery_rigs="$(gc rig list --json)" || return 1
-  printf '%s' "$recovery_sessions" | jq -e --arg target "${1%/}" --argjson rigs "$recovery_rigs" '
+# One native snapshot pair for assessment; action snippets below recheck fresh state.
+QUEUE_SESSIONS="$(gc session list --state=all --json)" || exit 1
+QUEUE_RIGS="$(gc rig list --json)" || exit 1
+QUEUE_AGENTS="$(printf '%s' "$QUEUE_SESSIONS" | jq -r --argjson rigs "$QUEUE_RIGS" '
 def recovery_state($rigs):
   if type != "object" then "unknown"
   elif ($rigs | type) != "object" or $rigs.ok != true or ($rigs.rigs | type) != "array"
@@ -395,26 +412,33 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
-}
-# END RECOVERY_TARGET_GUARD
-# Use the supported native session roster. A roster failure is not an empty queue.
-QUEUE_SESSIONS="$(gc session list --state=all --json)" || exit 1
-QUEUE_AGENTS="$(printf '%s' "$QUEUE_SESSIONS" | jq -r '
-  if type == "object" and (.sessions | type) == "array" then
-    [.sessions[] | select(.closed != true)
-     | select(.state == "active" or .state == "awake" or .state == "asleep" or .state == "running")
-     | (.agent_name // .id) | select(type == "string" and length > 0)] | .[]
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+  if type == "object" and .ok == true and (.sessions | type) == "array" then
+    . as $roster
+    | [.sessions[] | select(type == "object")
+       | select(session_status_known and .closed == false)
+       | select(.state == "active" or .state == "awake" or .state == "asleep" or .state == "running")
+       | (.agent_name // .id) | select(type == "string" and length > 0)]
+    | unique | .[] as $agent
+    | select($roster | recovery_target_active($agent; $rigs)) | $agent
   else error("unreadable session roster") end')" || exit 1
+# END RECOVERY_TARGET_GUARD
 while IFS= read -r AGENT; do
     [ -n "$AGENT" ] || continue
-    recovery_target_allowed "$AGENT" || continue
     ASSIGNED=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
     LATEST=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 \\
         | jq -r '[.[].updated_at] | max // ""')
@@ -480,13 +504,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 if recovery_target_allowed "$STUCK_SESSION"; then
@@ -531,13 +564,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 TARGET_SESSION="<session>"
@@ -627,13 +669,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 TARGET_SESSION="<session>"

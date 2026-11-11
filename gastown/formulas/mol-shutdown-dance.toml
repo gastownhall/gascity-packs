@@ -177,13 +177,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 if ! recovery_target_allowed "$target"; then
@@ -583,13 +592,22 @@ def recovery_state($rigs):
       elif ($matches[0].suspended | type) != "boolean" then "unknown"
       elif $matches[0].suspended then "suspended" else "active" end
   end;
-    if type != "object" or .ok == false or (.sessions | type) != "array" then false
-    else [.sessions[] | select(type == "object")
-      | select([.id, .name, .session_name, .alias, .agent_name]
-          | any(. == $target))] as $matches
-      | if ($matches | length) != 1 then false
-        else $matches[0] | (.closed != true and recovery_state($rigs) == "active") end
-    end' >/dev/null
+def session_status_known:
+  (.closed | type) == "boolean" and (.state | type) == "string" and
+  (.state as $state | ["active", "awake", "asleep", "running", "suspended", "closed"]
+    | index($state) != null);
+def recovery_target_active($target; $rigs):
+  if type != "object" or .ok != true or (.sessions | type) != "array" then false
+  else [.sessions[] | select(type == "object")
+    | select([.id, .name, .session_name, .alias, .agent_name]
+        | any(. == $target))] as $matches
+    | if any($matches[]; session_status_known | not) then false
+      else [$matches[] | select(.closed == false and .state != "closed")] as $live
+        | if ($live | length) != 1 then false
+          else $live[0] | recovery_state($rigs) == "active" end
+      end
+  end;
+    recovery_target_active($target; $rigs)' >/dev/null
 }
 # END RECOVERY_TARGET_GUARD
 if ! recovery_target_allowed "$target"; then
