@@ -66,10 +66,18 @@ def bd_json(args, cwd):
 
 
 def closure(all_beads, root_id):
-    """Beads reachable from root via linkage metadata or dependency edges."""
+    """Root-owned beads for Graph v2; reachable beads for legacy roots."""
     by_id = {b["id"]: b for b in all_beads}
     if root_id not in by_id:
         raise SystemExit(f"root bead {root_id} not found in rig store")
+    root_md = by_id[root_id].get("metadata") or {}
+    if (root_md.get("gc.kind") == "workflow"
+            and root_md.get("gc.formula_contract") == "graph.v2"):
+        # Shared convoys and dependency edges connect independent runs. The
+        # Graph v2 root binding, including on physical attempts, owns membership.
+        return [by_id[i] for i in sorted(by_id)
+                if i == root_id
+                or (by_id[i].get("metadata") or {}).get("gc.root_bead_id") == root_id]
     known = {root_id}
     changed = True
     while changed:
@@ -107,6 +115,21 @@ def closure(all_beads, root_id):
     # Sorted, not set order: the manifest hashes beads.json, so two collects of
     # the same run have to produce byte-identical output.
     return [by_id[i] for i in sorted(known)]
+
+
+def timing_context(all_beads, run_beads, root_id):
+    """Retain visible direct blockers without expanding Graph v2 membership."""
+    root = next(b for b in run_beads if b["id"] == root_id)
+    md = root.get("metadata") or {}
+    if md.get("gc.kind") != "workflow" or md.get("gc.formula_contract") != "graph.v2":
+        return run_beads
+    ids = {b["id"] for b in run_beads}
+    blockers = {d.get("depends_on_id") or d.get("id")
+                for b in run_beads if b["id"] != root_id
+                for d in b.get("dependencies") or []
+                if d.get("type", "blocks") == "blocks"}
+    by_id = {b["id"]: b for b in all_beads}
+    return [by_id[i] for i in sorted(ids | (blockers & by_id.keys()))]
 
 
 def project_slug(path):
@@ -224,11 +247,14 @@ def main():
     all_beads = bd_json(["list", "--all", "--flat", "--json"], cwd=rig)
     run_beads = closure(all_beads, args.root)
     run_beads.sort(key=lambda b: b.get("created_at") or "")
+    # Context rows support report timing only; ids below remain root-owned.
+    captured_beads = timing_context(all_beads, run_beads, args.root)
+    captured_beads.sort(key=lambda b: b.get("created_at") or "")
     with open(os.path.join(out, "beads.json"), "w") as f:
-        json.dump(run_beads, f, indent=1)
+        json.dump(captured_beads, f, indent=1)
     ids = {b["id"] for b in run_beads}
     root = next(b for b in run_beads if b["id"] == args.root)
-    manifest["sources"]["beads"] = {"count": len(run_beads), "store_total": len(all_beads)}
+    manifest["sources"]["beads"] = {"count": len(captured_beads), "store_total": len(all_beads)}
 
     t0 = parse_ts(root.get("created_at"))
     t1 = parse_ts(root.get("closed_at"))
