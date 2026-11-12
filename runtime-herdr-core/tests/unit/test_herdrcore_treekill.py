@@ -5,18 +5,28 @@ processes under fake-hc."""
 
 from __future__ import annotations
 
+import dataclasses
+import errno
 import json
 import os
+import shutil
 import signal
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, Tuple, cast
 
 import pytest
 from cityharness import City
 
-from gc_runtime_herdr_core.herdrcore.lifecycle import RESCANS
+from fakehc.procfs import add_proc
+from gc_runtime_herdr_core.hc.client import HcClient
+from gc_runtime_herdr_core.hc.parse import parse_terminal
+from gc_runtime_herdr_core.hc.types import Terminal
+from gc_runtime_herdr_core.herdrcore import lifecycle
+from gc_runtime_herdr_core.herdrcore.lifecycle import INSTANCE_TOKEN_KEY, RESCANS, kill_incarnation
+from gc_runtime_herdr_core.herdrcore.metastore import Meta, MetaError, MetaStore
+from gc_runtime_herdr_core.herdrcore.naming import LABEL_REFUSED
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, subtree
 
 PROXY = """\
@@ -138,6 +148,137 @@ def test_stop_kills_the_tree_but_not_fenced_infrastructure(city: City, leftovers
     assert done.code == 0, done.stderr
     assert wait_dead(detached) and wait_dead(child)
     assert alive(proxy) and alive(proxy_child), "infrastructure and its subtree survive a session stop"
+
+
+class _RecordingProcs(LinuxProcs):
+    """A fake ``/proc`` whose kill is recorded, never sent: a signalled
+    process leaves the fake tree as if it died."""
+
+    def __init__(self, root: Path) -> None:
+        LinuxProcs.__init__(self, str(root))
+        self.root = root
+        self.signals: List[Tuple[int, int]] = []
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.signals.append((pid, sig))
+        shutil.rmtree(self.root / str(pid), ignore_errors=True)
+
+
+class _RecordingClient:
+    """The hc calls a kill makes, recorded."""
+
+    def __init__(self) -> None:
+        self.calls: List[Tuple[str, str]] = []
+
+    def kill(self, address: str) -> None:
+        self.calls.append(("kill", address))
+
+    def remove(self, address: str) -> None:
+        self.calls.append(("remove", address))
+
+
+def _live_box(pid: int) -> Terminal:
+    return parse_terminal(
+        {
+            "address": "t1",
+            "labels": {"gc.session": "mc-a", "gc.pid": str(pid), "gc.obj": "o1"},
+            "argv": ["/bin/sh"],
+            "cwd": "/",
+            "state": "live",
+            "created_ms": 1_700_000_000_000,
+            "screen": "exact",
+            "cols": 80,
+            "rows": 24,
+            "pid": pid,
+            "reason": None,
+            "keep": False,
+        }
+    )
+
+
+def test_stop_never_signals_a_tmux_server_or_client_carrying_the_token(city: City, tmp_path: Path) -> None:
+    """A tmux server copies its founder's environment, so one founded from
+    inside the box (``tmux new -d``), and every pane and editor under it,
+    carries the box's instance token; so does another city's server that a
+    gc command run in the box founded. gc never signals tmux (its scanner
+    never reports a tmux server or client as a root): neither does the
+    kill. The box's own tree still dies, also when hc's core was started
+    from a tmux pane. A fake ``/proc``; nothing is signalled for real."""
+    tok = token("tmux-fence")
+    carry = {"GC_INSTANCE_TOKEN": tok}
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 100, ppid=1, argv=["tmux"], comm="tmux: server")  # the operator's, hc's core started in it
+    add_proc(root, 101, ppid=100, argv=["-zsh"], env=carry)  # a pane of it that ran gc in the box
+    add_proc(root, 150, ppid=100, argv=["herdr-core", "server"])
+    add_proc(root, 200, ppid=150, argv=["cat"], env=carry)  # the box's agent
+    add_proc(root, 201, ppid=200, argv=["sleep", "600"], env=carry)
+    add_proc(root, 205, ppid=200, argv=["tmux", "attach"], comm="tmux: client", env=carry)
+    add_proc(root, 206, ppid=205, argv=["sleep", "600"], env=carry)
+    add_proc(root, 210, ppid=1, argv=["sleep", "600"], env=carry)  # a daemon, re-parented
+    add_proc(root, 300, ppid=1, argv=["tmux", "new", "-d"], comm="tmux: server", env=carry)
+    add_proc(root, 301, ppid=300, argv=["-bash"], env=carry)  # the user's pane
+    add_proc(root, 302, ppid=301, argv=["vim", "notes.md"], env=carry)  # and their editor
+    add_proc(root, 500, ppid=1, argv=["/usr/bin/tmux", "-L", "city-t", "new-session", "-d"], comm="tmux: server", env=carry)
+    add_proc(root, 501, ppid=500, argv=["claude"], env=carry)  # another city's agent
+    source = _RecordingProcs(root)
+    client = _RecordingClient()
+    city.procs.inner = source
+    meta = Meta(session="mc-a").with_value(INSTANCE_TOKEN_KEY, tok)
+    problems = kill_incarnation(city.context(), cast(HcClient, client), _live_box(200), meta, pause=lambda _: None)
+    assert problems == []
+    assert sorted(pid for pid, _ in source.signals) == [200, 201, 210], source.signals
+    assert client.calls == [("kill", "t1"), ("remove", "t1")]
+
+
+def test_a_recycled_box_pid_inside_tmux_keeps_the_tmux_fence(city: City, tmp_path: Path) -> None:
+    """The box's pid, once its agent is dead, may be reused by a pane of a
+    token-carrying tmux server: the rescans fence it like every tmux pane,
+    as it is not the process the box ran."""
+    tok = token("tmux-reuse")
+    carry = {"GC_INSTANCE_TOKEN": tok}
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 150, ppid=1, argv=["herdr-core", "server"])
+    add_proc(root, 200, ppid=150, argv=["cat"], env=carry, start=1000)  # the box's agent
+    add_proc(root, 300, ppid=1, argv=["tmux", "new", "-d"], comm="tmux: server", env=carry)
+
+    class Reusing(_RecordingProcs):
+        def kill(self, pid: int, sig: int) -> None:
+            _RecordingProcs.kill(self, pid, sig)
+            if pid == 200:  # a new pane of the server gets the dead agent's pid
+                add_proc(root, 200, ppid=300, argv=["-bash"], env=carry, start=5000)
+
+    source = Reusing(root)
+    city.procs.inner = source
+    meta = Meta(session="mc-a").with_value(INSTANCE_TOKEN_KEY, tok)
+    problems = kill_incarnation(city.context(), cast(HcClient, _RecordingClient()), _live_box(200), meta, pause=lambda _: None)
+    assert problems == []
+    assert source.signals == [(200, signal.SIGTERM)], source.signals
+
+
+def test_a_rollback_reads_the_record_afresh_before_it_captures_a_tree(city: City, tmp_path: Path) -> None:
+    """run's reply may be seconds old by the rollback: a pid that ended since
+    may run an unrelated process, whose tree is never captured."""
+    import dataclasses
+
+    from gc_runtime_herdr_core.herdrcore import lifecycle
+    from gc_runtime_herdr_core.herdrcore.records import object_of
+
+    assert city.start("mc-a", json.dumps({"command": "exec cat"})).code == 0
+    ctx = city.context()
+    record = ctx.client().get(city.address("mc-a"))
+    obj = object_of(record)
+    assert obj is not None
+    root = tmp_path / "proc"
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 777, ppid=1, argv=["unrelated"])  # the stale pid, recycled
+    add_proc(root, 778, ppid=777, argv=["sleep", "600"])
+    source = _RecordingProcs(root)
+    city.procs.inner = source
+    lifecycle._undo(ctx, dataclasses.replace(record, pid=777), obj, pending=False)
+    assert source.signals == []
+    assert city.terminals() == []
 
 
 def test_holder_loss_orphans_are_found_by_instance_token(city: City, leftovers: List[int]) -> None:
@@ -290,6 +431,104 @@ def test_a_rollback_that_cannot_list_the_city_still_ends_the_created_tree(city: 
     assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
 
 
+def test_a_rollback_that_cannot_read_the_created_record_still_ends_its_tree(city: City, leftovers: List[int]) -> None:
+    """hc fails the rollback's fresh read of the created record (its core
+    went away during the label call): the created tree still dies, from the
+    record run gave, and the box keeps its token for gc's stop."""
+    from cityharness import in_thread
+
+    from gc_runtime_herdr_core.rpp.cancel import CancelToken
+
+    work = city.root / "w13"
+    work.mkdir()
+    env = {"GC_INSTANCE_TOKEN": token("unread")}
+    command = f"(setsid sleep 600 & echo $! > {work}/daemon.pid); sleep 600 & echo $! > {work}/child.pid; exec cat"
+    city.fake.delay_reply("terminal.label", 10.0)  # type: ignore[union-attr]
+    cancel = CancelToken()
+    results = []
+    stdin = json.dumps({"command": command, "env": env}).encode()
+    thread = in_thread(lambda: results.append(city.run("start", "mc-a", stdin=stdin, cancel=cancel)))
+    daemon = int(wait_file(work / "daemon.pid"))
+    child = int(wait_file(work / "child.pid"))
+    leftovers.extend([daemon, child])
+    [record] = city.terminals()
+    agent = int(str(record["pid"]))
+    end = time.monotonic() + 5
+    while not city.fake.call_count("terminal.label"):  # type: ignore[union-attr]
+        assert time.monotonic() < end, "the start never labelled its terminal"
+        time.sleep(0.05)
+    city.fake.fail_next("terminal.get", "internal")  # type: ignore[union-attr]
+    cancel.cancel("terminated")  # while the start waits for its label
+    thread.join(timeout=20)
+    assert results and results[0].code == 1
+    assert wait_dead(agent) and wait_dead(child), "the created tree dies though hc cannot read its record"
+    assert [t["address"] for t in city.terminals()] == [city.address("mc-a")], "the box stays"
+    done = city.run("stop", "mc-a")
+    assert done.code == 0, done.stderr
+    assert wait_dead(daemon), "gc's stop found the daemon by the token the box kept"
+    assert city.terminals() == []
+
+
+def test_a_rollback_whose_created_record_is_gone_still_finds_its_daemon_by_its_token(city: City, leftovers: List[int]) -> None:
+    """hc no longer holds the created record when the rollback reads it
+    afresh: its token is still looked for, as the metadata about to go
+    holds its only copy."""
+    from cityharness import in_thread
+
+    from gc_runtime_herdr_core.rpp.cancel import CancelToken
+
+    work = city.root / "w14"
+    work.mkdir()
+    env = {"GC_INSTANCE_TOKEN": token("gone")}
+    command = f"(setsid sleep 600 & echo $! > {work}/daemon.pid); exec cat"
+    city.fake.delay_reply("terminal.label", 10.0)  # type: ignore[union-attr]
+    cancel = CancelToken()
+    results = []
+    stdin = json.dumps({"command": command, "env": env}).encode()
+    thread = in_thread(lambda: results.append(city.run("start", "mc-a", stdin=stdin, cancel=cancel)))
+    daemon = int(wait_file(work / "daemon.pid"))
+    leftovers.append(daemon)
+    end = time.monotonic() + 5
+    while not city.fake.call_count("terminal.label"):  # type: ignore[union-attr]
+        assert time.monotonic() < end, "the start never labelled its terminal"
+        time.sleep(0.05)
+    city.fake.fail_next("terminal.get", "not_found")  # type: ignore[union-attr]
+    cancel.cancel("terminated")  # while the start waits for its label
+    thread.join(timeout=20)
+    assert results and results[0].code == 1
+    assert wait_dead(daemon), "the rollback found the daemon by its token"
+    assert list(Path(city.context().state_dir("meta")).iterdir()) == [], "the metadata goes once nothing carries the token"
+
+
+def _boot(root: Path, created_ms: int, *, offset_ticks: int) -> None:
+    """A fake ``/proc/stat`` whose boot time puts starttime ``offset_ticks``
+    (in clock ticks) at ``created_ms``."""
+    tick = os.sysconf("SC_CLK_TCK")
+    btime = (created_ms // 1000) - offset_ticks // tick
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "stat").write_text(f"cpu  0 0 0 0\nbtime {btime}\n")
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_a_rollback_without_hc_ends_only_the_box_that_started_at_its_creation(city: City, tmp_path: Path, stale: bool) -> None:
+    """With hc failing, the rollback ends the created tree from run's reply:
+    a pid that started well after the terminal was created is a recycled
+    one, and is never signalled."""
+    from gc_runtime_herdr_core.herdrcore import lifecycle
+
+    record = _live_box(777)
+    root = tmp_path / "proc"
+    tick = os.sysconf("SC_CLK_TCK")
+    _boot(root, record.created_ms, offset_ticks=1000 - (60 * tick if stale else 0))
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 777, ppid=1, argv=["cat"], start=1000)
+    add_proc(root, 778, ppid=777, argv=["sleep", "600"], start=1001)
+    source = _RecordingProcs(root)
+    city.procs.inner = source
+    lifecycle._reap_trees(city.context(), [record])
+    assert sorted(pid for pid, _ in source.signals) == ([] if stale else [777, 778])
+
+
 def test_a_child_the_kill_itself_starts_dies_too(city: City, leftovers: List[int]) -> None:
     """The agent ignores HUP, and its TERM handler starts a child in a new
     session: that child was in no capture and is outside hc's process
@@ -360,6 +599,130 @@ def test_a_stop_that_may_leave_survivors_keeps_the_box_and_its_token_for_the_ret
     assert wait_dead(detached), "the retry found the survivor by the token the box kept"
     assert city.terminals() == []
     assert list(Path(city.context().state_dir("meta")).iterdir()) == []
+
+
+class _Unreadable(LinuxProcs):
+    """A process table that never reads: whatever a kill captured may survive."""
+
+    def snapshot(self) -> Dict[int, Proc]:
+        raise ProcError("no /proc")
+
+
+def survivor_box(city: City, leftovers: List[int], work: Path) -> List[int]:
+    """Start mc-a with a detached child, and fail its stop over a process
+    table that never reads, so the box stays; the clock the city then
+    reads, a minute after the box's creation."""
+    command = f"setsid sleep 600 & echo $! > {work}/detached.pid; exec cat"
+    assert city.start("mc-a", json.dumps({"command": command, "env": {"GC_INSTANCE_TOKEN": token(work.name)}})).code == 0
+    leftovers.append(int(wait_file(work / "detached.pid")))
+    [record] = city.terminals()
+    clock = [int(str(record["created_ms"])) + 60_000]
+    city.host = dataclasses.replace(city.host, now_ms=lambda: clock[0])
+    city.procs.inner = _Unreadable()
+    assert city.run("stop", "mc-a").code == 1
+    return clock
+
+
+def again(work: Path) -> str:
+    return json.dumps({"command": "exec cat", "env": {"GC_INSTANCE_TOKEN": token(work.name + "-again")}})
+
+
+LIMIT = lifecycle.START_REFUSAL_LIMIT_MS
+
+
+def test_starts_are_refused_for_the_limit_from_the_first_refusal(city: City, leftovers: List[int]) -> None:
+    """A survivor that never goes away (one unkillable, one respawned from
+    outside the kill, a process table that never reads) refuses starts
+    from the first refusal, which the box's metadata records, until the
+    limit: then the start warns, naming it, and goes ahead."""
+    work = city.root / "w15"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    t0 = clock[0]
+    for at in (t0, t0 + LIMIT - 1):
+        clock[0] = at
+        refused = city.start("mc-a", again(work))
+        assert refused.code == 1 and "may survive" in refused.stderr, refused.stderr
+        assert f"or from {lifecycle._utc(t0 + LIMIT)}, 15 minutes after the first refusal, the start goes ahead" in refused.stderr
+    assert city.run("get-meta", "mc-a", lifecycle.REFUSED_SINCE_KEY).stdout == str(t0).encode()
+    assert len(city.terminals()) == 1
+    clock[0] = t0 + LIMIT
+    done = city.start("mc-a", again(work))
+    assert done.code == 0, done.stderr
+    assert "beside an earlier incarnation's processes" in done.stderr and "cannot read the process table" in done.stderr
+    [record] = city.terminals()
+    assert record["state"] == "live", "only the new incarnation's box is left"
+    assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
+
+
+@pytest.mark.parametrize("ago_ms, code", [(LIMIT - 1000, 1), (LIMIT + 1000, 0)])
+def test_the_limit_counts_from_the_refusal_already_recorded(city: City, leftovers: List[int], ago_ms: int, code: int) -> None:
+    work = city.root / "w16"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    seeded = city.run("set-meta", "mc-a", lifecycle.REFUSED_SINCE_KEY, stdin=str(clock[0] - ago_ms).encode())
+    assert seeded.code == 0, seeded.stderr
+    done = city.start("mc-a", again(work))
+    assert done.code == code, done.stderr
+
+
+@pytest.mark.parametrize("unwritable", ["no metadata", "MetaError", "OSError"])
+def test_a_refusal_the_metadata_cannot_record_is_kept_in_a_label(
+    city: City, leftovers: List[int], monkeypatch: pytest.MonkeyPatch, unwritable: str
+) -> None:
+    """With no metadata to record the first refusal in, or a write that
+    fails (a full disk too), the record's label keeps it: the limit still
+    counts from it, never from the record's creation."""
+    work = city.root / "w17"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    if unwritable == "no metadata":
+        for meta in Path(city.context().state_dir("meta")).iterdir():
+            meta.unlink()
+    else:
+        write = MetaStore.write
+        failure = MetaError("unwritable") if unwritable == "MetaError" else OSError(errno.ENOSPC, "No space left on device")
+
+        def failing(store: MetaStore, obj: str, meta: Meta) -> None:
+            if lifecycle.REFUSED_SINCE_KEY in meta.values:
+                raise failure
+            write(store, obj, meta)
+
+        monkeypatch.setattr(MetaStore, "write", failing)
+    t0 = clock[0] = clock[0] + LIMIT  # a box older than the limit
+    for at in (t0, t0 + LIMIT - 1):
+        clock[0] = at
+        refused = city.start("mc-a", again(work))
+        assert refused.code == 1 and "15 minutes after the first refusal" in refused.stderr, refused.stderr
+    [record] = city.terminals()
+    assert cast(Dict[str, str], record["labels"])[LABEL_REFUSED] == str(t0)
+    clock[0] = t0 + LIMIT
+    done = city.start("mc-a", again(work))
+    assert done.code == 0, done.stderr
+
+
+def test_a_refusal_nothing_can_record_counts_from_the_records_creation(city: City, leftovers: List[int]) -> None:
+    """With neither metadata nor a label to record the first refusal in,
+    the limit counts from the record's creation, as the refusal says, so
+    no record is refused forever."""
+    work = city.root / "w18"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    created = clock[0] - 60_000
+    for meta in Path(city.context().state_dir("meta")).iterdir():
+        meta.unlink()
+    city.fake.fail_next("terminal.label", "internal")  # type: ignore[union-attr]
+    refused = city.start("mc-a", again(work))
+    assert refused.code == 1, refused.stderr
+    expected = f"or from {lifecycle._utc(created + LIMIT)}, 15 minutes after the earlier incarnation's creation, as no refusal"
+    assert expected in refused.stderr, refused.stderr
+    clock[0] = created + LIMIT
+    city.fake.fail_next("terminal.label", "internal")  # type: ignore[union-attr]
+    done = city.start("mc-a", again(work))
+    assert done.code == 0, done.stderr
+    assert "beside an earlier incarnation's processes" in done.stderr
+    [record] = city.terminals()
+    assert record["state"] == "live"
 
 
 def test_a_normally_exited_agents_detached_child_is_found_by_its_token(city: City, leftovers: List[int]) -> None:

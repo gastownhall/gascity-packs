@@ -30,6 +30,7 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     fenced_pids,
     find_agent,
     is_launching,
+    is_tmux,
     kill_captured,
     matches,
     parse_environ,
@@ -224,6 +225,53 @@ def test_fenced_subtrees_are_pruned_whole() -> None:
     }
     assert fenced_pids(snap) == {2, 3, 4, 5}
     assert [p.pid for p in subtree(snap, 1)] == [1, 2, 4, 6, 3, 5]
+
+
+@pytest.mark.parametrize(
+    "comm, argv, want",
+    [
+        ("tmux: server", ("tmux", "new", "-d"), True),
+        ("tmux: client", ("tmux", "attach"), True),
+        ("tmux: server\n", ("tmux: server (/tmp/tmux-1000/default)",), True),
+        ("", ("/opt/homebrew/bin/tmux", "-L", "hq", "new-session", "-d"), True),
+        ("", ("tmux:", "server"), True),  # ps -ww splits a proctitle'd "tmux: server" at its space
+        ("tmux", ("tmux",), True),
+        ("tmux-wrapper", ("/usr/local/bin/tmux-wrapper", "--serve"), False),
+        ("tmuxinator", ("tmuxinator", "start"), False),
+        ("bash", ("bash", "-c", "tmux new -d"), False),
+        ("", (), False),
+    ],
+)
+def test_tmux_is_infrastructure_as_gc_reads_it(comm: str, argv: Tuple[str, ...], want: bool) -> None:
+    assert is_tmux(Proc(pid=9, ppid=1, uid=os.getuid(), start="1", comm=comm, argv=argv)) is want
+
+
+def test_a_tmux_server_and_its_panes_are_fenced_whole() -> None:
+    snap = {
+        1: proc(1, ("init",), ppid=0),
+        2: proc(2, ("tmux", "new", "-d"), comm="tmux: server", ppid=1),
+        3: proc(3, ("-bash",), ppid=2),
+        4: proc(4, ("vim",), ppid=3),
+        5: proc(5, ("sleep", "600"), ppid=1),
+    }
+    assert fenced_pids(snap) == {2, 3, 4}
+
+
+def test_a_tmux_server_above_the_killed_program_fences_none_of_its_tree() -> None:
+    # hc's core was started from a tmux pane: the box's tree runs under the
+    # operator's server, which still fences its other panes and any tmux in the box.
+    snap = {
+        1: proc(1, ("init",), ppid=0),
+        2: proc(2, ("tmux",), comm="tmux: server", ppid=1),
+        3: proc(3, ("-zsh",), ppid=2),
+        4: proc(4, ("herdr-core", "server"), ppid=2),
+        5: proc(5, ("cat",), ppid=4),  # the box's agent
+        6: proc(6, ("sleep", "600"), ppid=5),
+        7: proc(7, ("tmux", "new", "-d"), comm="tmux: client", ppid=5),
+        8: proc(8, ("sleep", "600"), ppid=7),
+    }
+    assert fenced_pids(snap, own=5) == {2, 3, 4, 7, 8}
+    assert fenced_pids(snap) == {2, 3, 4, 5, 6, 7, 8}
 
 
 class RecordingProcs(LinuxProcs):
@@ -497,3 +545,18 @@ def test_linux_procs_read_exe_cgroup_and_socket_holders(tmp_path: Path) -> None:
     assert parse_cgroup("12:pids:/a\n1:name=systemd:/b\n") == "/b"
     assert parse_cgroup("0::/c\n1:name=systemd:/b\n") == "/c"
     assert parse_cgroup("") is None
+
+
+def test_a_process_start_reads_as_wall_clock_ms(tmp_path: Path) -> None:
+    """Linux: ``btime`` plus the start time's ticks; ps: ``lstart``, local
+    time. A start that cannot be told is None."""
+    tick = os.sysconf("SC_CLK_TCK")
+    add_proc(tmp_path, 71, ppid=1, argv=["cat"], start=5 * tick)
+    source = LinuxProcs(str(tmp_path))
+    assert source.started_ms(source.snapshot()[71]) is None, "no btime"
+    (tmp_path / "stat").write_text("cpu  1 2 3\nbtime 1700000000\n")
+    assert source.started_ms(source.snapshot()[71]) == 1_700_000_005_000
+    lstart = time.strftime("%a %b %d %H:%M:%S %Y", time.localtime(1_700_000_000))
+    assert PsProcs().started_ms(Proc(72, 1, 0, " ".join(lstart.split()), "cat", ("cat",))) == 1_700_000_000_000
+    assert PsProcs().started_ms(Proc(73, 1, 0, "", "cat", ("cat",))) is None
+    assert ProcSource().started_ms(Proc(74, 1, 0, "1", "cat", ("cat",))) is None

@@ -194,20 +194,46 @@ checked against the app yet, so the sessions may not appear there.
   as gc reads a pane: the bottom-most prompt line, NBSP as a space, a box
   border skipped, and a numbered menu's cursor row no prompt; else its
   delay, at most 60 s as in gc; else its first status report; else settled
-  output). gc answers startup dialogs only once `start` returns, so a
-  screen showing one of gc's known dialogs is never ready: a settled
-  dialog, or no readiness within the wait (a delay that outlasts the op's
-  deadline too), withholds the turn with a warning and
-  `GC_STARTUP_DELIVERY_UNCONFIRMED` in the metadata. `session_live` (tmux
+  output). A wait that runs out without readiness (a boot slower than the
+  wait, a prompt prefix that never matches) types the turn all the same,
+  as gc's tmux and herdr providers type it on a probe that timed out. A
+  wait cut short by the op's deadline types it too once some screen
+  settled during it, which is this pack's own choice, not gc's: gc's tmux
+  provider returns before it types, and gc's herdr provider skips the turn
+  and records it unconfirmed. When no screen settled, the turn is withheld
+  instead, as a dialog may not be drawn yet. The pack stops waiting 5 s
+  before its deadline, so with 5 s or less left it does not wait at all:
+  only a ready prompt or a status report already there gets the turn.
+  Whenever the turn is typed without readiness, `start` warns (`the first
+  turn was typed without readiness: ...`). gc
+  answers startup dialogs only once `start` returns, so a screen showing
+  one of gc's known dialogs is never ready, and a dialog still on screen
+  when the wait settles or ends withholds the turn with a warning and
+  `GC_STARTUP_DELIVERY_UNCONFIRMED` in the metadata. A bare "rate limit"
+  mention withholds the turn only on a menu: gc's provider rate-limit
+  screen (the mention, in any case, with `Keep trying` and `Stop`) or a
+  numbered menu's cursor row beside it. Once `start` returns, gc's startup
+  pass answers a screen with a bare marker "Stop" (Down, Enter), so the
+  turn's Enter would pick the menu's selected option first. With no menu
+  (a status line's, a tip's) the mention is no dialog: with no prompt line
+  on another line it keeps the wait going, and the wait's end types the
+  turn. Known limit: a turn withheld over a
+  dialog is not typed later, as gc answers the dialog but does not type
+  an exec runtime's first turn after `start`; the marker is for
+  operators. Any other menu gc does not know as a dialog gets the turn at
+  the wait's end, as in gc. `session_live` (tmux
   theming and keybindings) is never run: herdr-core runs no tmux server,
   and run on the host it would reach a person's own; `start` warns that it
   is not applied. `terminal.run` is sent once: after a lost reply
   the start takes the terminal its `gc.obj` names, so a command never runs
   twice, and a start that fails while it creates the terminal ends its
   processes as `stop` does, by their `GC_INSTANCE_TOKEN` too, and keeps
-  the metadata while its terminal may still run. When hc cannot list the
-  city's boxes, it ends the terminal's tree but scans nothing by the token,
-  and leaves the box to gc's stop. One that fails or is
+  the metadata while its terminal may still run. When hc cannot read the
+  created terminal afresh or list the city's boxes, it ends the terminal's
+  tree (unless its pid started after the terminal was created, a recycled
+  one) but scans nothing by the token, and leaves the box to gc's stop. A
+  created terminal hc no longer holds is still scanned for by the token
+  before its metadata, the token's only copy, goes. One that fails or is
   canceled later leaves the box, which gc stops. An agent that exits
   during startup fails the start, unless its lifecycle is `one_shot`.
   Staging does not merge: the files gc JSON-merges (`.claude/settings.json`,
@@ -256,14 +282,37 @@ checked against the app yet, so the sessions may not appear there.
   live agent started, every child of one already gone) found by its
   `GC_INSTANCE_TOKEN` whatever the box's state, every process still the one
   captured (same start time) sent TERM then KILL. Every process carrying
-  the token dies, one the agent meant to outlive it too, as gc's own
-  orphan sweep ends a process carrying a session identity gc no longer
-  runs. One started during the kill (a TERM handler's `setsid` child) is
-  found by scanning for the token again once the captured processes are
-  dead, until a scan finds none (at most three more rounds). City
-  infrastructure (gc's managed Dolt watchdog, bd's database
-  proxy, gc's nudge poller) and its whole subtree is never killed, and
-  other live sessions' trees are protected. Nothing under a process that
+  the token dies, one the agent meant to outlive it too. That is wider
+  than gc's own orphan sweep, which ends only orphan roots of sessions gc
+  no longer runs (and does not run for this pack): a shared per-user
+  daemon first started from inside a box carries its token and dies with
+  it, such as a Bazel or Gradle server, an ssh `ControlMaster` or a
+  `gpg-agent`; the next use starts it again. One started during the kill
+  (a TERM handler's `setsid` child) is found by scanning for the token
+  again once the captured processes are dead, until a scan finds none (at
+  most three more rounds). Infrastructure and its whole subtree is never
+  killed: city infrastructure (gc's managed Dolt watchdog, bd's database
+  proxy, gc's nudge poller) and, as gc never signals tmux, any tmux server
+  or client (its executable, or a `tmux: server` / `tmux: client` title).
+  A tmux server copies its founder's environment, so one founded from
+  inside a box carries the token into every pane it later runs: the
+  user's own shells and editors, or a whole tmux-runtime city when a gc
+  command run in the box founded it. A herdr-core box never runs inside
+  tmux; a tmux server the box itself runs under (hc's core started from a
+  pane) fences none of the box's own tree. As in gc, tmux is known by its
+  exact names. Fencing everything under a server is this pack's own
+  choice: gc fences the tmux process alone and reads each pane as a root
+  of its own, but the token scan would end every pane of a server founded
+  from a box. The fence covers only what is still under a server: a
+  process that detaches from a pane of a server founded from a box (an
+  `ssh -fN`, a `nohup` job whose shell exited, an agent such as `ssh-agent`
+  started there) is re-parented out of it, still carries the token and
+  dies; a renamed tmux (`tmux-next`) or a GNU `screen` server founded from
+  a box is not fenced and dies with every window it runs; and work an
+  agent runs under tmux (`tmux new -d 'make'`, a `tmux -D` server outside
+  its process group) is fenced, so it outlives the box's stop. Other live
+  sessions' trees are
+  protected. Nothing under a process that
   cannot be read is signalled (an unreadable process may be
   infrastructure), nor is one that turns unreadable before its signal (its
   pid may have been recycled). When such a process is found, a process
@@ -271,7 +320,16 @@ checked against the app yet, so the sessions may not appear there.
   daemon that respawns), or the process table cannot be read (hc's
   kill still happens), the op exits 1 and the box and its metadata stay:
   gc's retry (the next stop or start, or a corpse kill) finds what is left
-  by the token, and a `start` launches nothing while it may survive. A
+  by the token, and a `start` launches nothing while it may survive, for
+  up to 15 minutes from its first refusal: a survivor that never goes (an
+  unkillable process, one respawned from outside the kill, such as a user
+  service that imported the box's environment, a process table that never
+  reads) would refuse every start, so after that the start warns, naming
+  what may survive, removes the old box and goes ahead beside it. The
+  refusal names the time it stops. The first refusal is recorded in the
+  box's metadata, else in a label of its terminal record; a box where
+  neither takes it counts the 15 minutes from its creation, so one older
+  than that is not refused at all, and a refusal names its creation. A
   process that does not carry the token, or whose environment cannot be
   read, is not found that way.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's

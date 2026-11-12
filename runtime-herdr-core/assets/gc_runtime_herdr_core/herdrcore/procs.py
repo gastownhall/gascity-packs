@@ -23,10 +23,23 @@ argument that is neither a flag nor a runner subcommand names one, with or
 without its extension; ``kimi`` also matches ``kimi-code``, and ``gc`` the
 base name of the session's gc binary.
 
+Infrastructure is never killed with a session, nor is anything under it.
 The infrastructure verbs (:mod:`.infra_argv`) mirror gascity
-``internal/runtime/proctable/infrastructure_argv.go``: such a process (gc's
-managed Dolt watchdog, bd's database proxy, gc's nudge poller) and its whole
-subtree are never killed with a session.
+``internal/runtime/proctable/infrastructure_argv.go`` (gc's managed Dolt
+watchdog, bd's database proxy, gc's nudge poller), and tmux follows its
+``isInfrastructureCommand`` (gc never reports a tmux server or client as a
+session's root, and never signals one): a tmux server copies its founder's
+environment, so one founded from inside a session carries that session's
+identity into every pane it later runs, the user's own shells and editors
+and, for a server a gc command founded, a whole tmux-runtime city. As in
+gc, tmux is known by its exact names: a renamed tmux (``tmux-next``) or a
+GNU ``screen`` server is not fenced. Fencing everything under a server is
+the pack's own choice: gc fences the tmux process alone and reads each
+pane as a root of its own, but the token scan here would end every pane
+of a server founded from inside the session. The fence covers only what
+still runs under a server: a process detached from a pane (re-parented to
+init) is not fenced, and work an agent runs under tmux is, so it outlives
+the session's stop.
 """
 
 from __future__ import annotations
@@ -35,6 +48,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -44,6 +58,11 @@ INTERPRETERS: Final = frozenset({"node", "bun", "npx", "deno"})
 RUNNER_SUBCOMMANDS: Final = frozenset({"run", "exec", "x"})
 NAME_ALIASES: Final[Mapping[str, Tuple[str, ...]]] = {"kimi": ("kimi-code",)}
 
+TMUX_NAMES: Final = frozenset({"tmux", "tmux:", "tmux: server", "tmux: client"})
+"""gc's ``isInfrastructureCommand``: the tmux executable, and the titles tmux
+sets through setproctitle (``tmux:`` is the first word ``ps`` splits off a
+titled ``tmux: server``). Exact, path-stripped: a ``tmux-*`` wrapper may be
+an agent."""
 
 _PS_TIMEOUT_S: Final = 2.0
 
@@ -118,6 +137,11 @@ class ProcSource:
     def socket_holders(self, path: str, pids: Iterable[int]) -> Optional[Set[int]]:
         """Which of ``pids`` hold a Unix socket bound at ``path``; None when
         that cannot be told."""
+        return None
+
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        """When ``proc`` started, in wall-clock milliseconds; None when that
+        cannot be told."""
         return None
 
     def kill(self, pid: int, sig: int) -> None:
@@ -279,6 +303,22 @@ class LinuxProcs(ProcSource):
                     continue
         return holders
 
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        """The boot time (``btime`` in ``stat``) plus the start time's clock ticks."""
+        if not proc.start.isdigit():
+            return None
+        try:
+            with open(os.path.join(self._root, "stat"), "rb") as handle:
+                lines = handle.read().decode("ascii", "replace").splitlines()
+            ticks = os.sysconf("SC_CLK_TCK")
+        except (OSError, ValueError):
+            return None
+        for line in lines:
+            words = line.split()
+            if len(words) == 2 and words[0] == "btime" and words[1].isdigit() and ticks > 0:
+                return int(words[1]) * 1000 + int(proc.start) * 1000 // ticks
+        return None
+
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         try:
             raw = self._read(pid, "environ")
@@ -335,6 +375,13 @@ class PsProcs(ProcSource):
             raise ProcError("ps lists no process")
         return out
 
+    def started_ms(self, proc: Proc) -> Optional[int]:
+        """``lstart`` ("Mon Nov 9 08:00:00 2026", local time), to the second."""
+        try:
+            return int(time.mktime(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y"))) * 1000
+        except (ValueError, OverflowError):
+            return None
+
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         # ps -E appends the environment to the command; values holding
         # spaces are cut at the space, which keeps keys and path values.
@@ -375,7 +422,11 @@ class PsProcs(ProcSource):
 
 
 def _ps_environ(words: Iterable[str]) -> Dict[str, str]:
-    """The ``KEY=value`` words of a ``ps -E`` command, the command's own too."""
+    """The ``KEY=value`` words of a ``ps -E`` command, the command's own too.
+
+    Lossy: an argv word of that form reads as environment, and a value is
+    cut at whitespace. A false token match needs the literal token on a
+    command line (gc mints it as 32 random hex characters, a secret)."""
     env: Dict[str, str] = {}
     for word in words:
         key, sep, value = word.partition("=")
@@ -427,8 +478,11 @@ def children_index(snapshot: Snapshot) -> Dict[int, List[int]]:
     return index
 
 
-def subtree(snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None) -> List[Proc]:
-    """``root`` and every descendant, in breadth-first order."""
+def subtree(
+    snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None, *, prune: Optional[int] = None
+) -> List[Proc]:
+    """``root`` and every descendant, in breadth-first order; a descendant
+    ``prune`` is left out, and so is everything under it."""
     if root not in snapshot:
         return []
     kids = children_index(snapshot) if index is None else index
@@ -441,17 +495,29 @@ def subtree(snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int
             continue
         seen.add(pid)
         out.append(snapshot[pid])
-        queue.extend(kids.get(pid, ()))
+        queue.extend(kid for kid in kids.get(pid, ()) if kid != prune)
     return out
 
 
-def fenced_pids(snapshot: Snapshot) -> FrozenSet[int]:
-    """Every city-infrastructure process and its whole subtree."""
+def is_tmux(proc: Proc) -> bool:
+    """Whether ``proc`` is a tmux server or client: its command name or its
+    argv[0] is one of :data:`TMUX_NAMES`, path-stripped."""
+    heads = (proc.comm, proc.argv[0] if proc.argv else "")
+    return any(os.path.basename(head.strip()) in TMUX_NAMES for head in heads if head.strip())
+
+
+def fenced_pids(snapshot: Snapshot, *, own: Optional[int] = None) -> FrozenSet[int]:
+    """Every infrastructure process (city infrastructure, tmux) and its whole
+    subtree. A tmux server above ``own`` (the program a kill ends: its
+    core was started from a tmux pane) fences none of ``own``'s tree; one
+    inside it still fences its own subtree."""
     index = children_index(snapshot)
     fenced: Set[int] = set()
     for proc in snapshot.values():
-        if proc.pid not in fenced and is_infrastructure_argv(proc.argv):
+        if is_infrastructure_argv(proc.argv):
             fenced.update(p.pid for p in subtree(snapshot, proc.pid, index))
+        elif is_tmux(proc) and proc.pid not in fenced:
+            fenced.update(p.pid for p in subtree(snapshot, proc.pid, index, prune=own))
     return frozenset(fenced)
 
 
