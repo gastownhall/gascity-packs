@@ -10,8 +10,8 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
-`city-scoped`, `conformance-faults`, `server-lifecycle` and `fs.host`
-(locality `local`), and passes
+`city-scoped`, `conformance-faults` and `server-lifecycle` (locality
+`local`; `fs.host` is deferred, see [Host work](#how-sessions-run)), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
@@ -189,17 +189,24 @@ checked against the app yet, so the sessions may not appear there.
   city, in the city's pack state) gives in-agent `hc` the city core's exact
   tuple and refuses while the core is down instead of starting a second
   one.
-- **Host work (`fs.host`).** Boxes run on gc's host as gc's user with
-  gc's view of the filesystem, so the pack declares `fs.host`: a gc that
-  knows the token stages the work directory, runs `pre_start` (fatal) and
-  then `session_setup` and the setup script on the host itself, and leaves
-  those fields out of the start config. `start` does exactly what its
-  config carries: an omitted field is not staged or run, and a present one
-  is, as below, so an older gc (or one whose cached handshake predates the
-  token) still gets its host work done once. The two paths differ in one
-  ordering: gc runs `session_setup` on the host after `start` returns,
-  which is after `start` has typed the first turn (`nudge`); run by the
-  pack for an older gc, it comes before the first turn. `observe` reports
+- **Host work (`fs.host`, not declared yet).** Boxes run on gc's host as
+  gc's user with gc's view of the filesystem, which is what `fs.host`
+  says, but the pack does not declare it yet: so gc sends the full start
+  config and `start` stages the work directory, runs `pre_start` (fatal)
+  and then `session_setup` and the setup script itself, as below. Under
+  `fs.host` gc does that host work on the host and leaves those fields out
+  of the start config; `start` already does exactly what its config
+  carries (an omitted field is not staged or run), and gc would then run
+  `session_setup` after `start` returns, so after the first turn (`nudge`)
+  rather than before it. The declaration is deferred until gc fences
+  tmux-parented processes in its exec provider's process-table scan (a
+  gascity follow-up to its exec process-table scanner): `fs.host` turns
+  that scan on for this pack, and before a session starts again gc ends
+  every untracked root carrying the session's `GC_SESSION_ID`, with its
+  process group. It reads each pane of a tmux server founded inside a box
+  as such a root (a tmux server copies its founder's environment; one
+  founded by `tmux new -d` with no server running is the user's default
+  server), so every pane of it would end at the session's next start. `observe` reports
   `agent_pid`, a host pid: the agent's when it is asked about process
   names and finds one, else the box's program. The agent gets gc's `HOME`
   (unless the session environment sets it), so the transcripts gc reads
@@ -260,8 +267,8 @@ checked against the app yet, so the sessions may not appear there.
   `.agents/hooks.json`, `.github/hooks/gascity.json`) and a Kiro
   `AGENTS.md` already in the work directory are kept, with a warning. Only
   `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
-  and `install_agent_hooks`' extra slots are not (gaps only for a gc
-  without `fs.host`, which stages on the host itself). Staging and `copy-to` write nothing outside
+  and `install_agent_hooks`' extra slots are not (gaps until the pack
+  declares `fs.host` and gc stages on the host itself). Staging and `copy-to` write nothing outside
   the work directory: nothing is written through a symlink below it (one
   where a file or directory would go fails the staging or the copy; gc
   writes through it), and a `copy_files` destination that leaves the work

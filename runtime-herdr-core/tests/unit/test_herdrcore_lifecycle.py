@@ -60,7 +60,7 @@ def test_start_then_observe_running_with_identity_and_agent(city: City) -> None:
 
 
 def test_observe_reports_a_host_agent_pid(city: City) -> None:
-    # fs.host: agent_pid is a live host process of the caller's user.
+    # Boxes run on gc's host: agent_pid is a live host process of the caller's user.
     assert city.start("mc-a", start_config()).code == 0
     [record] = city.terminals()
     unjudged = observe(city, "mc-a")
@@ -73,7 +73,7 @@ def test_observe_reports_a_host_agent_pid(city: City) -> None:
 
 
 def test_the_agent_gets_gcs_home(city: City) -> None:
-    # fs.host: gc reads transcripts under its own HOME, so the agent writes them there.
+    # gc reads transcripts on this host under its own HOME, so the agent writes them there.
     work = city.root / "home-probe"
     work.mkdir()
     command = f'echo "$HOME" > {work}/{{name}}; exec cat'

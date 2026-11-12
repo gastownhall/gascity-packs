@@ -71,7 +71,6 @@ HANDSHAKE = {
         "city-scoped",
         "conformance-faults",
         "server-lifecycle",
-        "fs.host",
     ],
     "locality": "local",
 }
@@ -84,10 +83,14 @@ def test_protocol_answers_the_v2_ready_handshake(tmp_path: Path) -> None:
     assert done.stderr == b""
 
 
-def test_fs_host_is_declared_with_locality_local(tmp_path: Path) -> None:
-    # fs.host narrows locality local; without it gc reads fs.host as undeclared.
+def test_fs_host_is_not_declared_yet(tmp_path: Path) -> None:
+    # Under fs.host gc would scan the process table for this pack and end the
+    # panes of a tmux server founded inside a box at the session's next start;
+    # the token waits until gc fences tmux-parented processes in that scan.
+    # Without it gc sends the full start config and the pack does the host work.
     doc = json.loads(invoke("protocol", cwd=tmp_path).stdout)
-    assert "fs.host" in doc["capabilities"] and doc["locality"] == "local"
+    assert "fs.host" not in doc["capabilities"]
+    assert "server-lifecycle" in doc["capabilities"] and doc["locality"] == "local"
 
 
 def test_the_handshake_never_declares_exec_or_provision(tmp_path: Path) -> None:

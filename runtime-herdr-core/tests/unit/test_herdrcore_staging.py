@@ -341,10 +341,11 @@ def test_session_live_is_never_run_and_start_says_so(city: City) -> None:
 
 # --- fs.host: exactly what the start config carries -----------------------------------------------
 #
-# Under fs.host a gc that knows the token stages the work dir and runs
-# pre_start and session_setup on the host itself, and leaves those fields
-# out of the start config; an older gc sends them. The pack does exactly what
-# the config carries, so both get each piece of host work done once.
+# The pack does not declare fs.host yet, so gc sends every field and the pack
+# does the host work. Under fs.host gc would stage the work dir and run
+# pre_start and session_setup on the host itself, and leave those fields out
+# of the start config. The pack does exactly what the config carries, so
+# either way each piece of host work is done once.
 
 HOST_WORK = ("pack_overlay_dirs", "overlay_dir", "copy_files", "pre_start", "session_setup", "session_setup_script")
 

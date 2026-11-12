@@ -1,14 +1,21 @@
 """What runtime ``herdr-core`` declares in its handshake.
 
 v2-ready (``observe.v1`` with ``report-attachment``), ``report-activity``,
-``city-scoped`` (each city key has its own core), ``conformance-faults``,
-``server-lifecycle`` (``server-stop`` ends the city's core and sessions) and
-``fs.host`` (boxes run on gc's host as gc's user with gc's filesystem view,
-so gc stages the work dir and runs ``pre_start`` and ``session_setup`` on the
-host itself and leaves them out of the start config), locality ``local``. A token is declared only together with the ops that
+``city-scoped`` (each city key has its own core), ``conformance-faults`` and
+``server-lifecycle`` (``server-stop`` ends the city's core and sessions),
+locality ``local``. A token is declared only together with the ops that
 implement it and the tests that prove them. ``proc.exec``, ``proc.provision``
 and ``input-fence`` never are: under ``proc.exec`` gc would drive the box by
 piping tmux commands to ``exec``.
+
+``fs.host`` is not declared yet, so gc sends the full start config and the
+pack stages and runs the host work itself (``start`` does what its config
+carries, and also handles a config that omits it). With ``fs.host`` gc
+would scan the process table for this pack and, before a session starts
+again, end every untracked root carrying its ``GC_SESSION_ID``: it reads
+each pane of a tmux server founded inside a box (possibly the user's
+default server) as such a root. The token waits until gc fences
+tmux-parented processes in that scan.
 
 Kept apart from the op table so the ``protocol`` op loads no backend code.
 """
@@ -27,7 +34,6 @@ HANDSHAKE: Final = Handshake(
         "city-scoped",
         "conformance-faults",
         "server-lifecycle",
-        "fs.host",
     ),
     locality="local",
 )

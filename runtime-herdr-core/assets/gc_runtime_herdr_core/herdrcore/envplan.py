@@ -14,9 +14,9 @@ carrier of, with all its descendants. So at the agent's root the launcher:
 2. applies the session environment: a value sets, ``""`` unsets
    (exec-session-provider.md "Session environment"). ``start`` adds gc's
    own ``HOME`` to it when the session does not set one
-   (:func:`with_gc_home`): under ``fs.host`` gc reads the agent's
-   transcripts below its own home, while the core runs with the
-   password-database one;
+   (:func:`with_gc_home`): gc reads the agent's transcripts on this host
+   below its own home, while the core runs with the password-database
+   one;
 3. puts the pack's ``hc`` shim first on ``PATH``, and keeps
    ``HC_TERMINAL_ID`` and ``HC_TERMINAL_SOCKET`` for in-agent ``hc`` use.
 

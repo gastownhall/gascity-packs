@@ -150,7 +150,7 @@ def op_observe(ctx: OpContext) -> OpResult:
         return OpResult.answer(ObserveAnswer(state="dead", box=box_object(record), identity=identity).encode())
     state, pid = agent_state(try_snapshot(ctx.host) if names else None, record, names, meta)
     if not names and record.pid is not None:
-        pid = str(record.pid)  # no names to judge by: the box's program, a host process (fs.host)
+        pid = str(record.pid)  # no names to judge by: the box's program, a host process
     return OpResult.answer(
         ObserveAnswer(state="running", box=box_object(record), agent=state, agent_pid=pid, identity=identity).encode()
     )
