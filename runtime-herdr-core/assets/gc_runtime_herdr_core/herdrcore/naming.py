@@ -10,7 +10,9 @@ start's dedupe key.
 
 Labels carry what the pack needs to read a record back: the city, the exact
 gc name, the incarnation (``gc.obj``, a fresh nonce per start, which also keys
-the pack's metadata file) and the program's pid once ``run`` returned.
+the pack's metadata file) and the program's pid once ``run`` returned. A
+record whose processes may survive its kill may also carry when starts
+began to be refused over them, when its metadata cannot record it.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ LABEL_CITY: Final = "gc.city"
 LABEL_SESSION: Final = "gc.session"
 LABEL_OBJ: Final = "gc.obj"
 LABEL_PID: Final = "gc.pid"
+LABEL_REFUSED: Final = "gc.refused_since_ms"
 
 CITY_LABEL_CHARS: Final = 12
 TERMINAL_NAME_CHARS: Final = 20

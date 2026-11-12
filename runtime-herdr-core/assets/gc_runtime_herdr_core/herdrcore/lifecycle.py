@@ -11,9 +11,11 @@ agent):
    (tree kill, then removed), or gc would read "already exists" every pass
    while the broken record stays. While an earlier incarnation's processes
    may survive that kill, the start exits 1 and launches nothing beside them,
-   for up to :data:`START_REFUSAL_LIMIT_MS` from the first refusal (from the
-   record's creation when no refusal can be recorded); then it warns,
-   removes that record and goes ahead beside them.
+   for up to :data:`START_REFUSAL_LIMIT_MS` from the first refusal, recorded
+   in the record's metadata, else in a label of the record (from the
+   record's creation when neither takes it, so an older record is then not
+   refused at all); then it warns, removes that record and goes ahead beside
+   them.
 3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
@@ -26,7 +28,8 @@ agent):
    cannot read the created record afresh or list the city's boxes, the
    terminal's tree is ended (unless its pid started after the terminal was
    created: a recycled one) but the box stays, its token unscanned, for
-   gc's stop.
+   gc's stop. A created terminal hc no longer holds is still looked for by
+   its token before its metadata goes.
 5. Unlocked: ``session_setup`` and the setup script (warnings only), then the
    first turn. A cancel or failure from here on leaves the box, for gc stops
    the box a failed start leaves. ``session_live`` (tmux theming and
@@ -40,10 +43,12 @@ agent):
    a probe that timed out (nothing in gc types an exec runtime's first turn
    later). A wait the op's deadline cuts short (it ends
    :data:`FIRST_TURN_RESERVE_S` before it, so with less left there is no
-   wait at all) types it too: the pack's own choice, as gc's tmux provider
-   returns before it types and gc's herdr provider skips the turn. A bare
-   "rate limit" mention delays the turn but never withholds it (see
-   :mod:`.readiness`). gc answers startup dialogs only once ``start`` returns, so a
+   wait at all) types it too once some screen settled during it, the pack's
+   own choice (gc's tmux provider returns before it types, and gc's herdr
+   provider skips the turn), and withholds it when none did, as a dialog
+   may not be drawn yet. A turn typed without readiness warns. A bare
+   "rate limit" mention delays the turn, and withholds it only on a menu
+   (see :mod:`.readiness`). gc answers startup dialogs only once ``start`` returns, so a
    screen that shows one is never ready, and one still showing when the
    wait settles or ends withholds the turn (a known limit: nothing types it
    later). A withheld turn or a refusal types nothing, warns, and records
@@ -87,7 +92,7 @@ import os
 import shutil
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from ..hc.client import HcClient
@@ -108,7 +113,7 @@ from .context import OpContext
 from .core import core_env, ensure_core
 from .envplan import STRIPPED, scope_env, scope_prefix
 from .metastore import Meta, MetaError, seed
-from .naming import LABEL_OBJ, LABEL_PID, LABEL_SESSION, new_object_nonce, session_labels, terminal_name
+from .naming import LABEL_OBJ, LABEL_PID, LABEL_REFUSED, LABEL_SESSION, new_object_nonce, session_labels, terminal_name
 from .procs import (
     Proc,
     ProcError,
@@ -147,6 +152,11 @@ READY_WAIT_S: Final = 60.0
 READY_POLL_S: Final = 0.25
 SETTLE_S: Final = 1.0
 IN_DIALOG: Final = "the agent shows a startup dialog, which gc answers once start returns"
+NOT_SEEN: Final = "the op's deadline ended the wait before the agent's screen settled"
+"""Why a wait the op's deadline cut short withholds the turn when no screen
+settled during it: a dialog may not be drawn yet."""
+RAN_OUT: Final = "the wait ran out"
+CUT_SHORT: Final = "the op's deadline cut the wait short"
 FIRST_TURN_RESERVE_S: Final = 5.0
 ROLLBACK_S: Final = 1.5
 RM_WAIT_S: Final = 3.0
@@ -159,6 +169,9 @@ START_REFUSAL_LIMIT_MS: Final = 15 * 60 * 1000
 survive (one unkillable, one respawned from outside the kill, a process
 table that cannot be read); a start after that warns and goes ahead."""
 REFUSED_SINCE_KEY: Final = "GC_HERDR_CORE_START_REFUSED_SINCE_MS"
+FIRST_REFUSAL: Final = "the first refusal"
+CREATED: Final = "the earlier incarnation's creation, as no refusal can be recorded for it"
+"""What a refused start's limit counts from (:func:`_refused_since`), as its message names it."""
 DEFAULT_AGENT_SLICE: Final = "gascity-agents.slice"
 USERSCOPE_FILE: Final = "userscope.json"
 USERSCOPE_ENV: Final = "GC_HC_TEST_USERSCOPE"
@@ -360,10 +373,11 @@ def _read_meta(ctx: OpContext, record: Terminal) -> Optional[Meta]:
 @dataclass
 class _Refusals:
     """A start's recycle: what may survive a record the start goes ahead
-    beside, and when each record still refused stops being refused (ms)."""
+    beside, and when each record still refused stops being refused (ms),
+    with what that is counted from."""
 
     abandoned: List[str]
-    until_ms: List[int]
+    until_ms: List[Tuple[int, str]]
 
 
 def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refusals: Optional[_Refusals] = None) -> List[str]:
@@ -380,13 +394,14 @@ def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refus
         meta = _read_meta(ctx, record)
         survived = kill_incarnation(ctx, client, record, meta, protected=city)
         if survived and refusals is not None:
-            until = _refused_since(ctx, record, meta) + START_REFUSAL_LIMIT_MS
+            since, anchor = _refused_since(ctx, client, record, meta)
+            until = since + START_REFUSAL_LIMIT_MS
             if ctx.host.now_ms() >= until:
                 _remove_record(client, record, ctx.request.cancel.pause)
                 refusals.abandoned.extend(survived)
                 survived = []
             else:
-                refusals.until_ms.append(until)
+                refusals.until_ms.append((until, anchor))
         if survived:
             problems += survived
             continue
@@ -394,23 +409,39 @@ def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refus
     return problems
 
 
-def _refused_since(ctx: OpContext, record: Terminal, meta: Optional[Meta]) -> int:
-    """When starts began to be refused over ``record``'s survivors (ms): the
-    first refusal, recorded in its metadata; when it cannot be recorded (no
-    metadata, a failed write), the record's creation, so no record is
-    refused forever."""
-    since = "" if meta is None else meta.values.get(REFUSED_SINCE_KEY, "")
-    if since.isdigit():
-        return int(since)
+def _refused_since(ctx: OpContext, client: HcClient, record: Terminal, meta: Optional[Meta]) -> Tuple[int, str]:
+    """When starts began to be refused over ``record``'s survivors (ms), and
+    what that counts from: the first refusal, recorded in its metadata or,
+    when that cannot be written (no metadata, a failed write), in a label of
+    the record, which lasts as long as the record does. When neither takes
+    it, the record's creation, so no record is refused forever: one older
+    than :data:`START_REFUSAL_LIMIT_MS` is then not refused at all."""
+    for since in ("" if meta is None else meta.values.get(REFUSED_SINCE_KEY, ""), record.labels.get(LABEL_REFUSED, "")):
+        if since.isdigit():
+            return int(since), FIRST_REFUSAL
+    now = ctx.host.now_ms()
+    if _record_refusal(ctx, client, record, meta, str(now)):
+        return now, FIRST_REFUSAL
+    return record.created_ms, CREATED
+
+
+def _record_refusal(ctx: OpContext, client: HcClient, record: Terminal, meta: Optional[Meta], now: str) -> bool:
+    """Record the first refusal over ``record``: in its metadata, else in its
+    ``LABEL_REFUSED`` label; False when neither takes it."""
     obj = object_of(record)
     if obj is not None and meta is not None:
-        now = ctx.host.now_ms()
         try:
-            meta_store(ctx).write(obj, meta.with_value(REFUSED_SINCE_KEY, str(now)))
-            return now
-        except MetaError:
+            meta_store(ctx).write(obj, meta.with_value(REFUSED_SINCE_KEY, now))
+            return True
+        except (MetaError, OSError):  # a full disk too: never refused forever over it
             pass
-    return record.created_ms
+    try:
+        client.label(record.address, {LABEL_REFUSED: now})
+    except HcCancelled:
+        raise
+    except HcError:
+        return False
+    return True
 
 
 def _utc(ms: int) -> str:
@@ -428,11 +459,12 @@ def _recycle_before_start(ctx: OpContext, client: HcClient, name: str, records: 
             f"started {name!r} beside an earlier incarnation's processes, which may still run: " + "; ".join(refusals.abandoned)
         )
     if survived:
+        until, anchor = max(refusals.until_ms)
         raise OpError(
             f"cannot start {name!r} while an earlier incarnation's processes may survive: "
             + "; ".join(survived)
-            + f" (end them, or from {_utc(max(refusals.until_ms))}, {START_REFUSAL_LIMIT_MS // 60000} minutes after"
-            + " the first refusal, the start goes ahead beside them)"
+            + f" (end them, or from {_utc(until)}, {START_REFUSAL_LIMIT_MS // 60000} minutes after {anchor},"
+            + " the start goes ahead beside them)"
         )
 
 
@@ -813,7 +845,10 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
     started a daemon (every other live box of the city is protected, as in
     ``stop``), then its metadata. When hc cannot read the created record
     afresh or list the city's boxes, the tree is still ended
-    (:func:`_reap_trees`) but nothing is looked for by the token. The metadata stays when the terminal may outlive the start:
+    (:func:`_reap_trees`) but nothing is looked for by the token. A created
+    record hc no longer holds is still looked for by the token (never by
+    run's pid, which may be recycled), as the metadata about to go holds
+    its only copy. The metadata stays when the terminal may outlive the start:
     a rollback call failed, part of its tree may survive (the record stays
     too), or none was found for a ``pending`` run (one hc never answered).
     Inventory removes metadata that no record carries once it is old."""
@@ -827,7 +862,9 @@ def _undo(ctx: OpContext, created: Optional[Terminal], obj: str, *, pending: boo
             # Read afresh: run's reply may be seconds old, and a pid that
             # ended since may already run an unrelated process.
             try:
-                targets = _current(rollback, created)
+                # Gone (hc removed it, or its core lost it): what it started
+                # is still found by the token, never by run's stale pid.
+                targets = _current(rollback, created) or [replace(created, pid=None)]
             except HcError:
                 _reap_trees(ctx, [created])  # it may live on: end it from run's reply
                 return
@@ -924,21 +961,32 @@ def _fail_if_ended(client: HcClient, record: Terminal, cfg: StartConfig) -> None
 # --- the first turn ----------------------------------------------------------------------------
 
 
-def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig) -> Union[Terminal, str, None]:
+@dataclass(frozen=True)
+class _Unready:
+    """A wait that ended without readiness: the terminal to type the first
+    turn into all the same, and why it was not seen ready."""
+
+    terminal: Terminal
+    why: str
+
+
+def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig) -> Union[Terminal, _Unready, str, None]:
     """Wait until the agent can take its first turn: its terminal then, why it
     cannot (a startup dialog shows), or None if it ended first. A screen
     showing a dialog is never ready, in any mode. A wait that ends with no
-    dialog on screen gives the terminal too: gc's providers type the turn
-    on a probe that timed out, and nothing in gc types it later. A wait
-    the op's deadline cuts short does the same, by the pack's own choice
-    (gc's providers skip the turn then)."""
+    dialog on screen gives the terminal too (:class:`_Unready`), as gc's
+    providers type the turn on a probe that timed out, and nothing in gc
+    types it later; see :func:`_at_the_waits_end` for one the op's deadline
+    cuts short."""
     begun = time.monotonic()
-    end = begun + max(0.0, min(READY_WAIT_S, ctx.request.deadline.remaining() - FIRST_TURN_RESERVE_S))
+    wait = max(0.0, min(READY_WAIT_S, ctx.request.deadline.remaining() - FIRST_TURN_RESERVE_S))
+    end = begun + wait
     # A delay is a guess at readiness, cut to the wait as gc cuts it to its
     # probe timeout.
     delay_until = begun + min(cfg.ready_delay_ms / 1000.0, READY_WAIT_S) if cfg.ready_delay_ms > 0 else None
     last_screen: Optional[str] = None
     stable_since = begun
+    seen = False  # a non-empty screen settled during the wait
     while True:
         current = client.get(record.address)
         if not current.is_live:
@@ -948,14 +996,29 @@ def _ready(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig)
         if screen != last_screen:
             last_screen, stable_since = screen, now
         settled = bool(screen.strip()) and now - stable_since >= SETTLE_S
+        seen = seen or settled
         in_dialog = withholds_first_turn(screen, cfg.ready_prompt_prefix)
         if in_dialog and settled:  # gc answers it once start returns: the wait would outlast it
             return IN_DIALOG
         if not delays_first_turn(screen, cfg.ready_prompt_prefix) and _shows_ready(cfg, current, screen, settled, now, delay_until):
             return current
         if now >= end:
-            return IN_DIALOG if in_dialog else current
+            return _at_the_waits_end(current, in_dialog, cut=wait < READY_WAIT_S, seen=seen)
         ctx.request.cancel.pause(READY_POLL_S)
+
+
+def _at_the_waits_end(current: Terminal, in_dialog: bool, *, cut: bool, seen: bool) -> Union[_Unready, str]:
+    """What a wait that ran out without readiness gives: why the turn is
+    withheld (a dialog on screen; or, for a wait the op's deadline ``cut``
+    short, no screen ``seen`` to settle, as a dialog may not be drawn yet),
+    else the terminal to type it into all the same. Typing on a cut wait is
+    the pack's own choice: gc's tmux provider returns before it types, and
+    gc's herdr provider skips the turn."""
+    if in_dialog:
+        return IN_DIALOG
+    if cut and not seen:
+        return NOT_SEEN
+    return _Unready(current, CUT_SHORT if cut else RAN_OUT)
 
 
 def _shows_ready(
@@ -970,7 +1033,8 @@ def _shows_ready(
 
 
 def first_turn(ctx: OpContext, client: HcClient, name: str, record: Terminal, cfg: StartConfig) -> Optional[str]:
-    """Type the start config's nudge once the agent is ready; a warning when it was not delivered."""
+    """Type the start config's nudge once the agent is ready; a warning when
+    it was not delivered, or was typed without readiness."""
     from .inputs import deliver  # the nudge path: a send hc got whole is delivered
 
     try:
@@ -983,10 +1047,11 @@ def first_turn(ctx: OpContext, client: HcClient, name: str, record: Terminal, cf
         raise OpError("the agent exited during startup, before its first turn")
     if isinstance(ready, str):
         return _unconfirmed(ctx, name, record, f"the first turn was withheld: {ready}")
-    result = deliver(ctx, client, name, ready, cfg.nudge, retry_unavailable=True)
-    if result.outcome == "delivered":
-        return None
-    return _unconfirmed(ctx, name, record, f"the first turn was not delivered: {result.detail or result.outcome}")
+    target, unready = (ready.terminal, ready.why) if isinstance(ready, _Unready) else (ready, "")
+    result = deliver(ctx, client, name, target, cfg.nudge, retry_unavailable=True)
+    if result.outcome != "delivered":
+        return _unconfirmed(ctx, name, record, f"the first turn was not delivered: {result.detail or result.outcome}")
+    return f"the first turn was typed without readiness: {unready}" if unready else None
 
 
 def _unconfirmed(ctx: OpContext, name: str, record: Terminal, detail: str) -> str:

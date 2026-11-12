@@ -1,5 +1,5 @@
 """The first turn's readiness reads, against gc's (``paneShowsReadyPrompt``,
-``containsStartupDialog``)."""
+``containsStartupDialog``, ``ContainsProviderRateLimitScreen``)."""
 
 from __future__ import annotations
 
@@ -67,13 +67,26 @@ def test_startup_dialogs_are_read_as_gc_reads_them(screen: str, dialog: bool) ->
         ("Rate limit reached\nretrying...\n", "", False, True),
         ("Rate limit reached: 100%\n", "", False, True),  # the marker's own line is no prompt line
         ("Welcome\nTip: avoid hitting the rate limit by...\n", f"{GLYPH} ", False, True),
-        (f"rate limit\n{GLYPH} 1. Retry\n  2. Wait\n", f"{GLYPH} ", False, True),  # a menu's cursor row is no prompt
+        ("Tips:\n1. mind the rate limit\n2. use /compact\n", f"{GLYPH} ", False, True),  # a list with no cursor row
+        # A bare mention on a menu: gc's startup pass answers it "Stop", so
+        # the turn's Enter would pick the selected option first.
+        ("Rate limit reached\n1. Keep trying\n2. Stop\n", "", True, True),  # gc's provider rate-limit screen
+        (f"Rate limit reached\n{GLYPH} 1. Keep trying\n  2. Stop\n", f"{GLYPH} ", True, True),
+        ("RATE LIMIT REACHED\n1. Keep trying\n2. Stop\n", "", True, True),  # in any case, as gc reads it
+        ("Usage limit reached for gemini-3-flash-preview.\n1. Keep trying\n2. Stop\n", "", True, True),
+        (f"rate limit\n{GLYPH} 1. Retry\n  2. Wait\n", f"{GLYPH} ", True, True),  # a menu's cursor row is no prompt
+        (f"rate limit\n{GLYPH} 1. Retry\n  2. Wait\n", "", True, True),  # the glyph marks it with no prefix
+        ("rate limit\nREADY> 1. Retry\n  2. Wait\n", "READY>", True, True),  # and so does the prefix
+        # A Codex screen that finished starting shows no rate-limit menu, whatever its draft says.
+        ("OpenAI Codex\n› why did Rate limit reached show Keep trying and Stop\n  gpt-5 · ~/repo\n", "", False, False),
         ("READY> \n", "READY>", False, False),
     ],
 )
 def test_only_a_known_dialog_withholds_the_first_turn(screen: str, prefix: str, withheld: bool, delayed: bool) -> None:
-    """A bare "rate limit" mention with no prompt line (on another line)
-    keeps the wait going, but its end types the turn: gc never reads those
-    bare markers to judge readiness."""
+    """A bare "rate limit" mention withholds the turn only on a menu (gc's
+    provider rate-limit screen, or beside a numbered menu's cursor row);
+    with none and no prompt line (on another line) it keeps the wait going,
+    but its end types the turn: gc never reads those bare markers to judge
+    readiness."""
     assert withholds_first_turn(screen, prefix) is withheld
     assert delays_first_turn(screen, prefix) is delayed

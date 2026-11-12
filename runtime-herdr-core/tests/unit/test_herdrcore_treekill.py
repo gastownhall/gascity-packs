@@ -5,6 +5,8 @@ processes under fake-hc."""
 
 from __future__ import annotations
 
+import dataclasses
+import errno
 import json
 import os
 import shutil
@@ -21,8 +23,10 @@ from fakehc.procfs import add_proc
 from gc_runtime_herdr_core.hc.client import HcClient
 from gc_runtime_herdr_core.hc.parse import parse_terminal
 from gc_runtime_herdr_core.hc.types import Terminal
+from gc_runtime_herdr_core.herdrcore import lifecycle
 from gc_runtime_herdr_core.herdrcore.lifecycle import INSTANCE_TOKEN_KEY, RESCANS, kill_incarnation
-from gc_runtime_herdr_core.herdrcore.metastore import Meta
+from gc_runtime_herdr_core.herdrcore.metastore import Meta, MetaError, MetaStore
+from gc_runtime_herdr_core.herdrcore.naming import LABEL_REFUSED
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, subtree
 
 PROXY = """\
@@ -465,6 +469,37 @@ def test_a_rollback_that_cannot_read_the_created_record_still_ends_its_tree(city
     assert city.terminals() == []
 
 
+def test_a_rollback_whose_created_record_is_gone_still_finds_its_daemon_by_its_token(city: City, leftovers: List[int]) -> None:
+    """hc no longer holds the created record when the rollback reads it
+    afresh: its token is still looked for, as the metadata about to go
+    holds its only copy."""
+    from cityharness import in_thread
+
+    from gc_runtime_herdr_core.rpp.cancel import CancelToken
+
+    work = city.root / "w14"
+    work.mkdir()
+    env = {"GC_INSTANCE_TOKEN": token("gone")}
+    command = f"(setsid sleep 600 & echo $! > {work}/daemon.pid); exec cat"
+    city.fake.delay_reply("terminal.label", 10.0)  # type: ignore[union-attr]
+    cancel = CancelToken()
+    results = []
+    stdin = json.dumps({"command": command, "env": env}).encode()
+    thread = in_thread(lambda: results.append(city.run("start", "mc-a", stdin=stdin, cancel=cancel)))
+    daemon = int(wait_file(work / "daemon.pid"))
+    leftovers.append(daemon)
+    end = time.monotonic() + 5
+    while not city.fake.call_count("terminal.label"):  # type: ignore[union-attr]
+        assert time.monotonic() < end, "the start never labelled its terminal"
+        time.sleep(0.05)
+    city.fake.fail_next("terminal.get", "not_found")  # type: ignore[union-attr]
+    cancel.cancel("terminated")  # while the start waits for its label
+    thread.join(timeout=20)
+    assert results and results[0].code == 1
+    assert wait_dead(daemon), "the rollback found the daemon by its token"
+    assert list(Path(city.context().state_dir("meta")).iterdir()) == [], "the metadata goes once nothing carries the token"
+
+
 def _boot(root: Path, created_ms: int, *, offset_ticks: int) -> None:
     """A fake ``/proc/stat`` whose boot time puts starttime ``offset_ticks``
     (in clock ticks) at ``created_ms``."""
@@ -566,32 +601,53 @@ def test_a_stop_that_may_leave_survivors_keeps_the_box_and_its_token_for_the_ret
     assert list(Path(city.context().state_dir("meta")).iterdir()) == []
 
 
-def test_starts_refused_over_survivors_go_ahead_after_the_limit(
-    city: City, leftovers: List[int], monkeypatch: pytest.MonkeyPatch
-) -> None:
+class _Unreadable(LinuxProcs):
+    """A process table that never reads: whatever a kill captured may survive."""
+
+    def snapshot(self) -> Dict[int, Proc]:
+        raise ProcError("no /proc")
+
+
+def survivor_box(city: City, leftovers: List[int], work: Path) -> List[int]:
+    """Start mc-a with a detached child, and fail its stop over a process
+    table that never reads, so the box stays; the clock the city then
+    reads, a minute after the box's creation."""
+    command = f"setsid sleep 600 & echo $! > {work}/detached.pid; exec cat"
+    assert city.start("mc-a", json.dumps({"command": command, "env": {"GC_INSTANCE_TOKEN": token(work.name)}})).code == 0
+    leftovers.append(int(wait_file(work / "detached.pid")))
+    [record] = city.terminals()
+    clock = [int(str(record["created_ms"])) + 60_000]
+    city.host = dataclasses.replace(city.host, now_ms=lambda: clock[0])
+    city.procs.inner = _Unreadable()
+    assert city.run("stop", "mc-a").code == 1
+    return clock
+
+
+def again(work: Path) -> str:
+    return json.dumps({"command": "exec cat", "env": {"GC_INSTANCE_TOKEN": token(work.name + "-again")}})
+
+
+LIMIT = lifecycle.START_REFUSAL_LIMIT_MS
+
+
+def test_starts_are_refused_for_the_limit_from_the_first_refusal(city: City, leftovers: List[int]) -> None:
     """A survivor that never goes away (one unkillable, one respawned from
     outside the kill, a process table that never reads) refuses starts
-    only until the limit: then the start warns, naming it, and goes ahead."""
-    from gc_runtime_herdr_core.herdrcore import lifecycle
-
-    class Broken(LinuxProcs):
-        def snapshot(self) -> Dict[int, Proc]:
-            raise ProcError("no /proc")
-
-    work = city.root / "w13"
+    from the first refusal, which the box's metadata records, until the
+    limit: then the start warns, naming it, and goes ahead."""
+    work = city.root / "w15"
     work.mkdir()
-    command = f"setsid sleep 600 & echo $! > {work}/detached.pid; exec cat"
-    assert city.start("mc-a", json.dumps({"command": command, "env": {"GC_INSTANCE_TOKEN": token("limit-1")}})).code == 0
-    leftovers.append(int(wait_file(work / "detached.pid")))
-    city.procs.inner = Broken()
-    assert city.run("stop", "mc-a").code == 1
-    again = json.dumps({"command": "exec cat", "env": {"GC_INSTANCE_TOKEN": token("limit-2")}})
-    refused = city.start("mc-a", again)
-    assert refused.code == 1 and "may survive" in refused.stderr, refused.stderr
-    assert "15 minutes after the first refusal, the start goes ahead beside them" in refused.stderr
+    clock = survivor_box(city, leftovers, work)
+    t0 = clock[0]
+    for at in (t0, t0 + LIMIT - 1):
+        clock[0] = at
+        refused = city.start("mc-a", again(work))
+        assert refused.code == 1 and "may survive" in refused.stderr, refused.stderr
+        assert f"or from {lifecycle._utc(t0 + LIMIT)}, 15 minutes after the first refusal, the start goes ahead" in refused.stderr
+    assert city.run("get-meta", "mc-a", lifecycle.REFUSED_SINCE_KEY).stdout == str(t0).encode()
     assert len(city.terminals()) == 1
-    monkeypatch.setattr(lifecycle, "START_REFUSAL_LIMIT_MS", 0)
-    done = city.start("mc-a", again)
+    clock[0] = t0 + LIMIT
+    done = city.start("mc-a", again(work))
     assert done.code == 0, done.stderr
     assert "beside an earlier incarnation's processes" in done.stderr and "cannot read the process table" in done.stderr
     [record] = city.terminals()
@@ -599,22 +655,70 @@ def test_starts_refused_over_survivors_go_ahead_after_the_limit(
     assert len(list(Path(city.context().state_dir("meta")).iterdir())) == 1
 
 
-def test_a_refused_record_without_metadata_is_not_refused_forever(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
-    """With no metadata to record the first refusal in, the limit counts
-    from the record's creation."""
-    from gc_runtime_herdr_core.herdrcore import lifecycle
+@pytest.mark.parametrize("ago_ms, code", [(LIMIT - 1000, 1), (LIMIT + 1000, 0)])
+def test_the_limit_counts_from_the_refusal_already_recorded(city: City, leftovers: List[int], ago_ms: int, code: int) -> None:
+    work = city.root / "w16"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    seeded = city.run("set-meta", "mc-a", lifecycle.REFUSED_SINCE_KEY, stdin=str(clock[0] - ago_ms).encode())
+    assert seeded.code == 0, seeded.stderr
+    done = city.start("mc-a", again(work))
+    assert done.code == code, done.stderr
 
-    class Broken(LinuxProcs):
-        def snapshot(self) -> Dict[int, Proc]:
-            raise ProcError("no /proc")
 
-    assert city.start("mc-a", json.dumps({"command": "exec cat"})).code == 0
+@pytest.mark.parametrize("unwritable", ["no metadata", "MetaError", "OSError"])
+def test_a_refusal_the_metadata_cannot_record_is_kept_in_a_label(
+    city: City, leftovers: List[int], monkeypatch: pytest.MonkeyPatch, unwritable: str
+) -> None:
+    """With no metadata to record the first refusal in, or a write that
+    fails (a full disk too), the record's label keeps it: the limit still
+    counts from it, never from the record's creation."""
+    work = city.root / "w17"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    if unwritable == "no metadata":
+        for meta in Path(city.context().state_dir("meta")).iterdir():
+            meta.unlink()
+    else:
+        write = MetaStore.write
+        failure = MetaError("unwritable") if unwritable == "MetaError" else OSError(errno.ENOSPC, "No space left on device")
+
+        def failing(store: MetaStore, obj: str, meta: Meta) -> None:
+            if lifecycle.REFUSED_SINCE_KEY in meta.values:
+                raise failure
+            write(store, obj, meta)
+
+        monkeypatch.setattr(MetaStore, "write", failing)
+    t0 = clock[0] = clock[0] + LIMIT  # a box older than the limit
+    for at in (t0, t0 + LIMIT - 1):
+        clock[0] = at
+        refused = city.start("mc-a", again(work))
+        assert refused.code == 1 and "15 minutes after the first refusal" in refused.stderr, refused.stderr
+    [record] = city.terminals()
+    assert cast(Dict[str, str], record["labels"])[LABEL_REFUSED] == str(t0)
+    clock[0] = t0 + LIMIT
+    done = city.start("mc-a", again(work))
+    assert done.code == 0, done.stderr
+
+
+def test_a_refusal_nothing_can_record_counts_from_the_records_creation(city: City, leftovers: List[int]) -> None:
+    """With neither metadata nor a label to record the first refusal in,
+    the limit counts from the record's creation, as the refusal says, so
+    no record is refused forever."""
+    work = city.root / "w18"
+    work.mkdir()
+    clock = survivor_box(city, leftovers, work)
+    created = clock[0] - 60_000
     for meta in Path(city.context().state_dir("meta")).iterdir():
         meta.unlink()
-    city.procs.inner = Broken()
-    assert city.run("stop", "mc-a").code == 1
-    monkeypatch.setattr(lifecycle, "START_REFUSAL_LIMIT_MS", 0)
-    done = city.start("mc-a", json.dumps({"command": "exec cat"}))
+    city.fake.fail_next("terminal.label", "internal")  # type: ignore[union-attr]
+    refused = city.start("mc-a", again(work))
+    assert refused.code == 1, refused.stderr
+    expected = f"or from {lifecycle._utc(created + LIMIT)}, 15 minutes after the earlier incarnation's creation, as no refusal"
+    assert expected in refused.stderr, refused.stderr
+    clock[0] = created + LIMIT
+    city.fake.fail_next("terminal.label", "internal")  # type: ignore[union-attr]
+    done = city.start("mc-a", again(work))
     assert done.code == 0, done.stderr
     assert "beside an earlier incarnation's processes" in done.stderr
     [record] = city.terminals()

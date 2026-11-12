@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import List, Mapping, Optional
+from typing import List, Mapping, Optional, Tuple
 
 import pytest
 from cityharness import City, Result, in_thread
@@ -220,15 +220,21 @@ def withheld(city: City, config: Mapping[str, object], **kwargs: object) -> str:
     return done.stderr
 
 
-def typed_after(city: City, config: Mapping[str, object], **kwargs: object) -> float:
-    """Start with ``config``; how long the start took, once sure the first turn was typed and nothing recorded."""
+def typed(city: City, config: Mapping[str, object], **kwargs: object) -> Tuple[float, str]:
+    """Start with ``config``; how long the start took and what it warned,
+    once sure the first turn was typed and nothing recorded."""
     began = time.monotonic()
     done = city.start("mc-a", json.dumps({**config, "nudge": "first task"}), **kwargs)
     elapsed = time.monotonic() - began
     assert done.code == 0, done.stderr
     assert city.fake.input_log(city.address("mc-a")) == ["first task"]  # type: ignore[union-attr]
     assert city.run("get-meta", "mc-a", "GC_STARTUP_DELIVERY_UNCONFIRMED").stdout == b""
-    return elapsed
+    return elapsed, done.stderr
+
+
+def typed_after(city: City, config: Mapping[str, object], **kwargs: object) -> float:
+    """Start with ``config``; how long the start took, once sure the first turn was typed and nothing recorded."""
+    return typed(city, config, **kwargs)[0]
 
 
 def test_a_menus_cursor_row_is_no_prompt(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,17 +260,43 @@ def test_a_settled_dialog_withholds_the_first_turn_whatever_the_prompt_prefix(ci
     assert "the first turn was withheld: the agent shows a startup dialog" in withheld(city, config)
 
 
+@pytest.mark.parametrize(
+    "screen, extra",
+    [
+        ("Rate limit reached\\n1. Keep trying\\n2. Stop\\n", {}),  # gc's provider rate-limit screen
+        ("rate limit\\n❯ 1. Retry\\n  2. Wait\\n", {"ready_prompt_prefix": "❯ "}),  # a mention beside a cursor row
+    ],
+)
+def test_a_rate_limit_menu_withholds_the_first_turn(city: City, screen: str, extra: Mapping[str, object]) -> None:
+    # gc's startup pass answers it "Stop" once start returns: typed first,
+    # the turn's Enter would pick "Keep trying", and gc would never see it.
+    config = {"command": f"printf '{screen}'; exec cat", **extra}
+    assert "the first turn was withheld: the agent shows a startup dialog" in withheld(city, config)
+
+
 def test_a_boot_slower_than_the_wait_gets_its_turn_typed(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
     # gc's providers type the turn on a probe that timed out; nothing in gc
     # types it later for an exec runtime.
     monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.0)
     config = {"command": "printf 'booting\\n'; exec cat", "ready_prompt_prefix": "READY>"}
-    assert typed_after(city, config) >= 1.0
+    elapsed, warned = typed(city, config)
+    assert elapsed >= 1.0
+    assert "the first turn was typed without readiness: the wait ran out" in warned
 
 
 def test_a_delay_the_deadline_cuts_types_the_first_turn_at_the_waits_end(city: City) -> None:
-    config = {"command": "printf 'booting\\n'; exec cat", "ready_delay_ms": 4000}
-    typed_after(city, config, deadline_ms=7000)
+    # 9 s less the 5 s reserve leave a wait of up to 4 s, which the screen
+    # settles in, and which ends before the delay.
+    config = {"command": "printf 'booting\\n'; exec cat", "ready_delay_ms": 6000}
+    _, warned = typed(city, config, deadline_ms=9000)
+    assert "the first turn was typed without readiness: the op's deadline cut the wait short" in warned
+
+
+def test_a_wait_the_deadline_leaves_no_time_withholds_the_first_turn(city: City) -> None:
+    # With 5 s or less left there is no wait, so no screen settles: a dialog
+    # may not be drawn yet, and a turn typed into it would pick its option.
+    warned = withheld(city, {"command": "printf 'booting\\n'; exec cat"}, deadline_ms=4500)
+    assert "the first turn was withheld: the op's deadline ended the wait before the agent's screen settled" in warned
 
 
 def test_a_delay_past_the_wait_types_the_first_turn_at_its_end(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -283,7 +315,7 @@ def test_a_status_line_mentioning_rate_limits_under_a_prompt_is_ready(city: City
 
 
 def test_a_tip_mentioning_rate_limits_gets_the_turn_at_the_waits_end(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
-    # A bare mention is no dialog gc knows: it delays the turn, never withholds it.
+    # A bare mention with no menu is no dialog gc knows: it delays the turn, never withholds it.
     monkeypatch.setattr(lifecycle, "READY_WAIT_S", 1.5)
     config = {"command": "printf 'Welcome\\nTip: avoid hitting the rate limit by...\\n'; exec cat", "ready_prompt_prefix": "❯ "}
     assert typed_after(city, config) >= 1.5

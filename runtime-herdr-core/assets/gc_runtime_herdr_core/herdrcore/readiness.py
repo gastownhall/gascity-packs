@@ -15,9 +15,13 @@ Enter would pick it.
   not call it: it is the gc reference the tests pin, which the two
   functions below narrow.
 * :func:`withholds_first_turn` is what keeps the first turn back: a dialog
-  gc knows, but not a bare "rate limit" mention (a status line's, a tip's).
-  gc reads those bare markers only to answer a dialog it already waits on,
-  never to judge readiness.
+  gc knows, a bare "rate limit" mention among them only on a menu (gc's
+  provider rate-limit screen, or beside a numbered menu's cursor row). Once
+  ``start`` returns, gc's startup pass answers any screen with a bare
+  marker "Stop" (Down, Enter), so the turn's Enter would pick the menu's
+  selected option first. A bare mention with no menu (a status line's, a
+  tip's) withholds nothing: gc never reads those markers to judge
+  readiness.
 * :func:`delays_first_turn`: a bare mention with no prompt line (on a line
   of its own) may be a rate-limit screen gc's markers miss, so the wait
   goes on; its end types the turn.
@@ -64,6 +68,9 @@ BARE_RATE_LIMIT: Final = ("rate limit", "Rate limit")
 RATE_LIMIT: Final[Tuple[str, ...]] = RATE_LIMIT_DIALOG + BARE_RATE_LIMIT
 """gc's ``ContainsRateLimitDialog`` markers (:func:`shows_dialog`, the gc
 reference the tests pin)."""
+RATE_LIMIT_MENU: Final = ("Keep trying", "Stop")
+"""The options gc's ``ContainsProviderRateLimitScreen`` reads beside a
+"rate limit" mention, in any case: a provider's rate-limit menu."""
 CODEX_BANNER: Final = "OpenAI Codex"
 CODEX_STATUS_SEPARATOR: Final = " · "
 
@@ -86,8 +93,9 @@ def shows_dialog(screen: str) -> bool:
 
 def withholds_first_turn(screen: str, prefix: str) -> bool:
     """The screen shows a dialog the first turn must not land in: one gc
-    knows, a bare "rate limit" mention aside (see :func:`delays_first_turn`)."""
-    return _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT_DIALOG)
+    knows, a bare "rate limit" mention only on a menu (:func:`_rate_limit_menu`;
+    with none, see :func:`delays_first_turn`)."""
+    return _named_dialog(screen) or _rate_limited(screen, RATE_LIMIT_DIALOG) or _rate_limit_menu(screen, prefix)
 
 
 def delays_first_turn(screen: str, prefix: str) -> bool:
@@ -109,6 +117,27 @@ def _rate_limited(screen: str, markers: Sequence[str]) -> bool:
     if CODEX_BANNER in screen and _codex_settled(screen):
         return False
     return any(marker in screen for marker in markers)
+
+
+def _rate_limit_menu(screen: str, prefix: str) -> bool:
+    """A "rate limit" mention on a menu, unless Codex has finished starting:
+    gc's provider rate-limit screen (``ContainsProviderRateLimitScreen``: the
+    mention in any case, with :data:`RATE_LIMIT_MENU`), or a bare marker
+    beside a numbered menu's cursor row, read with ``prefix`` or a prompt
+    glyph. A numbered list with no cursor row (a tip's) is no menu."""
+    if CODEX_BANNER in screen and _codex_settled(screen):
+        return False
+    if "rate limit" in screen.lower() and all(option in screen for option in RATE_LIMIT_MENU):
+        return True
+    return _rate_limited(screen, BARE_RATE_LIMIT) and _shows_menu_cursor(screen, prefix)
+
+
+def _shows_menu_cursor(screen: str, prefix: str) -> bool:
+    """Some line is a numbered menu's cursor row, marked by ``prefix`` or by
+    a prompt glyph and a space."""
+    lines = screen.split("\n")
+    cursors = tuple(glyph + " " for glyph in PROMPT_GLYPHS) + ((prefix,) if prefix else ())
+    return any(_menu_cursor_row(lines, index, cursor) for cursor in cursors for index in range(len(lines)))
 
 
 def _shows_prompt_line(screen: str, prefix: str) -> bool:

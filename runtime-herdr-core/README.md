@@ -110,22 +110,31 @@ runtime-herdr-core/
   output). A wait that runs out without readiness (a boot slower than the
   wait, a prompt prefix that never matches) types the turn all the same,
   as gc's tmux and herdr providers type it on a probe that timed out. A
-  wait cut short by the op's deadline types it too, which is this pack's
-  own choice, not gc's: gc's tmux provider returns before it types, and
-  gc's herdr provider skips the turn and records it unconfirmed. The pack
-  stops waiting 5 s before its deadline, so with 5 s or less left it does
-  not wait at all, and the turn may land on a screen still booting. gc
+  wait cut short by the op's deadline types it too once some screen
+  settled during it, which is this pack's own choice, not gc's: gc's tmux
+  provider returns before it types, and gc's herdr provider skips the turn
+  and records it unconfirmed. When no screen settled, the turn is withheld
+  instead, as a dialog may not be drawn yet. The pack stops waiting 5 s
+  before its deadline, so with 5 s or less left it does not wait at all:
+  only a ready prompt or a status report already there gets the turn.
+  Whenever the turn is typed without readiness, `start` warns (`the first
+  turn was typed without readiness: ...`). gc
   answers startup dialogs only once `start` returns, so a screen showing
   one of gc's known dialogs is never ready, and a dialog still on screen
   when the wait settles or ends withholds the turn with a warning and
   `GC_STARTUP_DELIVERY_UNCONFIRMED` in the metadata. A bare "rate limit"
-  mention (a status line's, a tip's) is no dialog: with no prompt line on
-  another line it keeps the wait going, and the wait's end types the
+  mention withholds the turn only on a menu: gc's provider rate-limit
+  screen (the mention, in any case, with `Keep trying` and `Stop`) or a
+  numbered menu's cursor row beside it. Once `start` returns, gc's startup
+  pass answers a screen with a bare marker "Stop" (Down, Enter), so the
+  turn's Enter would pick the menu's selected option first. With no menu
+  (a status line's, a tip's) the mention is no dialog: with no prompt line
+  on another line it keeps the wait going, and the wait's end types the
   turn. Known limit: a turn withheld over a
   dialog is not typed later, as gc answers the dialog but does not type
   an exec runtime's first turn after `start`; the marker is for
-  operators. A menu gc does not know as a dialog gets the turn at the
-  wait's end, as in gc. `session_live` (tmux
+  operators. Any other menu gc does not know as a dialog gets the turn at
+  the wait's end, as in gc. `session_live` (tmux
   theming and keybindings) is never run: herdr-core runs no tmux server,
   and run on the host it would reach a person's own; `start` warns that it
   is not applied. `terminal.run` is sent once: after a lost reply
@@ -135,7 +144,9 @@ runtime-herdr-core/
   the metadata while its terminal may still run. When hc cannot read the
   created terminal afresh or list the city's boxes, it ends the terminal's
   tree (unless its pid started after the terminal was created, a recycled
-  one) but scans nothing by the token, and leaves the box to gc's stop. One that fails or is
+  one) but scans nothing by the token, and leaves the box to gc's stop. A
+  created terminal hc no longer holds is still scanned for by the token
+  before its metadata, the token's only copy, goes. One that fails or is
   canceled later leaves the box, which gc stops. An agent that exits
   during startup fails the start, unless its lifecycle is `one_shot`.
   Staging does not merge: the files gc JSON-merges (`.claude/settings.json`,
@@ -201,8 +212,11 @@ runtime-herdr-core/
   user's own shells and editors, or a whole tmux-runtime city when a gc
   command run in the box founded it. A herdr-core box never runs inside
   tmux; a tmux server the box itself runs under (hc's core started from a
-  pane) fences none of the box's own tree. As in gc, the fence matches
-  tmux's exact names and covers only what is still under a server: a
+  pane) fences none of the box's own tree. As in gc, tmux is known by its
+  exact names. Fencing everything under a server is this pack's own
+  choice: gc fences the tmux process alone and reads each pane as a root
+  of its own, but the token scan would end every pane of a server founded
+  from a box. The fence covers only what is still under a server: a
   process that detaches from a pane of a server founded from a box (an
   `ssh -fN`, a `nohup` job whose shell exited, an agent such as `ssh-agent`
   started there) is re-parented out of it, still carries the token and
@@ -225,8 +239,10 @@ runtime-herdr-core/
   service that imported the box's environment, a process table that never
   reads) would refuse every start, so after that the start warns, naming
   what may survive, removes the old box and goes ahead beside it. The
-  refusal names the time it stops. A box with no metadata to record the
-  first refusal in counts the 15 minutes from its creation. A
+  refusal names the time it stops. The first refusal is recorded in the
+  box's metadata, else in a label of its terminal record; a box where
+  neither takes it counts the 15 minutes from its creation, so one older
+  than that is not refused at all, and a refusal names its creation. A
   process that does not carry the token, or whose environment cannot be
   read, is not found that way.
 - **Attachment.** hc counts no viewers; a box is attached while the pack's
