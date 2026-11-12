@@ -70,10 +70,9 @@ exited is re-parented out of the agent's subtree: a daemon (fork, ``setsid``,
 parent exits) while the agent still runs, every child once the agent is
 gone. So whatever the record's state, the incarnation's processes are also
 found by its ``GC_INSTANCE_TOKEN`` in their environment, and each of them
-dies, one the agent meant to outlive it too. That is wider than gc's own
-process-table cleanup (which runs for this pack, as it declares ``fs.host``:
-see :mod:`.procs`), which ends a session's untracked roots by its
-``GC_SESSION_ID``: a shared per-user daemon first started from inside
+dies, one the agent meant to outlive it too. That is wider than gc's orphan
+sweep, which ends only orphan roots of sessions gc no longer runs (and does
+not run for this pack): a shared per-user daemon first started from inside
 the box (a Bazel or Gradle server, an ssh ControlMaster, a gpg-agent)
 carries the token and dies with it, by design. One started
 during the kill (a TERM handler's ``setsid`` child) was in no capture, so
