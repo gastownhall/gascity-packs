@@ -276,6 +276,19 @@ def test_hc_core_errors_when_a_running_citys_core_is_down(dc: DoctorCity) -> Non
     assert code == 2 and lines[0].startswith("the city runs but its core does not answer")
 
 
+def test_hc_core_is_ok_for_a_city_server_stop_parked(dc: DoctorCity) -> None:
+    """`gc stop` runs server-stop, which parks the city and stops its core; a
+    `gc start` with no herdr-core session due leaves it down on purpose, and
+    no read kicks it, so an old kick record is no sign of a core that fails."""
+    dc.run_city()
+    write_kick(dc, ok=True, age_ms=3 * 24 * 3600 * 1000, detail="started")
+    state = Path(dc.paths.state_root) / "pack" / dc.paths.city_id
+    (state / "parked.json").write_text(json.dumps({"at_ms": int(time.time() * 1000)}) + "\n")
+    (state / "parked.json").chmod(0o600)
+    code, lines = dc.run("hc-core")
+    assert (code, lines) == (0, ["no core runs (stopped by server-stop; the next session start brings it back)"])
+
+
 def test_hc_core_errors_on_a_crash_looping_core(dc: DoctorCity) -> None:
     write_kick(dc, ok=False, age_ms=1000, detail="hc server start exited 1")
     code, lines = dc.run("hc-core")

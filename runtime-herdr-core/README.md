@@ -100,7 +100,8 @@ source = "<this pack>"
   fresh one under the allowlist: the fix for a core started outside the
   pack. Stopping a core ends its programs, so it refuses while the city
   runs or any terminal runs there (`gc stop` first). It refuses a core that is not the city's
-  (another user's, or one with another hc session or state root).
+  (another user's, or one with another hc session or state root). Its
+  start clears `server-stop`'s stopped mark, as a session start does.
 - **The binary.** The pinned install, unless the city's pack config
   (`<R>/pack/<city id>/config.json`) sets `hc_bin` and
   `"allow_unpinned": true`, an explicit choice to drive another build.
@@ -116,7 +117,7 @@ warns). They only read: a check never starts a core or writes state.
 |---|---|---|
 | `hc-python` | no `python3`, or one older than 3.9 | |
 | `hc-binary` | not installed; changed since install; from another release; `hc_bin` without `allow_unpinned` | installed without `gc herdr-core install`; writable; `hc_bin` with `allow_unpinned` |
-| `hc-core` | down while the city runs (once a read found it down); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
+| `hc-core` | down while the city runs (once a read found it down, and not stopped by `server-stop`: a city `gc stop` parked stays down, OK, until a session start); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
 | `hc-scope-hygiene` | the city's supervisor or controller, Dolt server or watchdog, or bd proxy carries `HC_SCOPE`, runs under a herdr-core holder or core, or in an `hc-hold-*`/`hc-serve-*` cgroup | its environment cannot be read |
 | `hc-state-perms` | hc's state directories are not this user's 0700 directories, or `terminals.json` is readable by others through them (hc writes it with the umask's mode, which 0700 directories keep private) | |
 

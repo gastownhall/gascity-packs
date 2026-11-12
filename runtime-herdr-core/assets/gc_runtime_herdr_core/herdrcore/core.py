@@ -304,9 +304,10 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
 
 def parked(ctx: OpContext) -> bool:
     """Whether ``server-stop`` stopped the city's core and no start has come
-    since. An unreadable mark reads as not parked: reads kick, as before."""
+    since. An unreadable mark reads as not parked: reads kick, as before.
+    It creates no state (doctor reads it too), as :func:`read_kick` does."""
     try:
-        return read_private_file(ctx.state_file(PARK_FILE)) is not None
+        return read_private_file(os.path.join(ctx.pack_state, PARK_FILE)) is not None
     except StateDirError:
         return False
 

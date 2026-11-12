@@ -9,7 +9,8 @@ reports a warning) and 1 to 1.5 s per hc call.
 
 * ``hc-binary``: the pinned build is installed and matches the pin.
 * ``hc-core``: the running core's version gate, the foreign-core check, the
-  core's binary, a crash-looping start, and the user-manager and lingering
+  core's binary, a crash-looping start, a core down while the city runs
+  (unless ``server-stop`` parked it), and the user-manager and lingering
   hints that apply to a running core.
 * ``hc-scope-hygiene``: no city infrastructure runs under herdr-core.
 * ``hc-state-perms``: hc's state for the city is private.
@@ -36,7 +37,7 @@ from ..rpp.statedir import DOCTOR_CITY_ENV, StateDirError
 from .admin import admin_context, admin_host, city_running, controller_socket, lock_socket
 from .config import BINARY_NAME, ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
-from .core import FOREIGN_FIX, KICK_BACKOFF_MS, core_env, foreign_reason, read_kick
+from .core import FOREIGN_FIX, KICK_BACKOFF_MS, core_env, foreign_reason, parked, read_kick
 from .infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB, infrastructure_prefix
 from .install import verify_installed, writable
 from .pin import PinError, host_target, load_pin
@@ -203,7 +204,11 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR, platform: str = 
         hello = client.hello()
     except HcUnreachable:
         kick = read_kick(ctx)
-        if kick is not None and not kick.ok and ctx.host.now_ms() - kick.at_ms < KICK_BACKOFF_MS:
+        if parked(ctx):
+            # server-stop (at `gc stop`) stopped it on purpose and no read
+            # kicks it: down until a session start, whatever kick.json says.
+            report.note(Status.OK, "no core runs (stopped by server-stop; the next session start brings it back)")
+        elif kick is not None and not kick.ok and ctx.host.now_ms() - kick.at_ms < KICK_BACKOFF_MS:
             report.note(Status.ERROR, f"the city's core failed to start in the last 5 minutes: {kick.detail}")
         elif running and kick is not None:
             # A read of one of the city's herdr-core sessions found the core
