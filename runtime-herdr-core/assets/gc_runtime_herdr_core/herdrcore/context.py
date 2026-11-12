@@ -27,8 +27,8 @@ from ..hc.paths import HcPaths, resolve_paths
 from ..rpp.cancel import CancelToken, Deadline
 from ..rpp.flock import FileLock
 from ..rpp.ops import OpRequest
-from ..rpp.statedir import ensure_private_dir, user_home
-from .config import POLICY, resolve_hc_binary, test_mode
+from ..rpp.statedir import OP_CITY_ENV, ensure_private_dir, user_home
+from .config import pin_policy, resolve_hc_binary, test_mode
 from .procs import ProcSource, default_source
 
 FAULT_ENV: Final = "GC_RPP_FAULT"
@@ -69,15 +69,15 @@ def live_host(python: str) -> Host:
 class OpContext:
     """An op's city, core, private state and clients."""
 
-    def __init__(self, request: OpRequest, host: Host) -> None:
+    def __init__(self, request: OpRequest, host: Host, *, city_var: str = OP_CITY_ENV) -> None:
         self.request = request
         self.host = host
         self.env: Mapping[str, str] = request.env
         self.test = test_mode(self.env)
-        self.paths: HcPaths = resolve_paths(self.env, machine=host.machine, home=host.home)
+        self.paths: HcPaths = resolve_paths(self.env, machine=host.machine, home=host.home, city_var=city_var)
         self.pack_state = os.path.join(self.paths.state_root, PACK_SUBDIR, self.paths.city_id)
         self.fault = self.env.get(FAULT_ENV, "") == "unavailable"
-        self._endpoint = CoreEndpoint(self.paths.socket, policy=POLICY)
+        self._endpoint = CoreEndpoint(self.paths.socket, policy=pin_policy())
 
     # --- private state ---------------------------------------------------------
 

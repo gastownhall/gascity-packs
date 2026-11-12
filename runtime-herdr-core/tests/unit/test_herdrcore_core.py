@@ -144,7 +144,11 @@ def test_hc_binary_resolution(tmp_path: Path) -> None:
     chosen = tmp_path / "chosen-hc"
     chosen.write_text("#!/bin/sh\n")
     chosen.chmod(0o755)
+    # hc_bin alone names an unpinned build: refused until the operator allows it.
     (state / "config.json").write_text(json.dumps({"hc_bin": str(chosen)}))
+    with pytest.raises(ConfigError, match="allow_unpinned"):
+        resolve_hc_binary({}, str(state), home=lambda: str(home))
+    (state / "config.json").write_text(json.dumps({"hc_bin": str(chosen), "allow_unpinned": True}))
     assert resolve_hc_binary({}, str(state), home=lambda: str(home)) == str(chosen)
     # The test override needs GC_HC_TEST=1.
     assert resolve_hc_binary({"GC_HC_TEST_BIN": "/nope"}, str(state), home=lambda: str(home)) == str(chosen)

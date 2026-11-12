@@ -13,12 +13,10 @@ it declares `observe.v1`, `report-attachment`, `report-activity`,
 `city-scoped` and `conformance-faults` (locality `local`), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
-once it has run real cities on a pinned herdr-core. The doctor checks and
-the `gc herdr-core install|status|upgrade|restart-core` commands are not in
-this build: until they are, install herdr-core 0.1.19 yourself at
-`<home>/.local/share/gc-runtime-herdr-core/hc/0.1.19/herdr-core`, or name a
-binary in the city's pack config (`hc_bin` in `<R>/pack/<city id>/config.json`).
-A `herdr-core` or `hc` on `PATH` is never used.
+once it has run real cities on a pinned herdr-core. To use it, install the
+pinned herdr-core with `gc herdr-core install` (see
+[Install and commands](#install-and-commands)); `gc doctor` runs the
+pack's [checks](#doctor). A `herdr-core` or `hc` on `PATH` is never used.
 
 The runtime is named `herdr-core`, never `herdr`: `herdr` is a gc builtin,
 and declaring it is a composition error (RUNTIME-SEL-007).
@@ -29,7 +27,10 @@ and declaring it is a composition error (RUNTIME-SEL-007).
 runtime-herdr-core/
   pack.toml                        [runtimes.herdr-core] -> assets/bin/gc-runtime-herdr-core
   mypy.ini                         mypy --strict; disallow_any_expr in rpp/ and herdrcore/
+  commands/{install,status,upgrade,restart-core}/   gc herdr-core <verb>
+  doctor/{hc-python,hc-binary,hc-core,hc-scope-hygiene,hc-state-perms}/   gc doctor checks
   assets/
+    hc-pin.json                    the pinned herdr-core: version, minimum, tested, sha256 per platform
     bin/gc-runtime-herdr-core      0755, #!/usr/bin/env -S python3 -I -S
     bin/gc-herdr-core-launch       0755, the agent launcher hc runs in each terminal
     shim/hc.in                     the in-agent hc shim's template
@@ -46,11 +47,97 @@ runtime-herdr-core/
         records.py metastore.py procs.py attach.py activity.py reads.py
         lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
         inputs.py screen.py readiness.py
+        pin.py install.py admin.py commands.py doctor.py appvis.py infra_argv.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
     unit/                          the unit tier
     conformance.sh                 gc runtime check + gc runtime conformance against fake-hc
+    infra_argv_drift.py            CI: the infrastructure argv table equals gc's at the pinned commit
 ```
+
+## Install and commands
+
+Import the pack under the binding `herdr-core` so its commands read as
+below (`gc <binding> <verb>`); the pack's messages name them so.
+
+```toml
+[imports.herdr-core]
+source = "<this pack>"
+```
+
+- **The pin.** `assets/hc-pin.json` names the one herdr-core version the
+  pack installs (0.1.19), the oldest it drives, the versions it was tested
+  against, and the release asset and sha256 of each platform's build
+  (`linux-x86_64`, `linux-aarch64`, `macos-aarch64`, `macos-x86_64`, from
+  herdr-core's release manifest). A missing or malformed pin fails every op
+  that needs hc. Moving the pin is a pack release.
+- **`gc herdr-core install`** checks that the release manifest agrees with
+  the pin, downloads the asset and checks its sha256 against the pin before
+  writing anything, reads the one `herdr-core` file out of the archive
+  (nothing else is extracted, nothing is run), and renames a staged
+  directory into place at
+  `<password-database home>/.local/share/gc-runtime-herdr-core/hc/<version>/`
+  (never `$HOME` or `XDG_DATA_HOME`). The binary and its directory are
+  read-only, so `hc update` refuses to replace it, and `install.json`
+  records what was installed. Older versions are collected; the pinned
+  one, the most recently installed other one (to roll back to) and any a
+  process still runs are kept, and nothing is removed when the process
+  table cannot be read. When the pinned build is already installed and
+  verifies against its `install.json`, nothing is fetched.
+- **`gc herdr-core status`** reports the pin, the install and the city's
+  core (version, pid, live terminals, whether the pack started it).
+  `status --env` prints the core's discovery tuple:
+  `env $(gc herdr-core status --env) herdr-app` connects the Herdr app to
+  the city's core.
+- **`gc herdr-core upgrade`** installs the pin, then hands the city's core
+  over with `herdr-core server restart` under the pack's allowlist
+  environment: hc keeps every program and its screen across a planned
+  restart, so sessions keep running. A core started outside the pack is
+  refused (the restart would keep its environment), and so is a city that
+  drives its own `hc_bin` (the pack does not upgrade that build).
+- **`gc herdr-core restart-core`** stops the city's own core and starts a
+  fresh one under the allowlist: the fix for a core started outside the
+  pack. Stopping a core ends its programs, so it refuses while the city
+  runs or any terminal runs there (`gc stop` first). It refuses a core that is not the city's
+  (another user's, or one with another hc session or state root).
+- **The binary.** The pinned install, unless the city's pack config
+  (`<R>/pack/<city id>/config.json`) sets `hc_bin` and
+  `"allow_unpinned": true`, an explicit choice to drive another build.
+
+## Doctor
+
+Each check is `doctor/<check>/run.sh` and runs as gc runs pack checks (the
+pack directory as cwd, `GC_CITY_PATH` naming the city), resolving the
+city's core as the ops do, within a 10 s budget (a check that runs out
+warns). They only read: a check never starts a core or writes state.
+
+| Check | Error | Warning |
+|---|---|---|
+| `hc-python` | no `python3`, or one older than 3.9 | |
+| `hc-binary` | not installed; changed since install; from another release; `hc_bin` without `allow_unpinned` | installed without `gc herdr-core install`; writable; `hc_bin` with `allow_unpinned` |
+| `hc-core` | down while the city runs (once a read found it down); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
+| `hc-scope-hygiene` | the city's supervisor or controller, Dolt server or watchdog, or bd proxy carries `HC_SCOPE`, runs under a herdr-core holder or core, or in an `hc-hold-*`/`hc-serve-*` cgroup | its environment cannot be read |
+| `hc-state-perms` | hc's state directories are not this user's 0700 directories, or `terminals.json` is readable by others through them (hc writes it with the umask's mode, which 0700 directories keep private) | |
+
+`hc-scope-hygiene` attributes a process to the city by the city path in
+its argv or config (`--config`, `--root`, the watchdog's arguments), by
+`GC_CITY`, `GC_CITY_PATH` or `GC_CITY_ROOT` in its environment, or (a
+supervisor or controller) by holding the city's controller socket. gc's
+nudge pollers are left out: they are session-scoped and spawned from
+agents by design.
+
+## Herdr app labels (opt-in)
+
+With `"app_visibility": "labels"` in the city's pack config, every
+session's terminal is labelled `herdr.space=gc-<city>[-<rig>]` and
+`herdr.tab=<its hc terminal name>`, which puts it on the Herdr app's
+screens. It is off by default: the app sets `keep=true` on what it adopts,
+so an agent that exits leaves a shell, which the pack reads as the
+session's death (gc restarts it).
+
+It is experimental: whether the Herdr app adopts ids in this style (it
+names its own spaces and tabs with ids such as `s1` and `t2`) has not been
+checked against the app yet, so the sessions may not appear there.
 
 ## How sessions run
 

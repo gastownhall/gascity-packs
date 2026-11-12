@@ -5,6 +5,8 @@ starts and drives, end to end, in place of a real core.
                             session (if none answers) and print its status
     cli.py server status    print the running core's status (exit 1 if none)
     cli.py server stop      stop the core and every program it runs
+    cli.py server restart   hand the running core over to this build (programs
+                            survive), or start one if none answers
     cli.py serve            be the core (what ``server start`` spawns)
     cli.py attach <tN>      stand in for a viewer: hold until killed
 
@@ -80,6 +82,13 @@ def _print_status(sock: str) -> int:
     return 0
 
 
+VERSION_ENV = "FAKEHC_VERSION"
+"""Set by :func:`write_launcher`: the hc version this build reports. Never
+passed on to the core it starts (a real hc's version is its binary's)."""
+
+NEXT_VERSION_FILE = "fake-next-version"
+"""Where ``server restart`` leaves this build's version for the running core."""
+
 SYSTEMD_ENV = "FAKEHC_SYSTEMD"
 """Set by :func:`write_launcher`: place the core as hc does under a user
 manager, in the core's ``XDG_RUNTIME_DIR`` (a test's stand-in for
@@ -112,7 +121,7 @@ def systemd_child_env(env: Dict[str, str], root: str) -> Dict[str, str]:  # root
     dir and HC_RUNTIME goes to ``<RuntimeDirectory>/environment`` (0600 in a
     0700 dir); the unit then runs with the manager's block, that file, and
     systemd's own service variables."""
-    starter = {k: v for k, v in env.items() if k not in SERVICE and k != "HC_SCOPE" and k != SYSTEMD_ENV}
+    starter = {k: v for k, v in env.items() if k not in SERVICE and k not in ("HC_SCOPE", SYSTEMD_ENV, VERSION_ENV)}
     starter["XDG_RUNTIME_DIR"] = root
     starter["HC_RUNTIME"] = "1"
     unit_dir = os.path.join(root, f"hc-serve-{uuid.uuid4().hex[:8]}")
@@ -144,11 +153,11 @@ def server_start(env: Dict[str, str]) -> int:
     if env.get(SYSTEMD_ENV) == "1" and runtime_dir:
         child_env = systemd_child_env(env, runtime_dir)
     else:
-        child_env = {k: v for k, v in env.items() if k not in ("HC_SCOPE", SYSTEMD_ENV)}
+        child_env = {k: v for k, v in env.items() if k not in ("HC_SCOPE", SYSTEMD_ENV, VERSION_ENV)}
         child_env["HC_RUNTIME"] = "1"
     with open(os.path.join(paths["state"], "core.log"), "ab") as log:
         subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), "serve"],
+            [sys.executable, os.path.abspath(__file__), "serve", env.get(VERSION_ENV, "") or "0.1.19"],
             env=child_env,
             cwd="/",
             stdin=subprocess.DEVNULL,
@@ -181,7 +190,24 @@ def server_stop(env: Dict[str, str]) -> int:
     return 0 if "result" in reply else 1
 
 
-def serve(env: Dict[str, str]) -> int:
+def server_restart(env: Dict[str, str]) -> int:
+    paths = _paths(env)
+    if not _answers(paths["socket"]):
+        return server_start(env)
+    with open(os.path.join(paths["state"], NEXT_VERSION_FILE), "w", encoding="utf-8") as handle:
+        handle.write(env.get(VERSION_ENV, "") or "0.1.19")
+    reply = raw_call(paths["socket"], "server.restart", {}, timeout=30.0)
+    if "result" not in reply:
+        return 1
+    deadline = time.monotonic() + START_WAIT_S
+    while time.monotonic() < deadline:
+        if _answers(paths["socket"]):
+            return _print_status(paths["socket"])
+        time.sleep(0.02)
+    return 1
+
+
+def serve(env: Dict[str, str], version: str = "0.1.19") -> int:
     from fakehc.server import FakeHc
 
     paths = _paths(env)
@@ -194,7 +220,13 @@ def serve(env: Dict[str, str]) -> int:
     os.ftruncate(lock, 0)
     os.write(lock, os.fsencode(paths["socket"]))
     os.makedirs(os.path.dirname(paths["socket"]), mode=0o700, exist_ok=True)
-    fake = FakeHc(paths["socket"], base_env=env, core_name=socket.gethostname())
+    fake = FakeHc(
+        paths["socket"],
+        base_env=env,
+        core_name=socket.gethostname(),
+        version=version,
+        next_version_file=os.path.join(paths["state"], NEXT_VERSION_FILE),
+    )
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda signum, frame: done.set())
     signal.signal(signal.SIGINT, lambda signum, frame: done.set())
@@ -243,17 +275,19 @@ def main(argv: List[str], env: Dict[str, str]) -> int:
             return server_status(env)
         if argv[:2] == ["server", "stop"]:
             return server_stop(env)
+        if argv[:2] == ["server", "restart"]:
+            return server_restart(env)
         if argv[:1] == ["serve"]:
-            return serve(env)
+            return serve(env, *argv[1:2])
         if len(argv) == 2 and argv[0] == "attach":
             return attach(env, argv[1])
-        raise Usage("usage: fake-hc server start|status|stop | serve | attach <terminal>")
+        raise Usage("usage: fake-hc server start|status|stop|restart | serve [version] | attach <terminal>")
     except Usage as err:
         print(f"fake-hc: {err}", file=sys.stderr)
         return 2
 
 
-def write_launcher(path: str, *, python: Optional[str] = None, systemd: bool = False) -> str:
+def write_launcher(path: str, *, python: Optional[str] = None, systemd: bool = False, version: str = "0.1.19") -> str:
     """A ``herdr-core``-named executable at ``path`` that runs this CLI under
     ``python`` (default: this interpreter, which has the schema tooling).
 
@@ -269,6 +303,7 @@ def write_launcher(path: str, *, python: Optional[str] = None, systemd: bool = F
         f"#!{interpreter}\n"
         "import os, runpy, sys\n"
         + (f"os.environ[{SYSTEMD_ENV!r}] = '1'\n" if systemd else "")
+        + f"os.environ[{VERSION_ENV!r}] = {version!r}\n"
         +
         f"sys.argv[0] = {os.path.abspath(__file__)!r}\n"
         f"runpy.run_path({os.path.abspath(__file__)!r}, run_name='__main__')\n"

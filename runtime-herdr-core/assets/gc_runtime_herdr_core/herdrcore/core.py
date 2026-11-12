@@ -333,12 +333,12 @@ class KickRecord:
 
 def read_kick(ctx: OpContext) -> Optional[KickRecord]:
     try:
-        raw = read_private_file(ctx.state_file(KICK_FILE))
+        raw = read_private_file(os.path.join(ctx.pack_state, KICK_FILE))
         if raw is None:
             return None
         doc = JsonObject.of(loads(raw))
         return KickRecord(at_ms=doc.req_int("at_ms"), ok=doc.req_bool("ok"), detail=doc.str_or("detail", ""))
-    except (JsonShapeError, OSError, ValueError):
+    except (JsonShapeError, OSError, ValueError, StateDirError):
         return None
 
 

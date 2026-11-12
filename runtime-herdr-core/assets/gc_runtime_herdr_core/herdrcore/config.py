@@ -1,12 +1,15 @@
 """The hc build the pack drives, where its binary is, and the hc config the
 city's core runs with.
 
-* **Version policy.** The pack drives hc at least :data:`MIN_VERSION`; the
-  versions in :data:`TESTED_VERSIONS` run without a warning.
-* **Binary.** ``hc_bin`` in the city's pack config (``<pack state>/config.json``,
-  an explicit operator choice), else the pinned install
-  ``<password-database home>/.local/share/gc-runtime-herdr-core/hc/<version>/herdr-core``.
-  A ``herdr-core`` or ``hc`` on ``PATH`` is never used: hc changes behaviour in
+* **Version policy.** ``assets/hc-pin.json`` (:mod:`.pin`): the pack drives
+  hc at least the pin's ``min_version``; its ``tested`` versions run without a
+  warning. A missing or malformed pin fails every op that needs hc.
+* **Binary.** The pinned install
+  ``<password-database home>/.local/share/gc-runtime-herdr-core/hc/<version>/herdr-core``
+  (``gc herdr-core install`` puts it there), unless the city's pack config
+  (``<pack state>/config.json``) names ``hc_bin`` *and* sets
+  ``allow_unpinned``: an explicit operator choice to drive another build. A
+  ``herdr-core`` or ``hc`` on ``PATH`` is never used: hc changes behaviour in
   patch releases, and the Herdr app updates the binary it installed.
 * **hc config.** The core runs with ``XDG_CONFIG_HOME=R/hc-config``, so it
   reads the pack's ``config.toml`` and never the user's
@@ -20,23 +23,13 @@ import errno
 import os
 import stat
 from dataclasses import dataclass
-from typing import Callable, Final, Mapping, Optional
+from typing import Callable, Final, Literal, Mapping, Optional
 
 from ..hc.paths import HcPaths
-from ..hc.version import Version, VersionPolicy
+from ..hc.version import VersionPolicy
 from ..rpp.jsonval import JsonObject, JsonShapeError, loads
 from ..rpp.statedir import StateDirError, ensure_private_dir, user_home
-
-PINNED_VERSION: Final = "0.1.19"
-MIN_VERSION: Final = "0.1.19"
-"""0.1.19 stopped sweeping detached descendants on a normal kill, stop and
-restart (herdr-core #136)."""
-TESTED_VERSIONS: Final = ("0.1.19",)
-
-POLICY: Final = VersionPolicy(
-    min_version=Version.parse(MIN_VERSION),
-    tested=tuple(Version.parse(v) for v in TESTED_VERSIONS),
-)
+from .pin import PinError, load_pin
 
 INSTALL_LEAF: Final = os.path.join(".local", "share", "gc-runtime-herdr-core", "hc")
 BINARY_NAME: Final = "herdr-core"
@@ -45,6 +38,12 @@ PACK_CONFIG_FILE: Final = "config.json"
 TEST_ENV: Final = "GC_HC_TEST"
 TEST_BIN_ENV: Final = "GC_HC_TEST_BIN"
 """Test-only: the hc binary to drive (fake-hc), honoured only under ``GC_HC_TEST=1``."""
+TEST_HOME_ENV: Final = "GC_HC_TEST_HOME"
+"""Test-only: the home the pinned install lives under, honoured only under
+``GC_HC_TEST=1`` by the pack commands and doctor checks."""
+
+AppVisibility = Literal["off", "labels"]
+APP_VISIBILITY_VALUES: Final = ("off", "labels")
 
 HC_CONFIG_TOML: Final = """\
 # Written by the runtime-herdr-core pack for this city's herdr-core.
@@ -65,9 +64,30 @@ def test_mode(env: Mapping[str, str]) -> bool:
     return env.get(TEST_ENV, "") == "1"
 
 
-def pinned_binary(home: Callable[[], str] = user_home, version: str = PINNED_VERSION) -> str:
-    """Where ``gc herdr-core install`` puts the pinned binary."""
-    return os.path.join(home(), INSTALL_LEAF, version, BINARY_NAME)
+def pin_policy() -> VersionPolicy:
+    """The hello gate from the pin; :class:`ConfigError` when the pack is unpinned."""
+    try:
+        return load_pin().policy
+    except PinError as err:
+        raise ConfigError(str(err)) from None
+
+
+def pinned_version() -> str:
+    """The pinned hc version; :class:`ConfigError` when the pack is unpinned."""
+    try:
+        return str(load_pin().version)
+    except PinError as err:
+        raise ConfigError(str(err)) from None
+
+
+def install_root(home: Callable[[], str] = user_home) -> str:
+    """Where ``gc herdr-core install`` keeps hc builds, one directory per version."""
+    return os.path.join(home(), INSTALL_LEAF)
+
+
+def pinned_binary(home: Callable[[], str] = user_home, version: Optional[str] = None) -> str:
+    """Where ``gc herdr-core install`` puts the binary of ``version`` (default: the pin's)."""
+    return os.path.join(install_root(home), version or pinned_version(), BINARY_NAME)
 
 
 @dataclass(frozen=True)
@@ -75,6 +95,10 @@ class PackConfig:
     """``<pack state>/config.json``: operator choices for one city."""
 
     hc_bin: Optional[str] = None
+    allow_unpinned: bool = False
+    """``hc_bin`` is honoured only with this set: it drives a build the pin does not name."""
+    app_visibility: AppVisibility = "off"
+    """``labels``: label each session so the Herdr app shows it (:mod:`.appvis`)."""
 
 
 def read_pack_config(pack_state: str) -> PackConfig:
@@ -91,11 +115,19 @@ def read_pack_config(pack_state: str) -> PackConfig:
     try:
         doc = JsonObject.of(loads(data))
         hc_bin = doc.opt_str("hc_bin")
+        allow_unpinned = doc.bool_or("allow_unpinned", False)
+        visibility = doc.str_or("app_visibility", "off")
     except JsonShapeError as err:
         raise ConfigError(f"{path}: {err}") from None
     if hc_bin is not None and not os.path.isabs(hc_bin):
         raise ConfigError(f"{path}: hc_bin must be an absolute path")
-    return PackConfig(hc_bin=hc_bin or None)
+    if visibility == "labels":
+        app: AppVisibility = "labels"
+    elif visibility == "off":
+        app = "off"
+    else:
+        raise ConfigError(f"{path}: app_visibility must be one of {', '.join(APP_VISIBILITY_VALUES)}")
+    return PackConfig(hc_bin=hc_bin or None, allow_unpinned=allow_unpinned, app_visibility=app)
 
 
 def resolve_hc_binary(
@@ -106,14 +138,20 @@ def resolve_hc_binary(
         candidate = env[TEST_BIN_ENV]
         source = TEST_BIN_ENV
     else:
-        configured = read_pack_config(pack_state).hc_bin
-        candidate = configured or pinned_binary(home)
-        source = "hc_bin in " + os.path.join(pack_state, PACK_CONFIG_FILE) if configured else "the pinned install"
+        config = read_pack_config(pack_state)
+        config_path = os.path.join(pack_state, PACK_CONFIG_FILE)
+        if config.hc_bin and not config.allow_unpinned:
+            raise ConfigError(
+                f"hc_bin in {config_path} names an unpinned hc: set allow_unpinned to drive it, "
+                "or remove hc_bin and run `gc herdr-core install`"
+            )
+        candidate = config.hc_bin or pinned_binary(home)
+        source = "hc_bin in " + config_path if config.hc_bin else "the pinned install"
     if not os.path.isabs(candidate):
         raise ConfigError(f"{source}: the hc binary must be an absolute path")
     if not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
         raise ConfigError(
-            f"hc not installed: no executable herdr-core {PINNED_VERSION} at {candidate} ({source})"
+            f"hc not installed: no executable herdr-core at {candidate} ({source}): run `gc herdr-core install`"
         )
     return candidate
 

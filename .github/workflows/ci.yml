@@ -189,6 +189,18 @@ jobs:
           tests/conformance.sh --json
           tests/conformance.sh --json --default-root
 
+      # The pack never kills city infrastructure with a session and spots
+      # it by argv as gc does. Its table must match gc's
+      # IsCityInfrastructureArgv at the pinned commit; drift fails here.
+      # The module is downloaded outside any go.mod (the repository root
+      # has one), into the cache `go install` above already filled.
+      - name: Infrastructure argv matches the pinned gc
+        env:
+          GASCITY_PIN: 862ee37e4570338d5135f3fbc761bd6221de38d4
+        run: |
+          src="$(cd "$(mktemp -d)" && go mod download -json "github.com/gastownhall/gascity@${GASCITY_PIN}" | python -c 'import json, sys; print(json.load(sys.stdin)["Dir"])')"
+          python tests/infra_argv_drift.py "$src/internal/runtime/proctable/infrastructure_argv.go"
+
       # fake-hc validates every reply against the hc schema vendored at the
       # pinned tag; this proves the vendored copy is that tag's released API.
       - name: Vendored hc schema is the pinned tag's

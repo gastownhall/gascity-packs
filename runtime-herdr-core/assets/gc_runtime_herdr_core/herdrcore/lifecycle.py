@@ -106,9 +106,10 @@ from ..rpp.ops import OpError, OpResult
 from ..rpp.statedir import StateDirError
 from ..rpp.wire import KillOutcome, StartConfig, WireError, parse_kill_object_request, parse_start_config
 from . import activity, shim, spawnfile
+from .appvis import app_labels
 from .attach import attached, viewer_targets
 from .command import run_bounded
-from .config import read_private_file, write_private_file
+from .config import read_pack_config, read_private_file, write_private_file
 from .context import OpContext
 from .core import core_env, ensure_core
 from .envplan import STRIPPED, scope_env, scope_prefix
@@ -788,6 +789,7 @@ def _create(
         _recycle_before_start(ctx, client, name, records, warnings)
         if cfg.work_dir and not os.path.isdir(cfg.work_dir):
             raise OpError("work_dir is not an existing directory after staging and pre_start")
+        visible = app_labels(read_pack_config(ctx.pack_state).app_visibility, ctx.paths.city_id, name, cfg.env)
         obj = new_object_nonce()
         store.write(obj, seed(name, cfg.env, work_dir=cfg.work_dir))
         spawn_path = ""
@@ -808,7 +810,7 @@ def _create(
                 argv=tuple(_launcher_argv(ctx, spawn_path)),
                 cwd=cfg.work_dir or ctx.host.home(),
                 env=TERM_ENV,
-                labels=session_labels(ctx.paths.city_id, name, obj),
+                labels={**session_labels(ctx.paths.city_id, name, obj), **visible},
                 name=terminal_name(ctx.paths.city_id, name),
             )
             # Sent once: a run whose reply was lost or timed out may have

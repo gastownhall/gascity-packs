@@ -24,7 +24,7 @@ without its extension; ``kimi`` also matches ``kimi-code``, and ``gc`` the
 base name of the session's gc binary.
 
 Infrastructure is never killed with a session, nor is anything under it.
-The infrastructure verbs mirror gascity
+The infrastructure verbs (:mod:`.infra_argv`) mirror gascity
 ``internal/runtime/proctable/infrastructure_argv.go`` (gc's managed Dolt
 watchdog, bd's database proxy, gc's nudge poller), and tmux follows its
 ``isInfrastructureCommand`` (gc never reports a tmux server or client as a
@@ -52,14 +52,12 @@ import time
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from .infra_argv import is_infrastructure_argv
+
 INTERPRETERS: Final = frozenset({"node", "bun", "npx", "deno"})
 RUNNER_SUBCOMMANDS: Final = frozenset({"run", "exec", "x"})
 NAME_ALIASES: Final[Mapping[str, Tuple[str, ...]]] = {"kimi": ("kimi-code",)}
 
-MANAGED_DOLT_SCOPE_WATCHDOG_VERB: Final = "__gc-managed-dolt-scope-watchdog"
-BD_PROXY_CHILD_VERB: Final = "db-proxy-child"
-NUDGE_POLLER_VERB: Final = "nudge"
-NUDGE_POLLER_SUBVERB: Final = "poll"
 TMUX_NAMES: Final = frozenset({"tmux", "tmux:", "tmux: server", "tmux: client"})
 """gc's ``isInfrastructureCommand``: the tmux executable, and the titles tmux
 sets through setproctitle (``tmux:`` is the first word ``ps`` splits off a
@@ -126,6 +124,20 @@ class ProcSource:
             if env is not None:
                 out[pid] = env
         return out
+
+    def exe(self, pid: int) -> Optional[str]:
+        """The path of the executable ``pid`` runs; None when it cannot be told."""
+        return None
+
+    def cgroup(self, pid: int) -> Optional[str]:
+        """``pid``'s control group path (Linux, cgroup v2 or the systemd
+        hierarchy); None when it cannot be told."""
+        return None
+
+    def socket_holders(self, path: str, pids: Iterable[int]) -> Optional[Set[int]]:
+        """Which of ``pids`` hold a Unix socket bound at ``path``; None when
+        that cannot be told."""
+        return None
 
     def started_ms(self, proc: Proc) -> Optional[int]:
         """When ``proc`` started, in wall-clock milliseconds; None when that
@@ -249,6 +261,48 @@ class LinuxProcs(ProcSource):
             if proc.pid in parents:
                 out[proc.pid] = replace(proc, ppid=parents[proc.pid])
 
+    def exe(self, pid: int) -> Optional[str]:
+        try:
+            return os.readlink(os.path.join(self._root, str(pid), "exe"))
+        except OSError:
+            return None
+
+    def cgroup(self, pid: int) -> Optional[str]:
+        try:
+            raw = self._read(pid, "cgroup").decode("utf-8", "surrogateescape")
+        except OSError:
+            return None
+        return parse_cgroup(raw)
+
+    def socket_holders(self, path: str, pids: Iterable[int]) -> Optional[Set[int]]:
+        try:
+            with open(os.path.join(self._root, "net", "unix"), "rb") as handle:
+                table = handle.read().decode("utf-8", "surrogateescape")
+        except OSError:
+            return None
+        inodes: Set[str] = set()
+        for line in table.splitlines()[1:]:
+            fields = line.split(None, 7)
+            if len(fields) == 8 and fields[7] == path:
+                inodes.add(f"socket:[{fields[6]}]")
+        holders: Set[int] = set()
+        if not inodes:
+            return holders
+        for pid in pids:
+            fd_dir = os.path.join(self._root, str(pid), "fd")
+            try:
+                fds = os.listdir(fd_dir)
+            except OSError:
+                continue
+            for fd in fds:
+                try:
+                    if os.readlink(os.path.join(fd_dir, fd)) in inodes:
+                        holders.add(pid)
+                        break
+                except OSError:
+                    continue
+        return holders
+
     def started_ms(self, proc: Proc) -> Optional[int]:
         """The boot time (``btime`` in ``stat``) plus the start time's clock ticks."""
         if not proc.start.isdigit():
@@ -343,6 +397,14 @@ class PsProcs(ProcSource):
             raise
         return _ps_environ(text.split())
 
+    def exe(self, pid: int) -> Optional[str]:
+        # macOS ps prints the executable's full path as comm.
+        try:
+            text = self._ps("-o", "comm=", "-p", str(pid)).strip()
+        except ProcError:
+            return None
+        return text if text.startswith("/") else None
+
     def environs(self, pids: Iterable[int]) -> Dict[int, Dict[str, str]]:
         # One ps for every process, as gc's proctable reads them on macOS;
         # a ps per process when that one fails.
@@ -371,6 +433,21 @@ def _ps_environ(words: Iterable[str]) -> Dict[str, str]:
         if sep and key and (key[0].isalpha() or key[0] == "_") and all(c.isalnum() or c == "_" for c in key):
             env[key] = value
     return env
+
+
+def parse_cgroup(text: str) -> Optional[str]:
+    """The path of ``/proc/<pid>/cgroup``: the unified (``0::``) entry, else
+    the systemd hierarchy's (``name=systemd``)."""
+    fallback: Optional[str] = None
+    for line in text.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        if parts[0] == "0" and parts[1] == "":
+            return parts[2]
+        if parts[1] == "name=systemd":
+            fallback = parts[2]
+    return fallback
 
 
 def default_source() -> ProcSource:
@@ -420,15 +497,6 @@ def subtree(
         out.append(snapshot[pid])
         queue.extend(kid for kid in kids.get(pid, ()) if kid != prune)
     return out
-
-
-def is_infrastructure_argv(argv: Sequence[str]) -> bool:
-    """gc's ``proctable.IsCityInfrastructureArgv``: argv[0] is ignored."""
-    if len(argv) < 2:
-        return False
-    if argv[1] in (MANAGED_DOLT_SCOPE_WATCHDOG_VERB, BD_PROXY_CHILD_VERB):
-        return True
-    return argv[1] == NUDGE_POLLER_VERB and len(argv) > 2 and argv[2] == NUDGE_POLLER_SUBVERB
 
 
 def is_tmux(proc: Proc) -> bool:

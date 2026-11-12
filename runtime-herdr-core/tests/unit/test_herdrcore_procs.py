@@ -19,6 +19,7 @@ from gc_runtime_herdr_core.hc.parse import parse_terminal
 from gc_runtime_herdr_core.hc.types import Terminal
 from gc_runtime_herdr_core.herdrcore import attach
 from gc_runtime_herdr_core.herdrcore.reads import agent_state
+from gc_runtime_herdr_core.herdrcore.infra_argv import is_infrastructure_argv
 from gc_runtime_herdr_core.herdrcore.procs import (
     LinuxProcs,
     Proc,
@@ -28,7 +29,6 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     expand_names,
     fenced_pids,
     find_agent,
-    is_infrastructure_argv,
     is_launching,
     is_tmux,
     kill_captured,
@@ -527,6 +527,24 @@ def test_a_process_that_turns_opaque_mid_kill_is_reported_beside_one_that_outliv
     captured = [proc(91, ("stubborn",), start="5"), proc(92, ("hiding",), start="5")]
     assert kill_captured(source, captured, grace_s=0.2, pause=time.sleep) == captured
     assert source.signals == [(91, signal.SIGTERM), (92, signal.SIGTERM), (91, signal.SIGKILL)]
+
+
+def test_linux_procs_read_exe_cgroup_and_socket_holders(tmp_path: Path) -> None:
+    from fakehc.procfs import add_proc, add_unix_socket
+
+    from gc_runtime_herdr_core.herdrcore.procs import parse_cgroup
+
+    add_proc(tmp_path, 10, ppid=1, argv=["/opt/hc/herdr-core", "serve"], exe="/opt/hc/herdr-core", cgroup="/user.slice/hc-serve-x.service", sockets=[555])
+    add_proc(tmp_path, 11, ppid=1, argv=["sleep"])
+    add_unix_socket(tmp_path, 555, "/city/.gc/controller.sock")
+    procs = LinuxProcs(str(tmp_path))
+    assert procs.exe(10) == "/opt/hc/herdr-core" and procs.exe(11) is None
+    assert procs.cgroup(10) == "/user.slice/hc-serve-x.service" and procs.cgroup(11) is None
+    assert procs.socket_holders("/city/.gc/controller.sock", [10, 11]) == {10}
+    assert procs.socket_holders("/other.sock", [10, 11]) == set()
+    assert parse_cgroup("12:pids:/a\n1:name=systemd:/b\n") == "/b"
+    assert parse_cgroup("0::/c\n1:name=systemd:/b\n") == "/c"
+    assert parse_cgroup("") is None
 
 
 def test_a_process_start_reads_as_wall_clock_ms(tmp_path: Path) -> None:

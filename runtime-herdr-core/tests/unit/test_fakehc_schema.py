@@ -102,6 +102,7 @@ def test_every_fake_method_is_guarded(fake_hc: FakeHc, short_tmp: Path) -> None:
         ("terminal.interrupt", {"terminal": address, "timeout": 1.0}),
         ("terminal.kill", {"terminal": address}),
         ("terminal.rm", {"terminal": address}),
+        ("server.restart", {}),
         ("server.stop", {}),
     ]:
         reply = raw_call(sock, method, params)
