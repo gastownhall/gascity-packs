@@ -205,6 +205,21 @@ checked against the app yet, so the sessions may not appear there.
   (unless the session environment sets it), so the transcripts gc reads
   under its own home are the ones the agent writes; the core keeps the
   password-database home.
+  Declaring `fs.host` (locality `local`, v2-ready) also makes gc scan the
+  process table for this pack's sessions, so gc's own process-table
+  cleanup runs for them: its pre-start orphan kill, its orphan sweep and
+  its drain-ack escalation. Before a session starts again, gc terminates
+  every root carrying the session's `GC_SESSION_ID` that it does not
+  track, with the root's whole process group. The box's program is not one
+  once the box is gone (`stop` ended its tree), but each pane of a tmux
+  server founded inside a box is: a tmux server copies its founder's
+  environment, and gc reads a process whose parent is a tmux server as a
+  root, fencing only the tmux process itself. So the shells, editors and
+  `tmux new -d` work in such a pane survive the session's `stop` (the
+  pack's fence) and end at its next start (gc's). Work meant to outlive a
+  session belongs outside it. gc's drain-ack escalation takes only a root
+  whose parent is tmux, so for this pack it can reach such a pane, never a
+  wedged box (whose program's parent is its hc holder).
 - **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
   (fatal), creates the terminal in `work_dir` (which must exist by then;
@@ -302,8 +317,8 @@ checked against the app yet, so the sessions may not appear there.
   `GC_INSTANCE_TOKEN` whatever the box's state, every process still the one
   captured (same start time) sent TERM then KILL. Every process carrying
   the token dies, one the agent meant to outlive it too. That is wider
-  than gc's own orphan sweep, which ends only orphan roots of sessions gc
-  no longer runs (and does not run for this pack): a shared per-user
+  than gc's own process-table cleanup (which runs for this pack: see
+  **Host work**), which ends a session's untracked roots: a shared per-user
   daemon first started from inside a box carries its token and dies with
   it, such as a Bazel or Gradle server, an ssh `ControlMaster` or a
   `gpg-agent`; the next use starts it again. One started during the kill
@@ -329,7 +344,8 @@ checked against the app yet, so the sessions may not appear there.
   dies; a renamed tmux (`tmux-next`) or a GNU `screen` server founded from
   a box is not fenced and dies with every window it runs; and work an
   agent runs under tmux (`tmux new -d 'make'`, a `tmux -D` server outside
-  its process group) is fenced, so it outlives the box's stop. Other live
+  its process group) is fenced, so it outlives the box's stop (though not
+  the session's next start: gc ends it then, see **Host work**). Other live
   sessions' trees are
   protected. Nothing under a process that
   cannot be read is signalled (an unreadable process may be
@@ -374,7 +390,8 @@ checked against the app yet, so the sessions may not appear there.
   does, through the same fence and the same rescan: city infrastructure and
   any tmux server or client (with everything under it) is never signalled,
   so a tmux server founded from inside a box, its panes, and another
-  city's tmux server carrying the token survive, while a tmux server the
+  city's tmux server carrying the token survive this sweep (gc itself
+  ends such panes at the session's next start: see **Host work**), while a tmux server the
   box's program runs under (hc's core started from a pane) fences none of
   that program's tree. The one exception to the fence is the city's own
   idle holders, matched by their exact `hold --socket` argv with the

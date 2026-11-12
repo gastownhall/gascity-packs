@@ -39,7 +39,17 @@ pane as a root of its own, but the token scan here would end every pane
 of a server founded from inside the session. The fence covers only what
 still runs under a server: a process detached from a pane (re-parented to
 init) is not fenced, and work an agent runs under tmux is, so it outlives
-the session's stop.
+the session's stop, but not its next start. The fence is this pack's
+kills' alone: as the pack declares ``fs.host`` (with locality ``local``
+and v2-ready), gc scans the process table for it, and before it starts a
+session again gc terminates every untracked root carrying the session's
+``GC_SESSION_ID``, with its process group. gc reads each pane of a tmux
+server founded from inside a box as such a root (its parent is a tmux
+server), and fences only the tmux process itself, so those panes, the
+shells, editors and ``tmux new -d`` work in them, end at the session's
+next start. gc's orphan sweep and its drain-ack escalation (which takes
+only a root whose parent is tmux: for this pack, such a pane, never a box
+under its holder) apply to them too.
 """
 
 from __future__ import annotations
