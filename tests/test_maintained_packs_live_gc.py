@@ -50,6 +50,7 @@ from gc_live_city import (
 MAINTAINED_PACKS = (
     "oversight-rig",
     "pr-pipeline",
+    "runtime-herdr-core",
     "slack-channel",
     "slack-full",
     "slack-mini",
@@ -63,6 +64,9 @@ MAINTAINED_PACKS = (
 EXPECTED_DOCTOR_DELTA: dict[str, frozenset[str]] = {
     "oversight-rig": frozenset(),
     "pr-pipeline": frozenset(),
+    # Its checks are quiet in a city with no herdr-core sessions; `hc-binary`
+    # depends on the machine (see HOST_DEPENDENT).
+    "runtime-herdr-core": frozenset(),
     "slack-channel": frozenset(),
     # Both of these are the correct messages for a fresh install, and both come
     # from checks only `slack-full` ships. `binaries`: the pack ships its Slack
@@ -91,6 +95,12 @@ HOST_DEPENDENT: dict[str, frozenset[str]] = {
     # importing the pack -- a developer's laptop and a CI runner cannot both
     # satisfy one recorded value.
     "slack-full": frozenset({"slack-full:funnel"}),
+    # runtime-herdr-core/doctor/hc-binary looks for the pinned herdr-core under
+    # the password-database home, deliberately not $HOME, so the city's
+    # redirected HOME does not hide it. A fresh machine reports it missing
+    # (exit 2, naming `gc herdr-core install`); a developer machine where
+    # `gc herdr-core install` has run passes.
+    "runtime-herdr-core": frozenset({"runtime-herdr-core:hc-binary"}),
 }
 
 

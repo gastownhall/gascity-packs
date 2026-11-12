@@ -38,6 +38,7 @@ METHODS: Tuple[str, ...] = (
     "hello",
     "server.status",
     "server.stop",
+    "server.restart",
     "terminal.run",
     "terminal.get",
     "terminal.list",
@@ -134,8 +135,13 @@ class FakeHc:
         kill_grace_s: float = 0.05,
         kept_restart_s: float = KEPT_RESTART_S,
         base_env: Optional[Mapping[str, str]] = None,
+        next_version_file: Optional[str] = None,
     ) -> None:
+        """``next_version_file``: where ``hc server restart`` from another
+        build leaves that build's version, which the core runs after a
+        planned restart (a real core is replaced by the new binary)."""
         self.socket_path = socket_path
+        self._next_version_file = next_version_file
         self._version = version
         self._generation = generation
         self._core = {"id": uuid.uuid4().hex, "name": core_name}
@@ -426,7 +432,11 @@ class FakeHc:
         self._violations(self._guard.check_result(method, result))
         with self._lock:
             self.guarded_methods.add(method)
-        after = self._drop_connections if method == "server.stop" else None
+        after: Optional[Callable[[], None]] = None
+        if method == "server.stop":
+            after = self._drop_connections
+        elif method == "server.restart":
+            after = self._planned_restart
         if fault is not None:
             if fault.action == "drop":
                 self._await_exit(fault, result)
@@ -468,6 +478,7 @@ class FakeHc:
             "hello": self._hello,
             "server.status": self._server_status,
             "server.stop": self._server_stop,
+            "server.restart": self._server_restart,
             "terminal.run": self._run,
             "terminal.get": lambda p: self._lookup(p).record(),
             "terminal.list": self._list,
@@ -525,6 +536,19 @@ class FakeHc:
         self._close_listener()
         self.stopped.set()
         return {"stopped": True}
+
+    def _server_restart(self, params: Params) -> Dict[str, Any]:
+        return {"stopped": True}
+
+    def _planned_restart(self) -> None:
+        """hc's planned restart: programs and records survive, connections
+        drop, and the core comes back as the build that asked for it."""
+        version: Optional[str] = None
+        if self._next_version_file and os.path.exists(self._next_version_file):
+            with open(self._next_version_file, encoding="utf-8") as handle:
+                version = handle.read().strip() or None
+            os.unlink(self._next_version_file)
+        self.restart_core(version=version)
 
     def _run(self, params: Params) -> Dict[str, Any]:
         argv = list(params.get("argv") or [])

@@ -1,0 +1,26 @@
+{
+  "version": "0.1.19",
+  "generation": 1,
+  "min_version": "0.1.19",
+  "tested": ["0.1.19"],
+  "releases": "https://releases.herdr.dev/core",
+  "binary": "herdr-core",
+  "targets": {
+    "linux-x86_64": {
+      "asset": "herdr-core-linux-x86_64.tar.gz",
+      "sha256": "4adcfb423d52f24c5cc4a1e2cd2fcad1f62d28bb77876ac472c29082a3eaa424"
+    },
+    "linux-aarch64": {
+      "asset": "herdr-core-linux-aarch64.tar.gz",
+      "sha256": "f95c34fd7177ed58807d74fe4ee78bb3dc73eb37f21c69496064000a21abcb10"
+    },
+    "macos-aarch64": {
+      "asset": "herdr-core-macos-aarch64.tar.gz",
+      "sha256": "5338d900adadb6d273b9c8e97027247db3179ccffede10a1793358f16e08d683"
+    },
+    "macos-x86_64": {
+      "asset": "herdr-core-macos-x86_64.tar.gz",
+      "sha256": "2f95bedae2ca1bf9f9611d61066ef3ac211c62ca08282132d48e287b6da14d08"
+    }
+  }
+}

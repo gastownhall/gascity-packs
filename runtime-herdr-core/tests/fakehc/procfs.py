@@ -1,6 +1,7 @@
 """A fake ``/proc`` tree for process-table tests: ``stat``, ``cmdline`` and
-``environ`` per pid, and its main thread's ``children`` list when given,
-owned by the test's user."""
+``environ`` per pid, its main thread's ``children`` list, its ``exe`` link,
+``cgroup`` and socket fds when given, and ``net/unix``; owned by the test's
+user."""
 
 from __future__ import annotations
 
@@ -20,6 +21,9 @@ def add_proc(
     env: Optional[Mapping[str, str]] = None,
     children: Optional[Sequence[int]] = None,
     state: str = "S",
+    exe: Optional[str] = None,
+    cgroup: Optional[str] = None,
+    sockets: Sequence[int] = (),
 ) -> None:
     """Write pid's entries; ``start`` is the starttime field (stat field 22),
     ``children`` what ``task/<pid>/children`` lists (no such file when None,
@@ -37,6 +41,25 @@ def add_proc(
     (proc / "environ").write_bytes(b"".join(f"{k}={v}".encode() + b"\0" for k, v in env_items.items()))
     if children is not None:
         add_thread(root, pid, pid, children)
+    if exe is not None:
+        (proc / "exe").symlink_to(exe)
+    if cgroup is not None:
+        (proc / "cgroup").write_text(f"0::{cgroup}\n")
+    if sockets:
+        fd = proc / "fd"
+        fd.mkdir(exist_ok=True)
+        for index, inode in enumerate(sockets):
+            (fd / str(10 + index)).symlink_to(f"socket:[{inode}]")
+
+
+def add_unix_socket(root: Path, inode: int, path: str) -> None:
+    """List a bound Unix socket in ``net/unix``, as the kernel does."""
+    table = root / "net" / "unix"
+    table.parent.mkdir(parents=True, exist_ok=True)
+    if not table.exists():
+        table.write_text("Num       RefCount Protocol Flags    Type St Inode Path\n")
+    with table.open("a") as handle:
+        handle.write(f"0000000000000000: 00000002 00000000 00010000 0001 01 {inode} {path}\n")
 
 
 def add_thread(root: Path, pid: int, tid: int, children: Sequence[int]) -> None:
