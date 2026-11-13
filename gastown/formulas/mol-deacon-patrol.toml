@@ -274,7 +274,7 @@ closes that gap.
 - `B` = the most recent bead.updated_at across those beads (work signal)
 
 ```bash
-gc agents list --json --active | jq -r '.[] | .agent_id' | while read -r AGENT; do
+gc session list --state=active --json | jq -r '.sessions[] | (.agent_name // .alias // .session_name // .name // .id // empty)' | sort -u | while read -r AGENT; do
     ASSIGNED=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
     LATEST=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 \\
         | jq -r '[.[].updated_at] | max // ""')
