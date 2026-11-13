@@ -672,8 +672,10 @@ class FakeHc:
                     raise RpcFailure("status_mismatch", f"{terminal.address} is {word}; nothing was typed")
                 turn = terminal.turn
                 reported = terminal.reported
-                if not terminal.type_bytes(text.encode("utf-8") + b"\n"):
+                typed = text.encode("utf-8") + b"\n"
+                if not terminal.type_bytes(typed):
                     raise RpcFailure("finished", f"{terminal.address} has finished")
+                terminal.echo(typed)
                 terminal.inputs.append(text)
                 if reported and terminal.work_on_send:
                     terminal.set_status("working", kind=None, app=terminal.status["app"] if terminal.status else "", progress=None)

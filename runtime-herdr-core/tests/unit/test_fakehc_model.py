@@ -221,6 +221,18 @@ def test_send_refuses_a_blocked_program_and_reports_started(fake_hc: FakeHc, sho
     assert fake_hc.input_log(address) == ["a", "c", "d"]
 
 
+def test_sent_text_shows_on_the_screen_once_as_a_terminal_echoes_it(fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc types into a PTY whose line discipline echoes the text, so it shows
+    # on the screen even for a program that never reads its input.
+    address = str(run(fake_hc, short_tmp, "exec sleep 30")["address"])
+    raw_call(fake_hc.socket_path, "terminal.send", {"terminal": address, "text": "typed-once"})
+    screen = str(raw_call(fake_hc.socket_path, "terminal.read", {"terminal": address})["result"]["text"])
+    assert screen.count("typed-once") == 1
+    refused = raw_call(fake_hc.socket_path, "terminal.send", {"terminal": address, "text": "never", "if": "working"})
+    assert refused["error"]["data"]["kind"] == "status_mismatch"
+    assert "never" not in str(raw_call(fake_hc.socket_path, "terminal.read", {"terminal": address})["result"]["text"])
+
+
 def test_status_changes_advance_the_turn_when_leaving_working(fake_hc: FakeHc, short_tmp: Path) -> None:
     address = str(run(fake_hc, short_tmp, "exec cat")["address"])
     fake_hc.set_status(address, "working", app="claude")
