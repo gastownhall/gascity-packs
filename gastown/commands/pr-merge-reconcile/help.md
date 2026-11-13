@@ -58,3 +58,37 @@ revalidation. Stored `mr_merged` evidence that GitHub reports as open, a
 closed-unmerged PR, a merged PR whose head changed after validation, an
 ambiguous legacy closed record, or contradictory metadata remains blocked and
 is escalated.
+
+## Publish-order locks and auto-merge arming
+
+An unchanged open PR whose bead carries `metadata.publish_after=<bead-id>` is
+a publish-order lock: while the blocker bead is not `closed`, the record stays
+pending, the run stamps `publish_order_hold=true` and
+`publish_order_blocker_state=<status>`, and auto-merge is never armed. A
+blocker that cannot be read (missing bead, malformed id, or a self-reference)
+also holds, is stamped `pr_reconcile_error`, and is escalated to mayor once
+per hold state. When the blocker closes, the next run releases the hold
+(unsetting both stamps) and the PR becomes armable again.
+
+For an unchanged open PR with no active lock, the reconciler makes the
+remote auto-merge state match the record, and every decision leaves a bead
+record:
+
+- `mergeable` and not already armed: the reconciler arms auto-merge
+  (`gh pr merge --auto`, or the `enablePullRequestAutoMerge` GraphQL mutation
+  when only a token is available; method from `GASTOWN_PR_AUTO_MERGE_METHOD`,
+  default `squash`) and stamps `auto_merge_armed=by_reconcile`,
+  `auto_merge_armed_by=<session>`, `auto_merge_armed_at`.
+- already armed remotely with no record: it stamps
+  `auto_merge_armed=observed_external` with the observing session, so a hand
+  re-arm by any actor is attributed within one patrol pass.
+- `mergeable=false` (conflicting, e.g. behind main): it stamps
+  `pr_state=merge_conflicting` with `pr_reconcile_error` and escalates to
+  mayor once per transition; the branch owner must re-publish and revalidate.
+- mergeability not yet computed: it keeps the record pending quietly.
+
+Arming failures (`arm_failed`, invalid method) are retryable errors on the
+bead; the pending marker survives. Manual re-arms remain possible but leave
+no GitHub-side attribution beyond the shared token, so actors re-arming by
+hand are expected to record it on the bead or in mail; the reconciler closes
+the attribution gap for anything it observes.
