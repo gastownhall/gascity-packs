@@ -100,6 +100,9 @@ top-level stages only as anchored extensions:
 
 - `build-base` is internal and not user-runnable.
 - `build-basic` is cataloged and extends `build-base`.
+- The required-stage scope contract targets Gas City v1.5.0 or newer, including
+  upstream scope close-ownership, logical retry finalization, and post-settlement
+  teardown behavior.
 - `build-from-*-base` formulas are internal continuation suffix contracts. Each
   one validates its prerequisite inputs, performs one stage or handoff, and
   delegates to the next suffix through an inherited handoff step.
@@ -119,6 +122,14 @@ top-level stages only as anchored extensions:
   review entrypoints and adapters.
 - Producer-stage artifact validation is explicit graph/check behavior, not
   prompt-only guidance.
+- Full builds and continuation suffixes scope every required stage under
+  `build-body` with `gc.on_fail = "abort_scope"`. Terminal logical failure stops
+  the build after existing bounded repair attempts; intermediate attempts do
+  not abort the build before their own check loop exhausts.
+- Whole-step overrides preserve this metadata, and expansion callers propagate
+  the optional `failure_scope`. Standalone expansions remain unscoped by default.
+- Required `finalize` and `publish` stages are not teardown; native workflow
+  settlement and explicitly declared teardown retain their cleanup behavior.
 - Decomposition is required before implementation. Implementations consume a
   convoy, not an unstructured prompt, unless the decomposition intentionally
   produces exactly one work item.
@@ -848,6 +859,7 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-014 | Coverage matrix consistency | YAML coverage is authoritative, markdown coverage mirrors IDs/statuses, and all non-covered statuses include rationale. | this ledger; future schema/gate tests |
 | GC-METH-015 | Neutral artifact metadata | Artifacts record workflow, methodology, and producer metadata without owner or role fields. | this ledger; future schema/gate tests |
 | GC-METH-016 | Nested continuation suffixes | `build-from-requirements-base -> build-from-plan-base -> build-from-decompose-base -> build-from-convoy-base -> build-from-review-base` form a nested suffix chain. Each suffix validates its prerequisite, performs its owned work, and hands off to the next suffix. Cataloged `build-from-*` wrappers expose the default Gas City behavior. | `formulas/build-from-*-base.formula.toml`; `formulas/build-from-*.formula.toml`; `tests/test_formula_assets.py::FormulaAssetTests::test_build_continuation_bases_form_nested_suffix_chain`; `tests/test_formula_assets.py::FormulaAssetTests::test_default_continuation_entrypoints_extend_suffix_bases` |
+| GC-METH-017 | Required-stage failure policy | Full builds and continuation suffixes abort their native `build-body` scope after a required stage exhausts its existing retries. Whole-step overrides and expanded setup, logical checks, and finalizers retain the policy; standalone expansions remain unscoped. | `tests/test_build_failure_policy.py`; `../tests/test_build_failure_policy_live_gc.py` |
 
 ## Deferred Follow-Up Requirements
 

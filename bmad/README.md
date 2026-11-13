@@ -110,6 +110,13 @@ review run by `bmad.readiness-reviewer`, which records the readiness report
 path and outcome on the workflow root bead before implementation begins. No
 base anchor is renamed, skipped, or reordered.
 
+All required build stages, including implementation readiness belong to the native
+`build-body` scope. A terminal stage failure stops the remaining build after the
+stage's existing repair attempts are exhausted. `finalize` and `publish` are
+required stages, not failure cleanup. Review expansions receive the enclosing
+scope from build callers and remain unscoped when used standalone; see the
+[base failure policy](../gascity/README.md#required-stage-failure-policy).
+
 The native stage formulas extend the matching base methodology contracts:
 `bmad-planning` (`planning-base`), `bmad-decomposition`
 (`decomposition-base`), `bmad-implementation` (`implement`), `bmad-review`
