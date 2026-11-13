@@ -1243,10 +1243,8 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
         "$city/.gc/worktrees/demo/polecats"
     write_cleanup_gc_stub "$bin"
 
-    # A stale merged_sha can independently name an unrelated commit that is
-    # genuinely present on the target. That corroborates terminal state but
-    # proves no relation from the pre-rebase artifact source. Local cleanup is
-    # safe only because the exact remote source ref remains the recovery copy.
+    # A retained source ref and an unrelated landed merged_sha are insufficient:
+    # direct cleanup also requires the artifact's source patches on the target.
     artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-unrelated"
     git -C "$rig" worktree add -q --detach "$artifact" origin/main
     printf 'artifact source\n' >"$artifact/artifact-source"
@@ -1267,11 +1265,16 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
         "$bead_json" ac-unrelated closed merged \
         "$source_sha" "$artifact" "" polecat/ac-unrelated main "$target_sha"
     : >"$calls"
+    set +e
     GC_STUB_BEAD_JSON="$bead_json" GC_STUB_CALLS="$calls" \
         GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
         PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" ac-unrelated
-    [[ ! -e "$artifact" ]] ||
-        fail "cleanup did not retire stale-merged fixture's local artifact"
+    status=$?
+    set -e
+    [[ "$status" -ne 0 && -d "$artifact" ]] ||
+        fail "cleanup accepted unrelated source and integration histories"
+    grep -qF 'artifact_cleanup_state=blocked' "$calls" ||
+        fail "unlanded source patches did not record blocked state"
     remote_record=$(git -C "$rig" ls-remote --exit-code --heads origin \
         refs/heads/polecat/ac-unrelated)
     [[ "$remote_record" == \
