@@ -389,15 +389,45 @@ def current_session_id() -> str:
 # --- inbound-event lookup -------------------------------------------------
 
 # Windows tried in order when scanning for a session's latest inbound.
-# The events endpoint returns oldest-first with no descending order, and
-# `limit` keeps the OLDEST slice of the window — so a wide window on a
-# busy city truncates away exactly the newest events we want. Starting
-# narrow makes each scan a newest-slice view: the common case (reply
-# soon after an inbound) resolves in the first cheap query, and the
-# wider fallbacks cover sessions whose latest inbound predates the
-# narrow window (e.g. an agent idle overnight) without paying the
-# truncation risk up front.
+# Older gc servers return events oldest-first and `limit` keeps the
+# OLDEST slice of the window — so a wide window on a busy city truncates
+# away exactly the newest events we want. Starting narrow makes each scan
+# a newest-slice view: the common case (reply soon after an inbound)
+# resolves in the first cheap query, and the wider fallbacks cover
+# sessions whose latest inbound predates the narrow window (e.g. an
+# agent idle overnight) without paying the truncation risk up front.
+# Current gc returns seq DESC (newest first); the scan picks the newest
+# match by seq/ts, so it is correct under either order.
 _INBOUND_SCAN_WINDOWS = ("10m", "2h", "48h")
+
+
+def _session_agent_names(session_id: str) -> set[str]:
+    """Agent identities whose agent-scoped inbound events belong to session_id.
+
+    A durable agent binding routes to the seat, not to one session, so gc
+    stamps its extmsg.inbound events with ``target_agent`` and an empty
+    ``target_session``. Only the calling session may use its own
+    GC_ALIAS/GC_AGENT; any other session id is resolved through the
+    session list so it never borrows the caller's identity.
+    """
+    if session_id == os.environ.get("GC_SESSION_ID", "").strip():
+        names = {
+            (os.environ.get(key) or "").strip() for key in ("GC_ALIAS", "GC_AGENT")
+        } - {""}
+        if names:
+            return names
+    for entry in gc_get("/sessions").get("items", []):
+        if entry.get("id") == session_id:
+            return {
+                (entry.get(key) or "").strip() for key in ("alias", "agent_name")
+            } - {""}
+    return set()
+
+
+def _event_recency_key(event: dict[str, Any]) -> tuple[int, str]:
+    """Order events by seq (authoritative), then by ts, never by list position."""
+    seq = event.get("seq")
+    return (seq if isinstance(seq, int) else -1, str(event.get("ts") or ""))
 
 
 def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
@@ -407,6 +437,13 @@ def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
     over escalating `since` windows (see _INBOUND_SCAN_WINDOWS).
     Returns the parsed event dict, or None if no window matched.
 
+    An event targets this session when its ``target_session`` is
+    session_id, or when it is agent-scoped (empty ``target_session``) and
+    its ``target_agent`` is this session's seat (gp-x4jak). Without the
+    agent-scoped match, a seat bound by a durable agent binding only ever
+    matched bind-room fanout events, so reply-current answered its own
+    channel's messages into the shared room.
+
     Without the time bound, `gc slack reply-current --thread-current`
     bails with 'no inbound event...' on busy cities (oldest-first +
     limit returns only ancient history) and the agent falls back to a
@@ -415,6 +452,7 @@ def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
     (total > items), the scan was incomplete and a warning is emitted
     so truncation is never silent.
     """
+    agent_names: set[str] | None = None
     for window in _INBOUND_SCAN_WINDOWS:
         url = (
             f"{gc_api_base()}/v0/city/{gc_city_name()}/events"
@@ -426,12 +464,28 @@ def find_latest_inbound_for_session(session_id: str) -> dict[str, Any] | None:
         if total > len(raw):
             print(
                 f"warning: inbound event scan ({window} window) truncated to "
-                f"{len(raw)}/{total} oldest events; the latest inbound may be missed",
+                f"{len(raw)}/{total} events; the latest inbound may be missed",
                 file=sys.stderr,
             )
-        matches = [e for e in raw if (e.get("payload") or {}).get("target_session") == session_id]
+        matches = []
+        for event in raw:
+            payload = event.get("payload") or {}
+            target_session = (payload.get("target_session") or "").strip()
+            if target_session:
+                if target_session == session_id:
+                    matches.append(event)
+                continue
+            target_agent = (payload.get("target_agent") or "").strip()
+            if not target_agent:
+                continue
+            if agent_names is None:
+                agent_names = _session_agent_names(session_id)
+            if target_agent in agent_names:
+                matches.append(event)
         if matches:
-            return matches[-1]  # events are in chronological order
+            if all(isinstance(e.get("seq"), int) or e.get("ts") for e in matches):
+                return max(matches, key=_event_recency_key)
+            return matches[-1]  # no ordering fields: trust oldest-first order
     return None
 
 
