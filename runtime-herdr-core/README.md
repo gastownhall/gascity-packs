@@ -11,14 +11,28 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
 `city-scoped`, `conformance-faults`, `server-lifecycle`, `carrier.ops`,
-`idle-boundary` and `input-outcome` (locality `local`; `fs.host` is deferred,
-see [Host work](#how-sessions-run)), and passes
+`idle-boundary`, `input-outcome` and `fs.host` (locality `local`; see
+[Host work](#how-sessions-run)), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
 pinned herdr-core with `gc herdr-core install` (see
 [Install and commands](#install-and-commands)); `gc doctor` runs the
 pack's [checks](#doctor). A `herdr-core` or `hc` on `PATH` is never used.
+
+The pack needs a gc built from a gascity commit that contains `a07d754c75`
+(gastownhall/gascity#9129), which no gc release does yet:
+`gc version --long` names the commit a gc was built from, and in a gascity
+clone `git merge-base --is-ancestor a07d754c75 <commit>` exits 0 when that
+commit contains it. Never run the pack on a gc built from `5e24c6e2b9`
+(gastownhall/gascity#9032) up to `a07d754c75`. Such a gc honors `fs.host`
+without that commit's tmux fence, so when a session starts again it ends
+every pane of a tmux server founded inside the session's box
+(`tmux new -d`, or the user's default server when none was running, with
+the user's own shells and editors), and drain-ack escalation can take such
+a pane for a wedged session's agent and end it. The pack cannot refuse such
+a gc: its handshake is fixed, gc passes its ops no version, and nothing
+enforces a gc floor.
 
 The runtime is named `herdr-core`, never `herdr`: `herdr` is a gc builtin,
 and declaring it is a composition error (RUNTIME-SEL-007).
@@ -190,24 +204,66 @@ checked against the app yet, so the sessions may not appear there.
   city, in the city's pack state) gives in-agent `hc` the city core's exact
   tuple and refuses while the core is down instead of starting a second
   one.
-- **Host work (`fs.host`, not declared yet).** Boxes run on gc's host as
-  gc's user with gc's view of the filesystem, which is what `fs.host`
-  says, but the pack does not declare it yet: so gc sends the full start
-  config and `start` stages the work directory, runs `pre_start` (fatal)
-  and then `session_setup` and the setup script itself, as below. Under
-  `fs.host` gc does that host work on the host and leaves those fields out
-  of the start config; `start` already does exactly what its config
-  carries (an omitted field is not staged or run), and gc would then run
-  `session_setup` after `start` returns, so after the first turn (`nudge`)
-  rather than before it. The declaration is deferred until gc fences
-  tmux-parented processes in its exec provider's process-table scan (a
-  gascity follow-up to its exec process-table scanner): `fs.host` turns
-  that scan on for this pack, and before a session starts again gc ends
-  every untracked root carrying the session's `GC_SESSION_ID`, with its
-  process group. It reads each pane of a tmux server founded inside a box
-  as such a root (a tmux server copies its founder's environment; one
-  founded by `tmux new -d` with no server running is the user's default
-  server), so every pane of it would end at the session's next start. `observe` reports
+- **Host work (`fs.host`).** It needs a gc that contains
+  gastownhall/gascity#9129 (`a07d754c75`): a gc built from
+  gastownhall/gascity#9032 (`5e24c6e2b9`) up to it honors `fs.host`
+  without the tmux fence below, and ends the panes of a tmux server
+  founded inside a box when the session starts again (see
+  [Status](#status-runtime-ops-in-not-released)). Boxes run on gc's host
+  as gc's user with gc's view of the filesystem, and the pack declares
+  `fs.host` (with locality `local`, which gc requires for it). Into a name
+  that holds no live box, gc then
+  stages the work directory (`pack_overlay_dirs` with its
+  `per-provider/<provider>/` slots, `overlay_dir`, `copy_files`, merging
+  its hook and settings files), runs `pre_start` (fatal) before `start`
+  and `session_setup` and the setup script (warnings) after it, on the
+  host, and leaves those fields out of the start config. gc gives each of
+  those commands the city's `[session] setup_timeout` (10 s unless set;
+  once `setup_max_timeout` is set, it bounds only how long a command stays
+  silent), where `start` gives each up to 30 s, so raise it for a
+  `pre_start` that needs longer. `start` does
+  exactly what its config carries (an omitted field is not staged or
+  run), so a gc older than `fs.host` itself (gastownhall/gascity#9023),
+  or one whose cached handshake predates the declaration, still sends
+  them and `start` does that work as below; so
+  does a current gc when it cannot read whether a live box holds the name
+  (`observe` fails or answers unknown), so the pack's own staging stays
+  load-bearing. gc also materializes skills and MCP for agents on this
+  runtime (at the scope root, or in a worktree through a `pre_start`
+  entry it runs on the host), where without `fs.host` it refuses an
+  agent with effective MCP.
+  `session_setup` gc runs comes after `start` returns, so after the first
+  turn (`nudge`); gc runs it without `GC_TMUX_SOCKET`, so keep commands
+  that drive tmux out of `session_setup` for this runtime. gc also reads
+  the agent's transcripts on its own host for turn tracking (the agent
+  gets gc's `HOME`, see below), and runs its process-table cleanup for the
+  pack's sessions: before a session starts it ends its stopped
+  incarnation's leftovers, the orphan sweep ends the leftovers of a
+  closed session or of one stopped with no live box under its name, and
+  drain-ack escalation looks for a wedged session's processes. A leftover
+  is a process carrying the session's `GC_SESSION_ID` and `GC_CITY_PATH`
+  that no box `inventory` lists carries. hc's core is started under an
+  allowlist environment with no session's identity, so it is never one.
+  Since gastownhall/gascity#9129, that cleanup never treats a tmux server
+  or client carrying a `GC_SESSION_ID`, or anything in its panes, as a
+  session's process for this pack (gc drops that fence only for a pack
+  that declares `proc.exec` without `carrier.ops`, whose agent it reads as
+  running in its box's tmux; this one declares `carrier.ops` and never
+  `proc.exec`): a tmux server founded inside
+  a box (`tmux new -d`, or the user's default server when none was
+  running, which copies the box's environment) keeps every pane. What
+  gc's docs leave over: a process that leaves such a pane and is adopted
+  by init (or the user's subreaper) is no longer under tmux and counts as
+  a leftover, so once a box has founded the user's default tmux server,
+  something started there later can be ended as the session's leftover
+  once it leaves its pane; a tmux session an agent starts inside a box is
+  never cleaned up by gc; tmux is recognized by its process name (`tmux`,
+  or the title a renamed tmux binary of up to 14 characters takes on
+  Linux; on macOS only `tmux`), so a tmux under another name is not
+  fenced; in a city that also runs ACP agents the fence covers their
+  processes too; and drain-ack escalation finds nothing to end for this
+  pack's sessions, so a wedged session's slot stays occupied until its
+  box exits. `observe` reports
   `agent_pid`, a host pid: the agent's when it is asked about process
   names and finds one, else the box's program. The agent gets gc's `HOME`
   (unless the session environment sets it), so the transcripts gc reads
@@ -268,8 +324,8 @@ checked against the app yet, so the sessions may not appear there.
   `.agents/hooks.json`, `.github/hooks/gascity.json`) and a Kiro
   `AGENTS.md` already in the work directory are kept, with a warning. Only
   `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
-  and `install_agent_hooks`' extra slots are not (gaps until the pack
-  declares `fs.host` and gc stages on the host itself). Staging and `copy-to` write nothing outside
+  and `install_agent_hooks`' extra slots are not (gc stages those when it
+  does the host work under `fs.host`). Staging and `copy-to` write nothing outside
   the work directory: nothing is written through a symlink below it (one
   where a file or directory would go fails the staging or the copy; gc
   writes through it), and a `copy_files` destination that leaves the work
@@ -303,8 +359,9 @@ checked against the app yet, so the sessions may not appear there.
   `GC_INSTANCE_TOKEN` whatever the box's state, every process still the one
   captured (same start time) sent TERM then KILL. Every process carrying
   the token dies, one the agent meant to outlive it too. That is wider
-  than gc's own orphan sweep, which ends only orphan roots of sessions gc
-  no longer runs (and does not run for this pack): a shared per-user
+  than gc's own orphan sweep, which for this pack ends only leftovers
+  adopted by init or the user's subreaper, of sessions that are closed or
+  stopped with no live box under their name: a shared per-user
   daemon first started from inside a box carries its token and dies with
   it, such as a Bazel or Gradle server, an ssh `ControlMaster` or a
   `gpg-agent`; the next use starts it again. One started during the kill
@@ -319,11 +376,15 @@ checked against the app yet, so the sessions may not appear there.
   user's own shells and editors, or a whole tmux-runtime city when a gc
   command run in the box founded it. A herdr-core box never runs inside
   tmux; a tmux server the box itself runs under (hc's core started from a
-  pane) fences none of the box's own tree. As in gc, tmux is known by its
-  exact names. Fencing everything under a server is this pack's own
-  choice: gc fences the tmux process alone and reads each pane as a root
-  of its own, but the token scan would end every pane of a server founded
-  from a box. The fence covers only what is still under a server: a
+  pane) fences none of the box's own tree. The pack's fence differs from
+  gc's in two ways. gc's covers a tmux server or client carrying a
+  `GC_SESSION_ID` and everything under it, and on Linux also recognizes a
+  renamed tmux (a name of up to 14 characters) by its title; the pack's
+  covers any tmux server or client, with or without a session id, but
+  knows tmux only by the exact names above. So on Linux such a renamed
+  tmux founded from a box is spared by gc's cleanup yet still dies with
+  the box's stop, `kill-object` or `server-stop`. The
+  fence covers only what is still under a server: a
   process that detaches from a pane of a server founded from a box (an
   `ssh -fN`, a `nohup` job whose shell exited, an agent such as `ssh-agent`
   started there) is re-parented out of it, still carries the token and
