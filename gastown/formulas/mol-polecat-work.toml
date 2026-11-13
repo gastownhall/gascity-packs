@@ -671,6 +671,39 @@ handoff contract is broken and the bead is permanently stranded as
 CONVOY_STATUS=$(gc convoy status {{convoy_id}} --json)
 WORK_BEAD_ID=$(printf '%s' "$CONVOY_STATUS" | jq -r 'if (.children | length) == 1 then .children[0].id else empty end')
 BASE_REF=$(gc bd show "$WORK_BEAD_ID" --json | jq -r '.[0].metadata.base_ref // empty')
+# An EMPTY metadata read is a store fault, not a zero-work verdict. Without
+# this guard a flaky read that returns empty stdout with exit 0 (observed on
+# gk-muxh 2026-10-31 during Dolt proxy flapping) leaves $BASE_REF empty, and
+# the content gate's `git rev-list --count ..HEAD` then prints 0 with exit 0 —
+# a false routable `no_commits` halt that returns a bead WITH pushed work to
+# the pool, where re-dispatch can clobber it (gk-cqc class). Unverifiable base
+# takes the retryable `content_gate_error` path; `no_commits` must only ever
+# be stamped for a measured, real zero. Same rule for a convoy blip: an
+# unreadable WORK_BEAD_ID makes every read downstream silently empty.
+if [ -z "$WORK_BEAD_ID" ]; then
+    echo "BRANCH SHAPE GATE: convoy read did not yield exactly one work bead (transient store flake?). No bead was touched; retry submit-and-exit after the store recovers."
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1
+    gc runtime drain-ack
+    exit 1
+fi
+if [ -z "$BASE_REF" ] || ! git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
+    echo "BRANCH SHAPE GATE: metadata.base_ref unreadable or unverifiable ('$BASE_REF') — likely a transient store read flake, NOT evidence of zero work."
+    echo "Stamping the RETRYABLE content_gate_error (never no_commits) and releasing the claim. Do NOT re-dispatch or substitute a guessed base; verify the worktree directly before any re-run:"
+    echo "  git -C <worktree> log --oneline <recorded-or-known-base>..HEAD && git status"
+    gc bd update "$WORK_BEAD_ID" --set-metadata halt_reason=content_gate_error \
+      --append-notes "Halted at submit (content_gate_error): metadata.base_ref read empty or unverifiable during a store fault; work state UNKNOWN, not absent. Verify commits on the branch before re-dispatch." \
+      || echo "WARNING: could not stamp halt_reason (store still flaky); the retry read is the safety net."
+    for ESCALATE_TARGET in mayor "${GC_RIG:+$GC_RIG/}{{binding_prefix}}witness"; do
+      gc session nudge "$ESCALATE_TARGET" "POLECAT HANDOFF HALT (content_gate_error): $WORK_BEAD_ID — base_ref unreadable during store flap; branch NOT pushed, bead kept for verification. Do not re-dispatch blind." \
+        || echo "WARNING: could not nudge $ESCALATE_TARGET about $WORK_BEAD_ID; escalate by hand."
+    done
+    STEP_BEAD_ID=$(gc hook current --id-only) || exit 1  # drain-ack gives back every claim this session still holds, so close this step first
+    STEP_BEAD=$(gc bd show "$STEP_BEAD_ID" --json) || exit 1
+    printf '%s' "$STEP_BEAD" | jq -e '(if type == "array" then .[0] else . end) | .status == "in_progress" and ((.metadata["gc.step_ref"] // "") | endswith(".submit-and-exit"))' >/dev/null || { echo "submit-and-exit: current claim $STEP_BEAD_ID is not this in-progress step; not acknowledging drain" >&2; exit 1; }
+    gc bd update "$STEP_BEAD_ID" --set-metadata gc.outcome=fail --set-metadata gc.failure_class=hard --set-metadata gc.failure_reason=content_gate_error --status=closed || exit 1
+    gc runtime drain-ack
+    exit 1
+fi
 CURRENT_BRANCH=$(git branch --show-current)
 EXPECTED_BRANCH="polecat/$WORK_BEAD_ID"
 if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
@@ -750,9 +783,12 @@ backstop for net-zero work. Do not "fix" only one side of the pair.
 already takes `$EXPECTED_BRANCH` from, so it is in scope here for exactly the
 same reason. Counting against a bare `origin/{{base_branch}}` instead would
 report a local-only base as an *unmeasurable* count and halt a perfectly good
-branch under `content_gate_error`. An unresolved `$BASE_REF` still lands in
-that same arm, so reading the resolved base fixes the false halt without
-opening the gate.
+branch under `content_gate_error`. An empty or unresolved `$BASE_REF` — the
+signature of a transient store read flake, which otherwise makes `..HEAD`
+count a real zero — is refused by the branch-shape gate's `rev-parse --verify`
+guard above and re-checked immediately before the count here; either way it
+lands in the retryable `content_gate_error` arm, NEVER in `no_commits`, which
+is reserved for a count measured against a base proven to resolve.
 
 `git rev-list` failing is not the same answer as "zero commits", and neither is
 a licence to hand off: a count that is not a plain number halts under its own
@@ -761,12 +797,21 @@ is why the count is matched with `case` instead of `[ "$COMMITS_AHEAD" -eq 0 ]`,
 which evaluates false — and so fails open — on an empty value.
 
 ```bash
-COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)
 HALT_REASON=""
-case "$COMMITS_AHEAD" in
-    ''|*[!0-9]*) HALT_REASON=content_gate_error ;;
-    0) HALT_REASON=no_commits ;;
-esac
+# Re-verify immediately before counting: an empty or unverifiable base makes
+# `rev-list --count ..HEAD` print a genuine 0 with exit 0, which no numeric
+# guard can tell apart from "zero commits". `no_commits` may only be stamped
+# for a count measured against a base proven to resolve, right here.
+if [ -z "$BASE_REF" ] || ! git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null; then
+    HALT_REASON=content_gate_error
+    COMMITS_AHEAD=""
+else
+    COMMITS_AHEAD=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null)
+    case "$COMMITS_AHEAD" in
+        ''|*[!0-9]*) HALT_REASON=content_gate_error ;;
+        0) HALT_REASON=no_commits ;;
+    esac
+fi
 if [ -n "$HALT_REASON" ]; then
     echo "BRANCH CONTENT GATE FAILED ($HALT_REASON)"
     echo "  branch:  $EXPECTED_BRANCH"
