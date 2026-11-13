@@ -29,17 +29,23 @@ setup only. Do not edit source files in the launcher checkout.
 3. Validate context path {{context_path}}, files ownership, and verification
    policy for the resolved source anchor.
 4. Create or reuse a deterministic git worktree at
-   `$(pwd)/worktrees/<source-anchor-id>`, based on the up-to-date remote
-   default branch — never the launcher's local `HEAD`, which may be behind
-   `origin`. If the path is missing:
-   - Resolve the remote default branch (do not hardcode `main`). Read the
-     local ref first, and only touch the network if it is missing:
+   `$(pwd)/worktrees/<source-anchor-id>`, based on the up-to-date base
+   branch — never the launcher's local `HEAD`, which may be behind `origin`.
+   The base is base_branch `{{base_branch}}` when it is set, otherwise the
+   remote default branch. If the path is missing:
+   - Resolve the base branch. When base_branch is empty, resolve the remote
+     default branch (do not hardcode `main`): read the local ref first, and
+     only touch the network if it is missing:
 
      ```sh
-     DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
-     if [ -z "$DEFAULT_BRANCH" ]; then
-       git remote set-head origin --auto >/dev/null 2>&1 || true
+     BASE_BRANCH="{{base_branch}}"
+     if [ -z "$BASE_BRANCH" ]; then
        DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+       if [ -z "$DEFAULT_BRANCH" ]; then
+         git remote set-head origin --auto >/dev/null 2>&1 || true
+         DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+       fi
+       BASE_BRANCH=$DEFAULT_BRANCH
      fi
      ```
 
@@ -50,11 +56,14 @@ setup only. Do not edit source files in the launcher checkout.
      defensive. The fetch on the next line still guarantees the base is
      current, so a stale ref costs nothing.
 
-     If it is still empty, fail closed — do not fall back to local `HEAD`.
+     If `BASE_BRANCH` is still empty, fail closed — do not fall back to local
+     `HEAD`.
    - Fetch it so the base is current:
-     `git fetch --prune origin "$DEFAULT_BRANCH"`.
+     `git fetch --prune origin "$BASE_BRANCH"`. If base_branch was set and
+     origin has no such branch, fail closed; never substitute the remote
+     default branch for an explicit base.
    - Create the worktree detached at the freshly fetched tip:
-     `git worktree add "$WORKTREE" --detach "origin/$DEFAULT_BRANCH"`.
+     `git worktree add "$WORKTREE" --detach "origin/$BASE_BRANCH"`.
    If the path exists but is not the worktree for this repository, fail closed.
 5. Persist the absolute path on the source anchor with
    `gc bd update <source-anchor-id> --set-metadata work_dir=<absolute worktree path>`.

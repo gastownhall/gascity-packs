@@ -25,7 +25,9 @@ Requirements:
 - reject legacy `issue`, `bead_id`, or user-supplied `convoy_id` inputs
 - validate context_path {{context_path}} with `{{pack_root}}/assets/scripts/validate_context_bundle.py` when set
 - reject drain_policy {{drain_policy}} values other than `separate` or `same-session`
-- inspect the convoy target branch, defaulting to the repo default branch
+- resolve the base branch: base_branch {{base_branch}} when set, otherwise the
+  repo default branch; when base_branch is set, verify origin has it with
+  `git ls-remote --exit-code --heads origin <base_branch>` and fail if not
 - write a run-status artifact if summary_path {{summary_path}} or artifact root is provided
 - record push {{push}} and open_pr {{open_pr}}
 

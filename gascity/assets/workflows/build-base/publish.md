@@ -21,3 +21,7 @@ For disabled publishing, use `gc.build.publish_status=noop`,
 
 Close this step only after the publish action or explicit no-op is recorded on
 both the workflow root and the publish step.
+
+PR base: when base_branch `{{base_branch}}` is set, every PR targets it and the
+pushed branch must descend from `origin/<base_branch>`; when it is empty, target
+the repository default branch. Never retarget an explicit base_branch.
