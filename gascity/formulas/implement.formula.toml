@@ -52,7 +52,7 @@ default = "false"
 [[steps]]
 id = "prepare"
 title = "Validate implementation convoy"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/implement/prepare.md"
 
 [[steps]]
@@ -60,7 +60,7 @@ id = "drain-separate"
 title = "Drain implementation convoy into separate sessions"
 needs = ["prepare"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/implement/drain-separate.md"
 
 [steps.drain]
@@ -73,7 +73,7 @@ id = "drain-same-session"
 title = "Drain implementation convoy in one shared session"
 needs = ["prepare"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.run_target" = "{{implementation_target}}" }
 description_file = "../assets/workflows/implement/drain-same-session.md"
 
 [steps.drain]
@@ -86,9 +86,16 @@ member_access = "exclusive"
 single_lane = true
 
 [[steps]]
+id = "drain-scope"
+title = "Implementation drain scope"
+needs = ["prepare", "drain-separate", "drain-same-session"]
+description_file = "../assets/workflows/implement/drain-scope.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "implement-drain", "gc.scope_role" = "body" }
+
+[[steps]]
 id = "wait-for-drain"
 title = "Wait for drain completion"
-needs = ["drain-separate", "drain-same-session"]
+needs = ["drain-separate", "drain-same-session", "drain-scope"]
 metadata = { "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/implement/wait-for-drain.md"
 
