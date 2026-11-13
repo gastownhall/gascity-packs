@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An agent woken by a mention in a room it is not rostered in can now
+  answer.** When a human @-mentions a directory agent whose bot is in the
+  channel but whose room entry is stale, the live-membership overlay wakes
+  the agent through its `dm_bindings` session. `reply-current` then refused
+  the reply, because that session has no room binding, so the agent looked
+  like it was ignoring the mention. The adapter now marks those targets and
+  their turn records `roster_drift_overlay`, and the plain room reply accepts
+  the agent's dm-bound session for a marked turn. A room binding still wins
+  when one exists, an unmarked turn is refused as before, and `delegate`,
+  peer results and synthesis still require a room binding.
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and

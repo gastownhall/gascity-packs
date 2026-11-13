@@ -763,6 +763,15 @@ def parse_current_turn(data: dict[str, Any]) -> dict[str, Any]:
         raise OutboundError("current_turn turn_ref must be a string")
     if turn_ref and _TURN_REF_RE.fullmatch(turn_ref) is None:
         raise OutboundError(f"current_turn turn_ref invalid: {turn_ref!r}")
+    # ``roster_drift_overlay`` is additive like ``owner_app_id``: Go stamps it
+    # only on a targeted turn the live-membership overlay delivered to the
+    # agent's dm_bindings session, and omits it everywhere else.
+    overlay = data.setdefault("roster_drift_overlay", False)
+    if not isinstance(overlay, bool):
+        raise OutboundError("current_turn roster_drift_overlay must be a boolean")
+    if overlay and kind != "targeted":
+        raise OutboundError(
+            f"current_turn roster_drift_overlay is set on kind {kind!r}, not 'targeted'")
     return data
 
 
@@ -1834,12 +1843,26 @@ def _verify_pointer_mpim(
     return turn
 
 
-def _verify_binding(rooms, bindings, turn: dict[str, Any], session_name: str) -> None:
+def _verify_binding(
+    rooms, bindings, turn: dict[str, Any], session_name: str,
+    *, allow_roster_drift_overlay: bool = False,
+) -> None:
     room = turn["room"]
     agent = turn["agent"]
     if room not in rooms:
         raise OutboundError(f"room {room!r} is not in the company directory")
     bound = _session_for_binding(bindings, room, agent)
+    if (
+        bound is None
+        and allow_roster_drift_overlay
+        and turn.get("roster_drift_overlay") is True
+    ):
+        # The live-membership overlay woke an agent the room roster does not
+        # list yet, delivering to its dm_bindings session (ensureTargets). Only
+        # that session may answer the turn, exactly as for a DM; a room binding,
+        # when one exists, still wins.
+        _, dm_bindings = _load_dm_context()
+        bound = _dm_session_for_agent(dm_bindings, agent)
     if bound not in session_name_aliases(session_name):
         raise OutboundError(
             f"(room={room}, agent={agent}) is not bound to session "
@@ -2386,7 +2409,10 @@ def post_company_root_reply(
         raise OutboundError(
             f"current turn kind is {turn['kind']!r}, not a room-reply kind")
     agents, rooms, bindings = _load_context()
-    _verify_binding(rooms, bindings, turn, session_name)
+    # Only the plain reply honors an overlay turn: a delegation or peer post
+    # from an agent outside the roster would be dropped by the router anyway.
+    _verify_binding(
+        rooms, bindings, turn, session_name, allow_roster_drift_overlay=True)
 
     acting = turn["agent"]
     if acting not in agents:
