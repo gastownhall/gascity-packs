@@ -49,8 +49,11 @@ Reply protocol when you receive a `New message in shared conversation slack/...`
   3. THEN publish as a threaded reply (NOT publish-to-channel):
        gc slack reply-current --body-file <tmpfile> --thread-current
 
-  4. THEN ack so the inbound is marked read:
-       gc transcript read --ack
+That's it — there is no separate "mark as read" step. The adapter
+already placed 👀 on the message when it enqueued the inbound
+(transport-level ack: "queued for the agent"), and your step-1
+✍️ react is the agent-level ack. Publishing the threaded reply in
+step 3 closes the loop; nothing else needs to run afterward.
 
 The order is non-negotiable even when you have an instant answer. Even
 when the inbound is a re-ping of an active thread. Even when it's a
@@ -152,7 +155,16 @@ def build_conversation_ref(
 
 
 def build_fanout_policy(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Translate CLI flags into a FanoutPolicy dict, or None if no flag set."""
+    """Translate CLI flags into a FanoutPolicy dict, or None if no flag set.
+
+    NOTE: `body.fanout_policy` requires a gc build that recognizes this
+    property on POST /extmsg/groups. gc 1.5.1 does NOT support it and
+    rejects the request with HTTP 422 {"errors":[{"message":"unexpected
+    property","location":"body.fanout_policy"}]}. That 422 means "your gc
+    is too old for --enable-peer-fanout / --allow-untargeted-publication /
+    --max-peer-triggered-publishes / --max-total-peer-deliveries", not a
+    bad bind — drop those flags (or upgrade gc) if you hit it.
+    """
     any_set = (
         args.enable_peer_fanout
         or args.allow_untargeted_publication
@@ -336,13 +348,23 @@ def main(argv: list[str]) -> int:
                         metavar="HANDLE=SESSION",
                         help="Override the handle assigned to a session (repeatable)")
     parser.add_argument("--enable-peer-fanout", action="store_true",
-                        help="Set FanoutPolicy.enabled = true on the group")
+                        help="Set FanoutPolicy.enabled = true on the group. "
+                             "Requires a gc build that accepts body.fanout_policy "
+                             "on POST /extmsg/groups; rejected with HTTP 422 "
+                             "'unexpected property' on gc 1.5.1.")
     parser.add_argument("--allow-untargeted-publication", action="store_true",
-                        help="Set FanoutPolicy.allow_untargeted_publication = true")
+                        help="Set FanoutPolicy.allow_untargeted_publication = true. "
+                             "Requires a gc build that accepts body.fanout_policy "
+                             "on POST /extmsg/groups; rejected with HTTP 422 "
+                             "'unexpected property' on gc 1.5.1.")
     parser.add_argument("--max-peer-triggered-publishes", type=int, default=0,
-                        help="Cap peer-triggered publishes per inbound (0 = unlimited)")
+                        help="Cap peer-triggered publishes per inbound (0 = unlimited). "
+                             "Same gc fanout_policy version requirement as "
+                             "--enable-peer-fanout.")
     parser.add_argument("--max-total-peer-deliveries", type=int, default=0,
-                        help="Cap total peer deliveries per inbound (0 = unlimited)")
+                        help="Cap total peer deliveries per inbound (0 = unlimited). "
+                             "Same gc fanout_policy version requirement as "
+                             "--enable-peer-fanout.")
     parser.add_argument("--no-protocol-nudge", action="store_true",
                         help="Skip auto-delivery of the slack reply-protocol nudge "
                              "(react first, threaded reply, ack) to each newly-bound "

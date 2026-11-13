@@ -32,7 +32,7 @@
 #   LISTEN_PUBLIC           # default :8765 (Funnel exposes this; /slack/events)
 #   LISTEN_INTERNAL         # default 127.0.0.1:8766 (localhost-only; /publish)
 #   INTERNAL_CALLBACK_URL   # default http://127.0.0.1:8766
-#   GC_API_BASE_URL         # default http://127.0.0.1:9443
+#   GC_API_BASE_URL         # default http://127.0.0.1:8372
 #   ADAPTER_PROVIDER        # default slack
 #   REGISTER_ON_START       # default true; set false to skip self-registration
 
