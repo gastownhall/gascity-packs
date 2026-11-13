@@ -19,7 +19,10 @@ multi-rig routing — those live in `slack-channel` (Tier 2) and `slack-full`
 - **Inbound:** `@gc-mayor what's the convoy status?` in any channel the bot
   is in → delivered to your gc mayor session.
 - **Outbound:** `gc slack-mini post-message --channel C0123 --text "…"` →
-  posts to a channel, optionally in a thread.
+  posts to a channel, optionally in a thread, with optional unfurl control.
+- **Lookups:** `GET /channels` (name → id) and `GET /user-id?email=` on the
+  internal listener, for callers that only know a channel name or an email
+  address. Both are cached per process; both need extra bot scopes (below).
 
 ## Choose a transport
 
@@ -63,6 +66,11 @@ Both manifests request only three bot scopes — `app_mentions:read`,
 `chat:write`, `chat:write.public` — and subscribe to the `app_mention`
 event. They differ in `socket_mode_enabled` and in the display description
 text; nothing else.
+
+The channel and user lookups need three more bot scopes, added on the
+app's **OAuth & Permissions** page (then reinstall the app): `channels:read`
+and `groups:read` for `GET /channels`, `users:read.email` for `GET /user-id`.
+Without them the lookups answer 502 with Slack's `missing_scope` error.
 
 ### 2. Configure the city (1 min)
 
@@ -149,6 +157,42 @@ gc slack-mini post-message --channel C0123 \
   --thread-ts 1700000000.0001 --text "on it — see PR #42"
 ```
 
+## Channel and user lookups
+
+The internal listener serves two read-only lookups beside `/post-message`,
+reachable the same way (gc's `/svc/slack-mini` proxy, or `LISTEN_INTERNAL`
+in standalone TCP mode):
+
+- `GET /channels` → `{"ok":true,"channels":{"general":"C012",…}}` — the
+  full channel name → id map from `conversations.list`, paginated and
+  cached per process for 5 minutes. Needs `channels:read` + `groups:read`.
+- `GET /user-id?email=ada@example.com` → `{"ok":true,"id":"U99","email":"…"}` —
+  the Slack user id from `users.lookupByEmail`, cached per process for
+  5 minutes. An unknown email answers HTTP 404
+  `{"ok":false,"error":"users_not_found"}` so the caller can fall back to
+  the plain address. Needs `users:read.email`.
+
+## Unfurl control
+
+```sh
+gc slack-mini post-message --channel C0123 --text "all links, no previews" \
+  --unfurl-links false --unfurl-media false
+```
+
+`--unfurl-links` / `--unfurl-media` (each `true` or `false`) pass through to
+`chat.postMessage`'s `unfurl_links` / `unfurl_media`. Omit a flag and the
+field is omitted too, so Slack applies its default.
+
+## Outbound-only mode
+
+Set `SLACK_MINI_INBOUND=off` to run the adapter with no inbound surface at
+all: no public listener, no Socket Mode connection, no signing-secret or
+app-token checks, and no extmsg self-registration. Only the internal
+listener stays up, serving `/post-message` and the lookups. Any other value
+(including unset) keeps inbound enabled. In this mode the Slack app needs
+no `app_mention` subscription and neither `SLACK_APP_TOKEN` nor
+`SLACK_SIGNING_SECRET` has to be set.
+
 ## Build
 
 The adapter's only dependency is
@@ -180,6 +224,7 @@ restarts until the Go build cache is warm; a Go toolchain must be installed.
 | `LISTEN_INTERNAL` | | `127.0.0.1:8776` | TCP bind for `/post-message` when not run as a gc proxy_process (no `GC_SERVICE_SOCKET`). |
 | `REGISTER_ON_START` | | `true` | Self-register as an extmsg adapter on start. |
 | `SLACK_MINI_INBOUND_TARGET` | | `mayor` | Session handle inbound mentions address. |
+| `SLACK_MINI_INBOUND` | | (enabled) | `off` disables inbound entirely: no public listener, no Socket Mode, no signing-secret/app-token checks, no extmsg registration. Internal listener only. |
 | `SLACK_API_BASE` | | `https://slack.com/api` | Slack web API origin (override for relays/tests). |
 | `GC_API_BASE_URL` | | `http://127.0.0.1:9443` | gc API base. |
 

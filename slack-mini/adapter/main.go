@@ -15,7 +15,9 @@
 //   - Outbound: a UDS endpoint (/post-message) that posts plain text to a
 //     Slack channel via chat.postMessage using the workspace bot token.
 //     The pack's commands/post-message.sh wrapper reaches it through gc's
-//     /svc/slack-mini reverse proxy. This is the only outbound verb at Tier 1.
+//     /svc/slack-mini reverse proxy. Two read-only lookup endpoints ride
+//     the same listener: GET /channels (name → id) and GET /user-id
+//     (email → id); see lookup.go.
 //
 // Tier 1 keeps NO on-disk registries: no channel bindings, no per-session
 // identity, no apps registry, no rig/room state. Those belong to
@@ -61,6 +63,17 @@
 //	ADAPTER_PROVIDER           extmsg provider name (default "slack").
 //	SLACK_MINI_INBOUND_TARGET  Session handle inbound mentions address (default "mayor").
 //	SLACK_API_BASE             Slack web API base (default https://slack.com/api).
+//	SLACK_MINI_INBOUND         "off" disables inbound entirely: no public
+//	                           listener, no Socket Mode, no signing-secret or
+//	                           app-token checks, no extmsg self-registration.
+//	                           The adapter binds only the internal listener
+//	                           (UDS under gc, TCP standalone) for outbound
+//	                           verbs and lookups. Any other value (including
+//	                           unset) keeps inbound enabled.
+//	Required bot scopes for lookups (G1/G2):
+//
+//	channels:read, groups:read   conversations.list for GET /channels
+//	users:read.email              users.lookupByEmail for GET /user-id
 package main
 
 import (
@@ -128,13 +141,16 @@ type config struct {
 	inboundTarget       string
 	slackAPIBase        string
 	registerOnStart     bool
+	inboundEnabled      bool
 }
 
 // socketMode reports whether the adapter takes inbound over a Socket Mode
 // WebSocket instead of the public HTTP listener. The app-level token is the
 // selector: it is required for Socket Mode and useless without it, so its
 // presence is the whole contract — there is no second toggle to keep in sync.
-func (c config) socketMode() bool { return c.appToken != "" }
+// Outbound-only mode (SLACK_MINI_INBOUND=off) disables Socket Mode even when
+// the token is set: the token is ignored and no socket is opened.
+func (c config) socketMode() bool { return c.inboundEnabled && c.appToken != "" }
 
 func main() {
 	cfg, err := loadConfig()
@@ -146,7 +162,9 @@ func main() {
 		internalDescr = "uds:" + cfg.serviceSocket
 	}
 	inboundDescr := "http:" + cfg.publicListen
-	if cfg.socketMode() {
+	if !cfg.inboundEnabled {
+		inboundDescr = "off (outbound-only)"
+	} else if cfg.socketMode() {
 		inboundDescr = "socket-mode (no public listener)"
 	}
 	log.Printf("starting gc-slack-mini-adapter inbound=%s internal=%s gc=%s city=%s target=%s",
@@ -159,6 +177,8 @@ func main() {
 
 	internalMux := http.NewServeMux()
 	internalMux.HandleFunc("POST /post-message", handlePostMessage(cfg))
+	internalMux.HandleFunc("GET /channels", handleChannels(cfg))
+	internalMux.HandleFunc("GET /user-id", handleUserID(cfg))
 	internalMux.HandleFunc("/healthz", handleHealthz)
 
 	publicSrv := &http.Server{
@@ -171,7 +191,10 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	if cfg.registerOnStart {
+	// Outbound-only mode skips extmsg self-registration: there is no
+	// inbound to register, and the adapter's only surface is the internal
+	// listener gc already proxies to.
+	if cfg.registerOnStart && cfg.inboundEnabled {
 		regCtx, cancel := context.WithTimeout(context.Background(), gcCallTimeout)
 		err := registerAdapter(regCtx, cfg)
 		cancel()
@@ -184,12 +207,13 @@ func main() {
 
 	// Socket Mode owns the inbound path when enabled; the public listener is
 	// not merely unused but never bound, which is the point on a network that
-	// cannot accept inbound connections.
+	// cannot accept inbound connections. Outbound-only mode binds neither:
+	// only the internal listener below starts.
 	socketCtx, socketCancel := context.WithCancel(context.Background())
 	defer socketCancel()
 
 	errCh := make(chan error, 2)
-	if cfg.socketMode() {
+	if cfg.inboundEnabled && cfg.socketMode() {
 		go func() {
 			// runSocketMode reconnects internally and returns only when its
 			// context is cancelled, so a return here means shutdown.
@@ -197,11 +221,13 @@ func main() {
 				errCh <- err
 			}
 		}()
-	} else {
+	} else if cfg.inboundEnabled {
 		go func() {
 			log.Printf("public listener serving on %s (Slack events)", cfg.publicListen)
 			errCh <- publicSrv.ListenAndServe()
 		}()
+	} else {
+		log.Printf("inbound disabled (SLACK_MINI_INBOUND=off): internal listener only")
 	}
 	go func() {
 		if cfg.serviceSocket != "" {
@@ -215,7 +241,7 @@ func main() {
 			return
 		}
 		internalSrv.Addr = cfg.internalListen
-		log.Printf("internal listener serving on %s (post-message only)", cfg.internalListen)
+		log.Printf("internal listener serving on %s (post-message, channels, user-id)", cfg.internalListen)
 		errCh <- internalSrv.ListenAndServe()
 	}()
 
@@ -267,6 +293,10 @@ func loadConfigFromEnv(getenv func(string) string) (config, error) {
 		inboundTarget:   envOr("SLACK_MINI_INBOUND_TARGET", defaultInboundTarget),
 		slackAPIBase:    strings.TrimRight(envOr("SLACK_API_BASE", defaultSlackAPIBase), "/"),
 		registerOnStart: envOr("REGISTER_ON_START", "true") == "true",
+		// Outbound-only mode is opt-in by exact match. Any other value —
+		// including unset — keeps inbound enabled, so the default is
+		// unchanged.
+		inboundEnabled: getenv("SLACK_MINI_INBOUND") != "off",
 	}
 
 	// proxy_process mode: gc reaches the adapter via GC_API_BASE_URL +
@@ -295,8 +325,9 @@ func loadConfigFromEnv(getenv func(string) string) (config, error) {
 	// The signing secret verifies HTTP webhook signatures. Socket Mode has no
 	// request signatures — authenticity comes from the app-token-authenticated
 	// connection the adapter itself opens — so requiring it there would be
-	// demanding a credential the transport never consults.
-	if cfg.signingSecret == "" && !cfg.socketMode() {
+	// demanding a credential the transport never consults. Outbound-only mode
+	// has no inbound transport at all, so it needs no signing secret either.
+	if cfg.signingSecret == "" && cfg.inboundEnabled && !cfg.socketMode() {
 		missing = append(missing, "SLACK_SIGNING_SECRET")
 	}
 	if cfg.cityName == "" {
@@ -627,10 +658,17 @@ func postJSON(ctx context.Context, target string, body []byte) error {
 // slackPostMessageReq is both the JSON body the post-message.sh wrapper
 // POSTs to /post-message and the chat.postMessage payload — the wrapper
 // deliberately speaks Slack's own field names, so one type serves both.
+//
+// UnfurlLinks and UnfurlMedia are pointers so "absent" survives the round
+// trip: nil omits the field and Slack applies its default, while an
+// explicit false is forwarded as false. A plain bool with omitempty could
+// not express "set false".
 type slackPostMessageReq struct {
-	Channel  string `json:"channel"`
-	Text     string `json:"text"`
-	ThreadTS string `json:"thread_ts,omitempty"`
+	Channel     string `json:"channel"`
+	Text        string `json:"text"`
+	ThreadTS    string `json:"thread_ts,omitempty"`
+	UnfurlLinks *bool  `json:"unfurl_links,omitempty"`
+	UnfurlMedia *bool  `json:"unfurl_media,omitempty"`
 }
 
 type slackPostMessageResp struct {
