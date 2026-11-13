@@ -235,9 +235,16 @@ warrant spawns a second shutdown dance racing the first (duplicate kills,
 wasted dog cycles). Skip filing if one is already open or in progress:
 ```bash
 TARGET_SESSION="<session>"
-EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
-  | jq -r --arg t "$TARGET_SESSION" \
-      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+# Warrants can live in ANY store — rig agents file into their rig's store.
+# Scan the city store (the empty line) plus every non-HQ rig store, or a
+# cross-store twin of an open warrant gets a second shutdown dance.
+EXISTING_WARRANT=$({ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+  | while read -r RIG; do
+      if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+      gc bd list $STORE --label=warrant --json --limit=0 \\
+        | jq -r --arg t "$TARGET_SESSION" \\
+            '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length'
+    done | awk '{s += $1} END {print s + 0}')
 if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
   echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
 else
@@ -269,18 +276,41 @@ The deacon's wisp-freshness check catches "no patrol activity" but not
 "active polling, wrong filter, queue silently piling up." This step
 closes that gap.
 
-**Step 1: For each active coordination/merge session, compute the pair:**
+**Step 1: For each active coordination/merge session, compute the pair
+in the store its beads actually live in:**
 - `A` = count of open beads assigned to the session's agent identity
 - `B` = the most recent bead.updated_at across those beads (work signal)
 
 ```bash
-gc agents list --json --active | jq -r '.[] | .agent_id' | while read -r AGENT; do
-    ASSIGNED=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
-    LATEST=$(gc bd list --status=open --assignee="$AGENT" --json --limit=0 \\
-        | jq -r '[.[].updated_at] | max // ""')
-    printf '%s\\t%s\\t%s\\n' "$AGENT" "$ASSIGNED" "$LATEST"
-done
+gc session list --json --state active \\
+  | jq -r '.sessions[] | select(((.alias // .id) | length) > 0) | [(.rig // "-"), (.alias // .id)] | @tsv' \\
+  | sort -u \\
+  | while read -r RIG AGENT; do
+      if [ "$RIG" = "-" ]; then STORE=""; else STORE="--rig $RIG"; fi
+      ASSIGNED=$(gc bd list $STORE --status=open --assignee="$AGENT" --json --limit=0 | jq 'length')
+      LATEST=$(gc bd list $STORE --status=open --assignee="$AGENT" --json --limit=0 \\
+          | jq -r '[.[].updated_at] | max // ""')
+      printf '%s\\t%s\\t%s\\t%s\\n' "$RIG" "$AGENT" "$ASSIGNED" "$LATEST"
+    done
 ```
+
+`gc session list` is the runtime roster (there is no `gc agents` command in
+gc, and `--active` is not a flag; `gc agent list` is city.toml config only).
+Its JSON is `{sessions: [...]}`; `.rig` names the rig whose bead store the
+session's beads live in (absent for city-level agents, mapped to `-` above).
+`gc bd list` answers from ONE store — the city store by default, a named
+rig's store under `--rig <name>` — so the roster's rig MUST be passed
+through to bd. Querying the city store alone reports `0` assigned for
+every rig agent and hides queue starvation entirely.
+
+The identity must be the exact assignee string in that store, and that is
+`(.alias // .id)`, not `agent_name`: named agents (deacon, refinery,
+witness) are assigned by alias, while pooled wisp sessions (the dog pool)
+are assigned by wisp id — `city-wisp-…` — and their `agent_name`
+(`gastown.dog-N`) is a display name that matches no assignee. An identity
+that matches nothing silently reports `A=0`, manufacturing the starvation
+this step exists to catch. Do NOT simplify the identity back to
+`agent_name` or `session_name`.
 
 The latest bead.updated_at is the cheapest proxy for "did this session
 move work recently?" — every claim, status transition, metadata update,
@@ -313,9 +343,16 @@ dance racing the first:
 
 ```bash
 TARGET_SESSION="<session>"
-EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
-    | jq -r --arg t "$TARGET_SESSION" \
-        '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+# Warrants can live in ANY store — rig agents file into their rig's store.
+# Scan the city store (the empty line) plus every non-HQ rig store, or a
+# cross-store twin of an open warrant gets a second shutdown dance.
+EXISTING_WARRANT=$({ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+    | while read -r RIG; do
+        if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+        gc bd list $STORE --label=warrant --json --limit=0 \\
+          | jq -r --arg t "$TARGET_SESSION" \\
+              '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length'
+      done | awk '{s += $1} END {print s + 0}')
 if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
     echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
 else
@@ -346,9 +383,15 @@ work-layer judgment: is this task genuinely slow, or is the agent stuck?
 The controller can't know this. The deacon can, by checking bead and
 wisp timestamps.
 
-**Step 1: Find active utility agent work:**
+**Step 1: Find active utility agent work (scan EVERY store — dog-routed
+work can live in a rig's store, which the default city-store query never
+sees):**
 ```bash
-gc bd list --status=in_progress --metadata-field gc.routed_to={{binding_prefix}}dog --json --limit=0
+{ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+  | while read -r RIG; do
+      if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+      gc bd list $STORE --status=in_progress --metadata-field 'gc.routed_to={{binding_prefix}}dog' --json --limit=0
+    done
 ```
 
 **Step 2: For each, assess progress:**
@@ -365,9 +408,16 @@ Check for an existing open warrant against the same target first — a duplicate
 warrant spawns a second shutdown dance racing the first:
 ```bash
 TARGET_SESSION="<session>"
-EXISTING_WARRANT=$(gc bd list --label=warrant --json --limit=0 \
-  | jq -r --arg t "$TARGET_SESSION" \
-      '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length')
+# Warrants can live in ANY store — rig agents file into their rig's store.
+# Scan the city store (the empty line) plus every non-HQ rig store, or a
+# cross-store twin of an open warrant gets a second shutdown dance.
+EXISTING_WARRANT=$({ printf '\\n'; gc rig list --json | jq -r '.rigs[] | select((.hq // false) | not) | .name'; } \\
+  | while read -r RIG; do
+      if [ -n "$RIG" ]; then STORE="--rig $RIG"; else STORE=""; fi
+      gc bd list $STORE --label=warrant --json --limit=0 \\
+        | jq -r --arg t "$TARGET_SESSION" \\
+            '[.[] | select((.status == "open" or .status == "in_progress") and (.metadata.target == $t))] | length'
+    done | awk '{s += $1} END {print s + 0}')
 if [ "${EXISTING_WARRANT:-0}" -gt 0 ]; then
   echo "Skipping warrant for $TARGET_SESSION — an open warrant already exists."
 else
