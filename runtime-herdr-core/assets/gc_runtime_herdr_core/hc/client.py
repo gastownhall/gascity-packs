@@ -443,9 +443,13 @@ class HcClient:
     def _result(self, method: str, request_id: int, line: bytes) -> object:
         try:
             envelope = JsonObject.of(loads(line))
-            if envelope.raw("jsonrpc") != "2.0" or envelope.opt_int("id") != request_id:
-                raise HcProtocolError(method, "the reply does not answer this request", written=True)
             error = envelope.opt_obj("error")
+            # An error with a null id is hc refusing a line it could not parse:
+            # it dispatched nothing, so it is a refusal like any other error.
+            unparsed = error is not None and envelope.has("id") and envelope.raw("id") is None
+            answers = unparsed or envelope.opt_int("id") == request_id
+            if envelope.raw("jsonrpc") != "2.0" or not answers:
+                raise HcProtocolError(method, "the reply does not answer this request", written=True)
             if error is not None:
                 data = error.opt_obj("data")
                 raise HcRpcError(

@@ -455,6 +455,7 @@ for a delivery and an ordinary failure for exit 80.
 | the request never reached hc, or reached it cut short (hc acts on no part of a request) | all four | `not_sent` | 80 |
 | the core is down (no socket, refused, no connection in time) | all four | `unavailable` | 80 |
 | a tmux key with no herdr-core spelling (nothing is sent) | `send-keys` | `rejected` | 80 |
+| nudge text that is not UTF-8 (hc's JSON cannot carry it; nothing is sent) | `nudge` | `rejected` | 80 |
 | a request written, then no reply (timeout or lost connection) | `send-keys`, `interrupt`, `clear-scrollback` | unknown: a retried Esc or Ctrl-C can end the program | 1 |
 | the core is a version the pack does not drive (`needs_update`, `unsupported_generation`, `incompatible`, a refused hello) | all four | unknown, "hc version unsupported: run gc doctor" | 1 |
 | any other hc error kind | all four | unknown, naming the kind | 1 |

@@ -285,3 +285,13 @@ def test_close_reaps_every_program(short_tmp: Path) -> None:
     assert not alive(pid)
     with pytest.raises(ProcessLookupError):
         os.killpg(pid, signal.SIGKILL)
+
+
+def test_a_lone_surrogate_escape_is_a_parse_error_that_answers_no_request(fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc server.rs handle: serde_json refuses a lone surrogate escape, so the
+    # line never parses and the reply carries no request id.
+    address = str(run(fake_hc, short_tmp, "cat")["address"])
+    reply = raw_call(fake_hc.socket_path, "terminal.send", {"terminal": address, "text": "caf\udce9"})
+    assert reply["id"] is None
+    assert reply["error"]["code"] == -32700
+    assert fake_hc.input_log(address) == []

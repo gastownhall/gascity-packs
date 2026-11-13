@@ -340,7 +340,11 @@ def _name(ctx: OpContext) -> str:
 
 
 def op_nudge(ctx: OpContext) -> OpResult:
-    text = ctx.request.stdin.decode("utf-8", "surrogateescape")
+    try:
+        text = ctx.request.stdin.decode("utf-8")
+    except UnicodeDecodeError:
+        # hc's JSON cannot carry the bytes: it would refuse the line unread.
+        return answer_result(ctx, "nudge", InputOutcome("rejected", "the nudge text is not UTF-8; nothing was typed"))
     return answer_result(ctx, "nudge", nudge(ctx, _name(ctx), text))
 
 

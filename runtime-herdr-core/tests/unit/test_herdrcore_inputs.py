@@ -105,6 +105,15 @@ def test_nudge_to_a_program_that_never_reports_status_is_delivered(city: City) -
     assert city.fake.input_log(address) == ["hello agent"]  # type: ignore[union-attr]
 
 
+
+def test_a_nudge_whose_text_is_not_utf8_is_rejected_and_types_nothing(city: City) -> None:
+    address = started(city)
+    done = city.run("nudge", "mc-a", stdin=b"caf\xe9 au lait")
+    assert answer(done) == (80, "rejected")
+    assert b"not UTF-8" in done.stdout
+    assert city.fake.input_log(address) == []  # type: ignore[union-attr]
+    assert city.fake.call_count("terminal.send") == 0  # type: ignore[union-attr]
+
 def test_nudge_seen_starting_the_turn_is_delivered(city: City) -> None:
     address = started(city)
     city.fake.set_status(address, "idle")  # type: ignore[union-attr]

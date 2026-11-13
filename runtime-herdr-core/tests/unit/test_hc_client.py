@@ -483,3 +483,28 @@ def test_client_reads_no_environment(make_client: ClientFactory, fake_hc: FakeHc
     monkeypatch.setenv("XDG_RUNTIME_DIR", "/nonexistent")
     make_client().list_terminals()  # the endpoint's socket, not the caller's
     assert os.environ["HC_SOCKET"] == "/nonexistent/hc.sock"
+
+
+def test_an_error_that_answers_no_request_is_a_refusal(make_client: ClientFactory, fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc answers a line it cannot parse with id null: it dispatched nothing,
+    # so nothing was typed, and the answer is hc's refusal, not a lost reply.
+    client = make_client()
+    term = started(client, "ga", short_tmp)
+    with pytest.raises(HcRpcError) as caught:
+        client.send(term.address, "caf\udce9")
+    assert caught.value.code == -32700
+    assert fake_hc.input_log(term.address) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        b'{"jsonrpc":"2.0","id":null,"result":{}}',  # only an error may answer no request
+        b'{"jsonrpc":"2.0","error":{"code":-32700,"message":"parse error"}}',  # no id at all
+        b'{"jsonrpc":"2.0","id":8,"error":{"code":-32700,"message":"parse error"}}',  # another request's
+    ],
+)
+def test_a_reply_that_answers_no_request_otherwise_is_a_protocol_error(make_client: ClientFactory, line: bytes) -> None:
+    with pytest.raises(HcProtocolError) as caught:
+        make_client()._result("terminal.send", 7, line)
+    assert caught.value.written is True
