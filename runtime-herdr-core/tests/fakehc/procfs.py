@@ -1,7 +1,7 @@
 """A fake ``/proc`` tree for process-table tests: ``stat``, ``cmdline`` and
 ``environ`` per pid, its main thread's ``children`` list, its ``exe`` link,
-``cgroup`` and socket fds when given, and ``net/unix``; owned by the test's
-user."""
+``cgroup`` and socket fds when given, ``net/unix`` and the boot id; owned by
+the test's user."""
 
 from __future__ import annotations
 
@@ -60,6 +60,14 @@ def add_unix_socket(root: Path, inode: int, path: str) -> None:
         table.write_text("Num       RefCount Protocol Flags    Type St Inode Path\n")
     with table.open("a") as handle:
         handle.write(f"0000000000000000: 00000002 00000000 00010000 0001 01 {inode} {path}\n")
+
+
+def add_boot(root: Path, boot_id: str) -> None:
+    """Write ``sys/kernel/random/boot_id``, as the kernel does: the boot the
+    start times count from."""
+    path = root / "sys" / "kernel" / "random" / "boot_id"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(boot_id + "\n")
 
 
 def add_thread(root: Path, pid: int, tid: int, children: Sequence[int]) -> None:

@@ -25,7 +25,9 @@ the pack ended every record of the city and then the core, on purpose. While
 it is there no read kicks a start (a stopped city stays stopped), and a read
 that finds nothing of the core running answers an empty city. A
 ``server-stop`` that finds the core already down parks the city too, so
-gc's confirming read after its stop does not start it again. A start
+gc's confirming read after its stop does not start it again; while the pack
+keeps an incarnation's metadata it first starts the core to remove the
+records hc keeps across a restart (:mod:`.server`). A start
 (:func:`ensure_core`) clears the mark, first, before it tries the core and
 before any record is created: one whose core start then fails (a core lock
 naming another socket) leaves the city unparked, and reads kick again as

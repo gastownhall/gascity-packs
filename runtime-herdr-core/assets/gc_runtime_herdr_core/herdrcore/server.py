@@ -19,20 +19,28 @@ next start), the core is stopped (``server.stop``) once nothing of the city
 may survive, and the pack waits until it is gone; what its holders still
 run is then looked for as below.
 
-**With the core not answering its socket**, the city is parked as well (a
-core already down at teardown stays down), and its programs may still run under
-their holders (:mod:`.corescan`). Each incarnation the pack keeps metadata
-for is found by its program's pid and start time and by its instance token,
-and its tree is ended; a holder left with no program is ended too, and one
-still running a foreign program is left for it. A core process that runs
-but does not answer, a process table that cannot be read, a process that
-outlives its kill, a holder that runs a process that cannot be read, one
-that still runs a program while an incarnation's metadata names neither its
-program nor a token, or an incarnation's program the fence keeps (a box
-whose program is a tmux client), makes the op exit 1. A core that answers
-but fails (a wedged core) is not swept around: its programs may run, and
-the op exits 1. The records stay in hc's registry: a start that brings the
-core back finds them finished, and recycles them.
+**With the core not answering its socket**, hc may still keep the city's
+records: it keeps them across a core restart, finished, and one left would
+refuse gc's next start of its name (``fresh_only``) while every read of the
+parked city answers it absent. So while the pack keeps an incarnation's
+metadata (it does until the record is removed), the core is started (the
+op holds the kick lock) and the city stopped with it, as above. A core that
+cannot be started, or a core of the city listening on another socket
+(``core.lock``), makes the op exit 1 with the city unparked, so reads kick
+the core back. With no metadata kept, the city is parked as well (a core
+already down at teardown stays down). Its programs may still run under
+their holders (:mod:`.corescan`), so they are looked for all the same:
+each incarnation the pack keeps metadata for is found by its program's pid
+and start time (read in this boot), as a holder's program carrying its
+instance token, and by that token, and its tree is ended; a holder left
+with no program is ended too, and one still running a foreign program is
+left for it. A core process that runs but does not answer, a process table
+that cannot be read, a process that outlives its kill, a holder that runs
+a process that cannot be read, one that still runs a program while an
+incarnation's metadata names neither its program nor a token, or an
+incarnation's program the fence keeps (a box whose program is a tmux
+client), makes the op exit 1. A core that answers but fails (a wedged
+core) is not swept around: its programs may run, and the op exits 1.
 
 **Parking.** The whole op holds the kick lock (:mod:`.core`), so a kick
 in flight finishes first and none starts the core while the op sweeps. At
@@ -51,13 +59,15 @@ from typing import Callable, Dict, Final, FrozenSet, List, Optional, Set
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcUnreachable
 from ..hc.types import Terminal
+from ..rpp.cancel import Cancelled
 from ..rpp.exitcodes import ExitCode
 from ..rpp.flock import LockFileError, LockTimeout
 from ..rpp.ops import OpError, OpResult
 from ..rpp.statedir import StateDirError
 from . import corescan
+from .config import ConfigError
 from .context import OpContext
-from .core import CORE_START_WAIT_S, KICK_LOCK, park, unpark
+from .core import CORE_START_WAIT_S, KICK_LOCK, check_core_lock, park, start_core, unpark
 from .lifecycle import INSTANCE_TOKEN_KEY, fenced, forget, kill_incarnation, reap, rescan
 from .metastore import Meta, MetaError
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
@@ -87,8 +97,7 @@ def op_server_stop(ctx: OpContext) -> OpResult:
             try:
                 problems = _stop_with_core(ctx, client, warnings)
             except HcUnreachable:
-                _park(ctx, warnings)  # gc reads right after its stop: no read may start the core again
-                problems = sweep_without_core(ctx, session=None, end_holders=True)
+                problems = _stop_core_down(ctx, client, warnings)
             except HcError as err:
                 problems = [f"the city's core does not answer as it should ({err})"]
             problems += _unpark_if_running(ctx)
@@ -129,6 +138,44 @@ def _stop_with_core(ctx: OpContext, client: HcClient, warnings: List[str]) -> Li
     return sweep_without_core(ctx, session=None, end_holders=True)
 
 
+def _stop_core_down(ctx: OpContext, client: HcClient, warnings: List[str]) -> List[str]:
+    """The core does not answer its socket. hc keeps its records across a
+    core restart, finished, and one left behind would refuse gc's next start
+    of its name (``fresh_only``) while every read of the parked city answers
+    it absent. So while the pack keeps an incarnation's metadata, which it
+    does as long as hc may keep its record, the core is started (the op
+    holds the kick lock, so no kick races it) and the city stopped with it,
+    which removes them. A core of the city listening on another socket, or
+    one that cannot be started, is reported and leaves the city unparked
+    (one parked before too: its empty answer would hide what hc keeps), so
+    reads kick the core back; its programs are swept for all the same."""
+    try:
+        check_core_lock(ctx)  # a core of the city elsewhere may run its programs: never a second one
+    except (OpError, StateDirError) as err:
+        return [str(err)] + sweep_without_core(ctx, session=None, end_holders=True)
+    if _may_hold_records(ctx):
+        try:
+            start_core(ctx, ctx.hc_binary())
+            return _stop_with_core(ctx, client, warnings)
+        except (ConfigError, OpError, StateDirError, OSError, HcError) as err:
+            if isinstance(err, Cancelled):
+                raise
+            failed = f"hc may keep the city's records, and its core cannot be started to remove them ({err})"
+            return [failed] + _unpark(ctx) + sweep_without_core(ctx, session=None, end_holders=True)
+    _park(ctx, warnings)  # gc reads right after its stop: no read may start the core again
+    return sweep_without_core(ctx, session=None, end_holders=True)
+
+
+def _may_hold_records(ctx: OpContext) -> bool:
+    """Whether hc may keep a record of the city: the pack keeps metadata of
+    an incarnation from before its record is created until ``stop`` or
+    ``server-stop`` removes it (or cannot tell)."""
+    try:
+        return bool(meta_store(ctx).objects())
+    except (OSError, StateDirError):
+        return True
+
+
 def _park(ctx: OpContext, warnings: List[str]) -> None:
     try:
         park(ctx)
@@ -143,6 +190,10 @@ def _unpark_if_running(ctx: OpContext) -> List[str]:
     kept for what runs is not parked; reads kick it back to adopt it."""
     if corescan.nothing_runs(ctx):
         return []
+    return _unpark(ctx)
+
+
+def _unpark(ctx: OpContext) -> List[str]:
     try:
         unpark(ctx)
     except OpError as err:
@@ -221,18 +272,42 @@ def _metas(ctx: OpContext, session: Optional[str], problems: List[str]) -> Dict[
     return found
 
 
-def _program(snapshot: Snapshot, meta: Meta, holder_pids: Set[int]) -> Optional[Proc]:
+def _program(snapshot: Snapshot, meta: Meta, holder_pids: Set[int], boot: Optional[str]) -> Optional[Proc]:
     """The incarnation's program, found by the pid ``run`` gave: still the
-    same process (its start time), or, when that was not read, a program of
-    one of the city's holders."""
+    same process (its start time, read in this boot), or, when that cannot
+    be told, a program of one of the city's holders. A start time read in
+    another boot names nothing that still runs: no process outlives a
+    reboot, and the same tick count may name another."""
     if meta.pid <= 0:
         return None
     proc = snapshot.get(meta.pid)
     if proc is None or proc.zombie or proc.opaque:
         return None
-    if meta.pid_start:
+    if meta.pid_start and meta.boot == boot:
         return proc if proc.start == meta.pid_start else None
+    if meta.pid_start and meta.boot and boot:
+        return None
     return proc if proc.ppid in holder_pids else None
+
+
+def _programs(
+    ctx: OpContext, snapshot: Snapshot, metas: Dict[str, Meta], holder_pids: Set[int], carriers: List[Proc]
+) -> List[Proc]:
+    """The incarnations' programs: each found by its pid (:func:`_program`),
+    and each carrier of an instance token that a city holder runs (a
+    holder's child is a terminal's program, its pid kept or not). Every one
+    is a root of the kill, so a tmux server above it fences none of its
+    tree, and one the fence keeps is reported."""
+    boot = ctx.host.procs.boot()
+    found: Dict[int, Proc] = {}
+    for meta in metas.values():
+        proc = _program(snapshot, meta, holder_pids, boot)
+        if proc is not None:
+            found[proc.pid] = proc
+    for proc in carriers:
+        if proc.ppid in holder_pids:
+            found.setdefault(proc.pid, proc)
+    return list(found.values())
 
 
 def _launching(snapshot: Snapshot, holder_pids: Set[int], objects: FrozenSet[str], every: bool) -> List[Proc]:
@@ -260,15 +335,17 @@ def sweep_without_core(
 ) -> List[str]:
     """End, without the core, the programs of every incarnation the pack
     keeps metadata for (``session``'s only, when given): found by pid and
-    start time, by the launcher's spawn file and by instance token, then
-    the token scanned for again as ``stop`` does (:func:`.lifecycle.rescan`).
+    start time, as a city holder's program carrying an instance token, by
+    the launcher's spawn file and by instance token, then the token scanned
+    for again as ``stop`` does (:func:`.lifecycle.rescan`).
     Infrastructure (city infrastructure and tmux) is fenced as every kill
     fences it (:func:`.lifecycle.fenced`, the programs found the kill's
     own), and so are the city's holders. With ``end_holders``, a holder of the city's core
     left with no program is ended too, one still running a foreign program
     is left for it, and a core process that does not answer is reported.
-    Returns what may survive. The metadata stays: a core that starts again
-    shows the records, which ``stop`` and ``start`` recycle."""
+    Returns what may survive. The metadata stays, as hc may keep the
+    records: ``stop`` removes them once a core answers again, and a
+    core-down ``server-stop`` starts the core to (:func:`_stop_core_down`)."""
     pause = ctx.request.cancel.pause if wait is None else wait
     problems: List[str] = []
     try:
@@ -278,12 +355,13 @@ def sweep_without_core(
     metas = _metas(ctx, session, problems)
     holder_pids = {proc.pid for proc in corescan.holders(snapshot, ctx.paths)}
     tokens = frozenset(meta.values.get(INSTANCE_TOKEN_KEY, "") for meta in metas.values()) - {""}
-    captured: Dict[int, Proc] = {}
-    programs = [proc for proc in (_program(snapshot, meta, holder_pids) for meta in metas.values()) if proc is not None]
+    carriers = scan_environ_any(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, tokens)
+    programs = _programs(ctx, snapshot, metas, holder_pids, carriers)
     roots = programs + _launching(snapshot, holder_pids, frozenset(metas), every=session is None)
+    captured: Dict[int, Proc] = {}
     for root in roots:
         captured.update((p.pid, p) for p in subtree(snapshot, root.pid))
-    captured.update((p.pid, p) for p in scan_environ_any(ctx.host.procs, snapshot, INSTANCE_TOKEN_KEY, tokens))
+    captured.update((p.pid, p) for p in carriers)
 
     def keep_of(now: Snapshot) -> Set[int]:
         return fenced(now, roots) | holder_pids

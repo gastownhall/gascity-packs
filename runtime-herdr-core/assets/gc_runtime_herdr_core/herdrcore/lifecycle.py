@@ -886,13 +886,14 @@ def _create(
 
 
 def _record_program(ctx: OpContext, obj: str, pid: int) -> None:
-    """Keep the program's pid and start time in the incarnation's metadata:
-    when the core does not answer, they find the program without its record
-    (:mod:`.server`). The start time is left empty when the process table
-    cannot be read, or when the program already ended. The box runs either
-    way: metadata that cannot be read or written leaves the pid unrecorded
-    (the instance token and the launcher still find the program), never a
-    failed start."""
+    """Keep the program's pid and start time, with the boot the start time
+    counts from, in the incarnation's metadata: when the core does not
+    answer, they find the program without its record (:mod:`.server`). The
+    start time is left empty when the process table cannot be read, when
+    the program already ended, or when the boot cannot be told. The box runs
+    either way: metadata that cannot be read or written leaves the pid
+    unrecorded (the instance token and the launcher still find the program),
+    never a failed start."""
     try:
         store = meta_store(ctx)
         meta = store.read(obj)
@@ -902,7 +903,9 @@ def _record_program(ctx: OpContext, obj: str, pid: int) -> None:
             proc = ctx.host.procs.snapshot().get(pid)
         except ProcError:
             proc = None
-        store.write(obj, meta.with_program(pid, "" if proc is None or proc.opaque else proc.start))
+        boot = ctx.host.procs.boot()
+        start = "" if proc is None or proc.opaque or boot is None else proc.start
+        store.write(obj, meta.with_program(pid, start, boot or ""))
     except (MetaError, StateDirError, OSError):
         return
 

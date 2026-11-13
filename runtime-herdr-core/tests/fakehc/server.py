@@ -350,6 +350,12 @@ class FakeHc:
     def lose_holder(self, address: str) -> None:
         self._terminal(address).lose_holder()
 
+    def crash(self) -> None:
+        """The core process dies: it stops answering, connections drop, and
+        programs and records survive (hc's holders keep the programs, its
+        registry the records), for a core that :meth:`start` brings back."""
+        self._stop_listening()
+
     def restart_core(self, *, version: Optional[str] = None) -> None:
         """The core process restarts: connections drop, programs and records
         survive, and its start time changes."""

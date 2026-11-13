@@ -3,7 +3,9 @@
 On Linux the snapshot comes from ``/proc`` (an injectable root, so tests use
 a fake tree); elsewhere from ``ps -ww``. A process's start-time token tells a
 recycled pid from the process captured earlier, so nothing is signalled
-unless it is still the same process.
+unless it is still the same process. On Linux the token counts clock ticks
+from boot, so one kept across ops holds only with the boot it was read in
+(:meth:`ProcSource.boot`): after a reboot it may name another process.
 
 A process that exits during the read is left out. One of this user's that
 cannot be read is *opaque*: it has no name or command, and its parent is
@@ -143,6 +145,13 @@ class ProcSource:
         """When ``proc`` started, in wall-clock milliseconds; None when that
         cannot be told."""
         return None
+
+    def boot(self) -> Optional[str]:
+        """The boot the start-time tokens count from: a token kept with
+        another boot's names another process. Empty where tokens are
+        wall-clock times, which hold across boots; None when it cannot be
+        told."""
+        return ""
 
     def kill(self, pid: int, sig: int) -> None:
         """Signal ``pid``; a process that is gone is not an error."""
@@ -318,6 +327,16 @@ class LinuxProcs(ProcSource):
             if len(words) == 2 and words[0] == "btime" and words[1].isdigit() and ticks > 0:
                 return int(words[1]) * 1000 + int(proc.start) * 1000 // ticks
         return None
+
+    def boot(self) -> Optional[str]:
+        """The kernel's boot id (``sys/kernel/random/boot_id``): ``starttime``
+        counts clock ticks from boot."""
+        try:
+            with open(os.path.join(self._root, "sys", "kernel", "random", "boot_id"), "rb") as handle:
+                text = handle.read().decode("ascii", "replace").strip()
+        except OSError:
+            return None
+        return text or None
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         try:

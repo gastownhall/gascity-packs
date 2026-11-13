@@ -84,6 +84,9 @@ class CoreEnvProcs(ProcSource):
     def started_ms(self, proc: Proc) -> Optional[int]:
         return self.inner.started_ms(proc)
 
+    def boot(self) -> Optional[str]:
+        return self.inner.boot()
+
     def kill(self, pid: int, sig: int) -> None:
         self.killed.append(pid)
         self.inner.kill(pid, sig)

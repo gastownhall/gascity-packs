@@ -21,11 +21,11 @@ from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import pytest
 from cityharness import City, in_thread
-from fakehc.procfs import add_proc
+from fakehc.procfs import add_boot, add_proc
 from fakehc.rawclient import raw_call
 from test_herdrcore_treekill import PROXY, alive, token, wait_dead, wait_file
 
-from gc_runtime_herdr_core.herdrcore import core
+from gc_runtime_herdr_core.herdrcore import core, server
 from gc_runtime_herdr_core.herdrcore.config import write_private_file
 from gc_runtime_herdr_core.herdrcore.corescan import holder_prefix
 from gc_runtime_herdr_core.herdrcore.infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB
@@ -40,6 +40,9 @@ from gc_runtime_herdr_core.herdrcore.procs import (
 )
 from gc_runtime_herdr_core.herdrcore.server import sweep_without_core
 from gc_runtime_herdr_core.rpp.ops import OpError
+
+FAKE_BOOT = "00000000-0000-4000-8000-000000000001"
+"""The boot a fake ``/proc`` counts its start times from."""
 
 HOLDER = """\
 import json, os, signal, subprocess, sys, time
@@ -73,12 +76,14 @@ def spawned() -> Iterator[List[int]]:
             pass
 
 
-def start_config(command: str, tok: str = "", work_dir: str = "") -> str:
+def start_config(command: str, tok: str = "", work_dir: str = "", fresh_only: bool = False) -> str:
     doc: Dict[str, object] = {"command": command}
     if tok:
         doc["env"] = {"GC_INSTANCE_TOKEN": tok}
     if work_dir:
         doc["work_dir"] = work_dir
+    if fresh_only:
+        doc["fresh_only"] = True
     return json.dumps(doc)
 
 
@@ -121,6 +126,12 @@ def write_meta(city: City, obj: str, meta: Meta) -> None:
 
 def start_of(pid: int) -> str:
     return LinuxProcs().snapshot()[pid].start
+
+
+def this_boot() -> str:
+    boot = LinuxProcs().boot()
+    assert boot, "this host's boot id cannot be read"
+    return boot
 
 
 def no_core_started(city: City, wait_s: float = 1.0) -> bool:
@@ -236,6 +247,9 @@ class DropKills(ProcSource):
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         return self.inner.environ(pid)
 
+    def boot(self) -> Optional[str]:
+        return self.inner.boot()
+
     def kill(self, pid: int, sig: int) -> None:
         if pid not in self.spared:
             self.inner.kill(pid, sig)
@@ -271,6 +285,7 @@ def test_start_keeps_the_programs_pid_and_start_time(city: City) -> None:
     meta = MetaStore(city.context().state_dir("meta")).read(str(obj))
     assert meta is not None and meta.pid == record["pid"]
     assert meta.pid_start == start_of(meta.pid)
+    assert meta.boot == this_boot(), "the start time counts from this boot"
 
 
 # --- with the core not answering --------------------------------------------------------------
@@ -291,7 +306,7 @@ def test_an_unreachable_core_triggers_the_holder_scan(city: City, spawned: List[
     orphan = subprocess.Popen(["sleep", "603"], env=dict(os.environ, GC_INSTANCE_TOKEN=tok), start_new_session=True)
     spawned.append(orphan.pid)
     write_meta(city, "a" * 32, Meta(session="mc-a", values={"GC_INSTANCE_TOKEN": tok}))
-    write_meta(city, "b" * 32, Meta(session="mc-b", pid=by_pid, pid_start=start_of(by_pid)))
+    write_meta(city, "b" * 32, Meta(session="mc-b", pid=by_pid, pid_start=start_of(by_pid), boot=this_boot()))
     done = city.run("server-stop")
     assert done.code == 0, done.stderr
     assert wait_dead(by_token) and wait_dead(by_pid), "the city's programs under the holder end"
@@ -310,9 +325,21 @@ def test_a_recycled_pid_is_never_taken_for_the_program(city: City, spawned: List
     core_down(city)
     stranger = subprocess.Popen(["sleep", "600"])
     spawned.append(stranger.pid)
-    write_meta(city, "c" * 32, Meta(session="mc-a", pid=stranger.pid, pid_start="1"))
+    write_meta(city, "c" * 32, Meta(session="mc-a", pid=stranger.pid, pid_start="1", boot=this_boot()))
     assert city.run("server-stop").code == 0
     assert alive(stranger.pid), "another start time is another process"
+
+
+def test_a_start_time_from_another_boot_is_never_taken_for_the_program(city: City, spawned: List[int]) -> None:
+    """A start time counts clock ticks from boot: after a reboot the same pid
+    and tick count may name another process, so one kept with another boot
+    finds nothing (no program outlives a reboot)."""
+    core_down(city)
+    stranger = subprocess.Popen(["sleep", "600"])
+    spawned.append(stranger.pid)
+    write_meta(city, "c" * 32, Meta(session="mc-a", pid=stranger.pid, pid_start=start_of(stranger.pid), boot=FAKE_BOOT))
+    assert city.run("server-stop").code == 0
+    assert alive(stranger.pid), "a start time from another boot names another process"
 
 
 def test_stop_with_the_core_down_and_nothing_running_ends_the_orphans(city: City, spawned: List[int]) -> None:
@@ -412,6 +439,54 @@ def test_after_server_stop_reads_start_no_core_and_answer_an_empty_city(city: Ci
     assert no_core_started(city, wait_s=2.0), "no read brings a stopped city's core back"
 
 
+def test_a_core_down_server_stop_removes_the_records_hc_keeps(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hc keeps its records across a core restart. A server-stop that finds
+    the core down starts it again and removes them, so the empty city its
+    reads then answer is the truth: gc's next start of the name, which is
+    always fresh_only, is not refused for a record they never showed."""
+    assert city.start("mc-a", start_config("exec cat")).code == 0
+    fake = city.fake
+    assert fake is not None
+    fake.crash()  # the core dies; its registry keeps the record for the next core
+    starts: List[str] = []
+
+    def start_again(ctx: object, hc_bin: str) -> None:
+        starts.append(hc_bin)
+        fake.start()  # the next core, with the registry the crashed one kept
+
+    monkeypatch.setattr(server, "start_core", start_again)
+    monkeypatch.setattr(core, "start_core", start_again)
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert core.parked(city.context())
+    observed = city.run("observe", "mc-a", stdin=b"cat\n")
+    assert json.loads(observed.stdout) == {"state": "absent"}
+    fresh = city.start("mc-a", start_config("exec cat", fresh_only=True))
+    assert fresh.code == 0, fresh.stderr  # 73 (a fresh start's name collision) with the record left
+    assert [t["state"] for t in city.terminals()] == ["live"], "the old record is gone, the new one runs"
+    assert len(starts) == 2, "server-stop started the core to remove what it keeps, and the start again"
+
+
+def test_a_core_down_server_stop_that_cannot_start_the_core_leaves_the_city_unparked(
+    city: City, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """While hc may keep a record of the city, a parked city's empty answer
+    would hide it: a core that cannot be started is reported, and the city
+    left unparked (one parked before too), so reads kick the core back."""
+    assert city.start("mc-a", start_config("exec cat")).code == 0
+    core_down(city)
+    core.park(city.context())  # as an earlier core-down server-stop that kept the metadata left it
+
+    def cannot_start(ctx: object, hc_bin: str) -> None:
+        raise OpError("hc server start failed")
+
+    monkeypatch.setattr(server, "start_core", cannot_start)
+    done = city.run("server-stop")
+    assert done.code == 1
+    assert "records" in done.stderr and "hc server start failed" in done.stderr, done.stderr
+    assert not core.parked(city.context())
+
+
 def test_a_start_after_server_stop_lets_a_crashed_core_be_kicked_again(city: City) -> None:
     assert city.run("server-stop").code == 0
     city.fake = None
@@ -436,6 +511,20 @@ def test_a_core_that_ended_without_server_stop_is_still_kicked(city: City) -> No
     while not os.path.exists(city.paths.socket) and time.monotonic() < end:
         time.sleep(0.05)
     assert os.path.exists(city.paths.socket)
+
+
+def test_liveness_reads_of_a_crashed_core_with_nothing_running_answer_false_unparked(city: City) -> None:
+    """is-running and process-alive ask only whether the name runs: with the
+    core down and nothing of the city running (no holder, no core process),
+    they answer false and kick no start, parked or not."""
+    assert city.start("mc-a", start_config("exec cat")).code == 0
+    core_down(city)  # the core and its programs end; nothing parks the city
+    assert not core.parked(city.context())
+    running = city.run("is-running", "mc-a")
+    assert (running.code, running.text.strip()) == (0, "false"), running.stderr
+    alive_answer = city.run("process-alive", "mc-a", stdin=b"cat\n")
+    assert (alive_answer.code, alive_answer.text.strip()) == (0, "false"), alive_answer.stderr
+    assert no_core_started(city, wait_s=2.0), "an answer that nothing runs starts no core"
 
 
 def test_a_core_kept_for_a_foreign_terminal_is_not_parked(city: City) -> None:
@@ -559,6 +648,9 @@ class MarkOpaque(ProcSource):
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         return None if pid in self.hidden else self.inner.environ(pid)
 
+    def boot(self) -> Optional[str]:
+        return self.inner.boot()
+
 
 def test_a_city_holder_running_a_process_that_cannot_be_read_may_survive(city: City, spawned: List[int]) -> None:
     core_down(city)
@@ -584,20 +676,23 @@ def test_a_holder_program_with_an_incarnation_that_names_no_program_may_survive(
 
 def test_a_core_of_the_session_on_another_socket_is_not_nothing_running(city: City, spawned: List[int]) -> None:
     listening = str(city.root / "elsewhere.sock")
-    server = unix_socket.socket(unix_socket.AF_UNIX, unix_socket.SOCK_STREAM)
-    server.bind(listening)
-    server.listen(1)
+    elsewhere = unix_socket.socket(unix_socket.AF_UNIX, unix_socket.SOCK_STREAM)
+    elsewhere.bind(listening)
+    elsewhere.listen(1)
     try:
         core_down(city)
         write_private_file(city.paths.core_lock, listening.encode())
         done = city.run("is-running", "mc-a")
         assert done.code == 1, "a core listening elsewhere may run the city's programs"
+        stopped = city.run("server-stop")
+        assert stopped.code == 1, "and server-stop cannot stop it"
+        assert listening in stopped.stderr and "restart-core" in stopped.stderr, stopped.stderr
     finally:
-        server.close()
+        elsewhere.close()
 
 
 def test_a_failure_to_record_the_program_keeps_the_start(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
-    def broken(self: Meta, pid: int, start: str) -> Meta:
+    def broken(self: Meta, pid: int, start: str, boot: str) -> Meta:
         raise MetaError("cannot write")
 
     monkeypatch.setattr(Meta, "with_program", broken)
@@ -633,14 +728,16 @@ class RecordingProcs(LinuxProcs):
         return sorted({pid for pid, _ in self.signals})
 
 
-def tmux_scene(city: City, root: Path, tok: str, *, holder: bool) -> None:
+def tmux_scene(city: City, root: Path, tok: str, *, holder: bool, pid: bool = True) -> None:
     """A box whose core was started from a pane of the operator's tmux
     server (100), its program 200 (with a child and a tmux client, and a
     daemon re-parented to init) under the city's holder 150 when ``holder``
     (else left under the pane), and three tmux servers carrying the box's
     token: one founded from inside the box (300, with the user's pane and
-    editor) and another city's (500, with its agent)."""
+    editor) and another city's (500, with its agent). Its metadata keeps
+    the program's pid and start time when ``pid``, else its token alone."""
     carry = {INSTANCE_TOKEN_KEY: tok}
+    add_boot(root, FAKE_BOOT)
     add_proc(root, 1, ppid=0, argv=["/sbin/init"])
     add_proc(root, 100, ppid=1, argv=["tmux"], comm="tmux: server")
     add_proc(root, 101, ppid=100, argv=["-zsh"], env=carry)  # the pane that ran gc in the box
@@ -658,7 +755,10 @@ def tmux_scene(city: City, root: Path, tok: str, *, holder: bool) -> None:
     add_proc(root, 302, ppid=301, argv=["vim", "notes.md"], env=carry)  # and their editor
     add_proc(root, 500, ppid=1, argv=["/usr/bin/tmux", "-L", "city-t", "new-session", "-d"], comm="tmux: server", env=carry)
     add_proc(root, 501, ppid=500, argv=["claude"], env=carry)  # another city's agent
-    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000"))
+    if pid:
+        write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000", boot=FAKE_BOOT))
+    else:
+        write_meta(city, "a" * 32, Meta(session="mc-a", values=carry))
 
 
 def test_server_stop_with_the_core_down_never_signals_tmux(city: City, tmp_path: Path) -> None:
@@ -677,6 +777,22 @@ def test_server_stop_with_the_core_down_never_signals_tmux(city: City, tmp_path:
     assert done.code == 0, done.stderr
     assert source.signalled() == [150, 200, 201, 210], source.signals
     assert core.parked(city.context()), "a core already down at teardown is parked too"
+
+
+def test_a_holders_program_found_by_its_token_alone_is_a_root_of_the_kill(city: City, tmp_path: Path) -> None:
+    """An incarnation whose metadata keeps no pid (its run's pid was never
+    recorded) is found by its token: the city holder's program carrying it
+    is the terminal's program, so the tmux server its core was started from
+    fences none of its tree, as for one found by its pid."""
+    tok = token("sweep-tmux-token-only")
+    root = tmp_path / "proc"
+    tmux_scene(city, root, tok, holder=True, pid=False)
+    source = RecordingProcs(root)
+    core_down(city)
+    city.procs.inner = source
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert source.signalled() == [150, 200, 201, 210], source.signals
 
 
 def test_stop_with_the_core_down_never_signals_tmux(city: City, tmp_path: Path) -> None:
@@ -698,9 +814,10 @@ def test_the_sweeps_rescan_ends_what_the_kill_started_and_still_fences_tmux(city
     tok = token("sweep-rescan")
     carry = {INSTANCE_TOKEN_KEY: tok}
     root = tmp_path / "proc"
+    add_boot(root, FAKE_BOOT)
     add_proc(root, 1, ppid=0, argv=["/sbin/init"])
     add_proc(root, 200, ppid=1, argv=["cat"], env=carry, start=2000)
-    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000"))
+    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000", boot=FAKE_BOOT))
 
     def spawn(pid: int) -> None:
         if pid == 200:
@@ -732,6 +849,28 @@ def test_server_stop_ends_only_launchers_whose_parent_is_a_city_holder(city: Cit
     done = city.run("server-stop")
     assert done.code == 0, done.stderr
     assert source.signalled() == [150, 151], source.signals
+
+
+def test_a_pid_kept_from_another_boot_never_names_a_holders_program(city: City, tmp_path: Path) -> None:
+    """After a reboot a kept pid and start time name whatever runs under
+    that pid now. Under a city holder that is a program no incarnation of
+    the city started (it carries no instance token: a person's terminal on
+    the city's core), left with its holder as a foreign program is, never
+    taken for the incarnation's."""
+    root = tmp_path / "proc"
+    add_boot(root, FAKE_BOOT)
+    add_proc(root, 1, ppid=0, argv=["/sbin/init"])
+    add_proc(root, 150, ppid=1, argv=["hc", "hold", "--socket", holder_prefix(city.paths) + "0123abcd.sock"])
+    add_proc(root, 200, ppid=150, argv=["cat"], start=2000)
+    carry = {INSTANCE_TOKEN_KEY: token("another-boot")}
+    other_boot = "00000000-0000-4000-8000-000000000002"
+    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000", boot=other_boot))
+    source = RecordingProcs(root)
+    core_down(city)
+    city.procs.inner = source
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert source.signalled() == [], source.signals
 
 
 def test_no_kick_while_parked_and_a_start_unparks_even_when_it_fails(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -798,10 +937,11 @@ def test_a_known_program_the_fence_keeps_is_reported_and_the_city_unparked(city:
     root = tmp_path / "proc"
     tok = token("sweep-fenced-program")
     carry = {INSTANCE_TOKEN_KEY: tok}
+    add_boot(root, FAKE_BOOT)
     add_proc(root, 1, ppid=0, argv=["/sbin/init"])
     add_proc(root, 150, ppid=1, argv=["hc", "hold", "--socket", holder_prefix(city.paths) + "0123abcd.sock"])
     add_proc(root, 200, ppid=150, argv=["tmux", "attach"], comm="tmux: client", env=carry, start=2000)
-    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000"))
+    write_meta(city, "a" * 32, Meta(session="mc-a", values=carry, pid=200, pid_start="2000", boot=FAKE_BOOT))
     source = RecordingProcs(root)
     core_down(city)
     city.procs.inner = source

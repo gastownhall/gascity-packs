@@ -372,12 +372,24 @@ checked against the app yet, so the sessions may not appear there.
   city did not start (a person's, or one an agent opened through the
   in-agent `hc`) survives, and while one runs the core keeps running for
   it; otherwise the core is stopped and the op waits until it is gone.
-  With the core not answering its socket, its programs may still run
-  under their holders (`herdr-core hold --socket <session>.holder.<id>.sock`), so
-  the process table is scanned: each incarnation is found by the pid and
-  start time its metadata keeps and by its `GC_INSTANCE_TOKEN`, its tree is
-  ended, the token is scanned for again as `stop` does, and a holder left
-  with no program is ended too. That sweep fences exactly as `stop`'s kill
+  With the core not answering its socket, hc may still keep the city's
+  records: it keeps them across a core restart, finished, and one left
+  behind would refuse gc's next start of its name (`fresh_only`, exit 73)
+  while every read of the stopped city answers it absent. So while the
+  pack keeps an incarnation's metadata (it does until the record is
+  removed), `server-stop` starts the core, holding the kick lock, and stops
+  the city with it as above. A core that cannot be started, or a core of
+  the city listening on another socket (`core.lock`: run
+  `gc herdr-core restart-core`), is reported and leaves the city unparked,
+  so reads kick the core back. Whatever the core, its programs may still
+  run under their holders (`herdr-core hold --socket <session>.holder.<id>.sock`),
+  so the process table is scanned: each incarnation is found by the pid
+  and start time its metadata keeps (with the boot they count from: on
+  Linux a start time counts clock ticks from boot, so one kept from
+  another boot never names a process), as a city holder's program carrying
+  its `GC_INSTANCE_TOKEN`, and by that token; its tree is ended, the token
+  is scanned for again as `stop` does, and a holder left with no program
+  is ended too. That sweep fences exactly as `stop`'s kill
   does, through the same fence and the same rescan: city infrastructure and
   any tmux server or client (with everything under it) is never signalled,
   so a tmux server founded from inside a box, its panes, and another
@@ -386,9 +398,7 @@ checked against the app yet, so the sessions may not appear there.
   that program's tree. The one exception to the fence is the city's own
   idle holders, matched by their exact `hold --socket` argv with the
   city's socket prefix: they are ended directly (a holder is never a tmux
-  or infrastructure process). Without the core the records stay in hc's
-  registry: the next start brings them back finished and recycles them.
-  Exit 0 means the
+  or infrastructure process). Exit 0 means the
   city's core is gone (or kept only for a foreign terminal) and no program
   of the city's sessions runs, so a second call exits 0; exit 1 names what
   may survive: a process that outlives its kill or cannot be read, a
@@ -397,19 +407,20 @@ checked against the app yet, so the sessions may not appear there.
   while an incarnation's metadata names neither its pid nor its instance
   token), an incarnation's program the fence keeps (a box whose program is
   a tmux client: only the core can end it), a core that runs but does not
-  answer, one that answers but fails, or a start of the core in flight
-  that does not finish in time.
+  answer, one that answers but fails, one that cannot be started while hc
+  may keep the city's records, a core of the city listening on another
+  socket, or a start of the core in flight that does not finish in time.
 - **A stopped city stays stopped.** When `server-stop` stops the core
   itself, it first marks the city parked (`parked.json` in the city's pack
-  state); so does a `server-stop` that finds the core already down. While the mark is there, no read starts the core again, and with
+  state); so does a `server-stop` that finds the core already down and
+  no incarnation's metadata kept. While the mark is there, no read starts the core again, and with
   no holder or core process of the city left every read answers an empty
   city: `inventory` complete and empty, `observe` absent, `list-running`
   empty, `is-running`, `process-alive` and `is-attached` `false`, `peek`
   exit 66. That is what gc's stop confirmation and `gc status` read after
   a stop. It is the truth: nothing of the city runs, and only `start`
-  brings the core back (with the core answering, every record was ended
-  and removed first; after a core-down `server-stop` the old records come
-  back finished on that start, which recycles them). A start clears the
+  brings the core back (every record of the city was ended and removed
+  first, so that start's `fresh_only` finds no record of the name). A start clears the
   mark first, before it tries the core: one whose core then fails to
   start leaves the city unparked, and reads kick again as for any core
   that is down. The mark holds only while nothing of the core runs. gc
