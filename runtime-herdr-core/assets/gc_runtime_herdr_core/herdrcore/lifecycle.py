@@ -16,11 +16,14 @@ agent):
    record's creation when neither takes it, so an older record is then not
    refused at all); then it warns, removes that record and goes ahead beside
    them.
-3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
-   Only what the config carries: this pack declares ``fs.host``, so gc
-   does this host work itself and leaves those fields out, and nothing is
-   done here; a gc that predates the declaration sends them, and so does a
-   current gc when it cannot read whether a live box holds the name.
+3. Unlocked: stage the start config's files and run ``pre_start`` (fatal),
+   each command within :data:`SETUP_TIMEOUT_S`. Only what the config
+   carries: this pack declares ``fs.host``, so gc does this host work
+   itself (each command within its ``[session] setup_timeout``, 10 s by
+   default) and leaves those fields out, and nothing is done here; a gc
+   older than ``fs.host`` (gastownhall/gascity#9023), or one whose cached
+   handshake predates the declaration, sends them, and so does a current
+   gc when it cannot read whether a live box holds the name.
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
    ``terminal.run`` the launcher and label the pid. The run is sent once: hc
@@ -72,8 +75,9 @@ parent exits) while the agent still runs, every child once the agent is
 gone. So whatever the record's state, the incarnation's processes are also
 found by its ``GC_INSTANCE_TOKEN`` in their environment, and each of them
 dies, one the agent meant to outlive it too. That is wider than gc's orphan
-sweep, which ends only orphan roots of sessions gc no longer runs (and does
-not run for this pack): a shared per-user daemon first started from inside
+sweep, which for this pack ends only leftovers adopted by init or the
+user's subreaper, of sessions that are closed or stopped with no live box
+under their name: a shared per-user daemon first started from inside
 the box (a Bazel or Gradle server, an ssh ControlMaster, a gpg-agent)
 carries the token and dies with it, by design. One started
 during the kill (a TERM handler's ``setsid`` child) was in no capture, so

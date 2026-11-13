@@ -91,9 +91,10 @@ def test_protocol_answers_the_v2_ready_handshake(tmp_path: Path) -> None:
 
 def test_fs_host_is_declared_with_local_locality(tmp_path: Path) -> None:
     # gc ignores fs.host without locality local. With it gc does the host work
-    # and scans the process table for this pack; that scan fences tmux
-    # subtrees only because proc.exec stays undeclared (the agent runs outside
-    # tmux), which the next test pins.
+    # and scans the process table for this pack. Since gastownhall/gascity#9129
+    # that scan fences tmux subtrees unless a pack declares proc.exec without
+    # carrier.ops (gc's agentRunsInBoxTmux); the next two tests pin the
+    # stronger never-proc.exec and carrier.ops.
     doc = json.loads(invoke("protocol", cwd=tmp_path).stdout)
     assert "fs.host" in doc["capabilities"]
     assert doc["locality"] == "local"

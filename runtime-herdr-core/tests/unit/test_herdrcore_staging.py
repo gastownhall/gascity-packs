@@ -343,7 +343,8 @@ def test_session_live_is_never_run_and_start_says_so(city: City) -> None:
 #
 # The pack declares fs.host, so gc stages the work dir and runs pre_start and
 # session_setup on the host itself, and leaves those fields out of the start
-# config. A gc that predates the declaration sends every field and the pack
+# config. A gc older than fs.host (gastownhall/gascity#9023), or one whose
+# cached handshake predates the declaration, sends every field and the pack
 # does the host work, as does a current gc that cannot read whether a live
 # box holds the name. The pack does exactly what the config carries, so
 # either way each piece of host work is done once.
@@ -384,7 +385,7 @@ def test_host_work_the_config_omits_is_not_done(city: City) -> None:
     work = city.root / "work"
     work.mkdir()
     for field in HOST_WORK:
-        host_work(city, field, work)  # what an older gc would have sent: none of it is
+        host_work(city, field, work)  # what a gc older than fs.host sends: none of it is
     # What gc staged on the host before the start, a merged settings file too.
     (work / ".claude").mkdir()
     (work / ".claude" / "settings.json").write_text('{"merged":true}')

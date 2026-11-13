@@ -1,10 +1,11 @@
 """Staging a start config's files into the session's work directory, exactly
 as the config carries them. The runtime declares ``fs.host``, so gc stages
 the work directory on the host itself and leaves these fields out of the
-config: then nothing is staged here. A gc that predates the declaration (or
-whose cached handshake does) still sends them, and so does a current gc when
-it cannot read whether a live box holds the name (``observe`` fails or
-answers unknown); then they are staged here.
+config: then nothing is staged here. A gc older than ``fs.host``
+(gastownhall/gascity#9023), or one whose cached handshake predates the
+declaration, still sends them, and so does a current gc when it cannot read
+whether a live box holds the name (``observe`` fails or answers unknown);
+then they are staged here.
 
 Order and layout follow gc's own staging (gascity ``internal/runtime/staging.go``
 and ``internal/overlay``): every ``pack_overlay_dirs`` entry, then

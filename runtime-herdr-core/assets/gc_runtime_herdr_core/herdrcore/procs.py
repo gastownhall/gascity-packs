@@ -36,11 +36,12 @@ identity into every pane it later runs, the user's own shells and editors
 and, for a server a gc command founded, a whole tmux-runtime city. This
 fence differs from gc's: gc's (gastownhall/gascity#9129) covers a tmux
 server or client carrying a ``GC_SESSION_ID`` and everything under it, and
-on Linux also recognizes a renamed tmux by its title; this one covers any
-tmux server or client, with or without a session id, but knows tmux only
-by the exact names in :data:`TMUX_NAMES`, so a renamed tmux (``tmux-next``)
-or a GNU ``screen`` server founded from inside the session is not fenced
-here and dies with its stop, though gc's cleanup spares a renamed tmux.
+on Linux also recognizes a renamed tmux (a name of up to 14 characters) by
+its title; this one covers any tmux server or client, with or without a
+session id, but knows tmux only by the exact names in :data:`TMUX_NAMES`,
+so a renamed tmux (``tmux-next``) or a GNU ``screen`` server founded from
+inside the session is not fenced here and dies with its stop, though on
+Linux gc's cleanup spares such a renamed tmux.
 The fence covers only what
 still runs under a server: a process detached from a pane (re-parented to
 init) is not fenced, and work an agent runs under tmux is, so it outlives

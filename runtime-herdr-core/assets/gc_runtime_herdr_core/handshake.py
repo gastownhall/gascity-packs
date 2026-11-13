@@ -13,10 +13,13 @@ leaves them out of the start config), locality ``local``, which ``fs.host``
 requires. A token is declared only together with the ops that implement it
 and the tests that prove them. ``proc.exec``, ``proc.provision`` and
 ``input-fence`` never are: under ``proc.exec`` gc would drive the box by
-piping tmux commands to ``exec``, and without it gc reads the agent as
-running outside tmux, so its process-table cleanup never treats a tmux
-server or client carrying a ``GC_SESSION_ID`` (one founded inside a box), or
-anything under it, as a session root.
+piping tmux commands to ``exec``. gc's process-table cleanup never treats a
+tmux server or client carrying a ``GC_SESSION_ID`` (one founded inside a
+box), or anything under it, as a session root, unless the pack declares
+``proc.exec`` without ``carrier.ops`` (gc then reads its agent as running
+in the box's tmux). That fence needs a gc that contains
+gastownhall/gascity#9129: one built from gastownhall/gascity#9032 up to it
+honors ``fs.host`` without the fence (see the README's Status).
 
 Kept apart from the op table so the ``protocol`` op loads no backend code.
 """
