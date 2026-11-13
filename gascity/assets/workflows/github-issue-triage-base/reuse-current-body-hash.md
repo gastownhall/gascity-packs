@@ -18,7 +18,8 @@ the workflow root. Validate the report with
 `{{pack_root}}/assets/scripts/github_reports.py validate-triage --repo
 <gc.github.repo> --issue-number <gc.github.number> --body-hash
 <gc.github.body_hash>` before stamping metadata. If the stored comment was
-deleted, create a replacement from the existing rendered comment and update
+deleted, create a replacement from the existing rendered comment (it already
+starts with the `<!-- gc-agent:v1 -->` marker line; keep it) and update
 workflow root metadata.
 
 If no current reusable artifacts exist, stamp

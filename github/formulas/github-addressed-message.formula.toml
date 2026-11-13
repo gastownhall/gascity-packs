@@ -115,6 +115,7 @@ ACKED=$(printf '%s' "$SOURCE_JSON" | jq -r '((if type == "array" then .[0] else 
 if [ "{{acknowledgement_requested}}" != "false" ] && [ -z "$ACKED" ]; then
   BODY=$(mktemp)
   cat >"$BODY" <<'EOF'
+<!-- gc-agent:v1 -->
 Received `{{address}}` request as `{{source_bead_id}}`.
 
 I am handling it now and will follow up here with the result or blocker.
@@ -162,6 +163,7 @@ if [ -n "{{city_root}}" ]; then
 fi
 RESPONSE_BODY=$(mktemp)
 cat >"$RESPONSE_BODY" <<'EOF'
+<!-- gc-agent:v1 -->
 <write the final result, blocker, durable work IDs, or dry-run plan here>
 EOF
 RESPONSE_ARGS=(github comment-issue "{{github_repo}}" "{{github_issue_number}}" --installation-id "{{github_app_installation_id}}" --body-file "$RESPONSE_BODY")

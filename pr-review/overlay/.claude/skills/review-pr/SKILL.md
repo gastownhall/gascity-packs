@@ -468,9 +468,11 @@ Only post via `gh pr comment` after the user explicitly confirms. If the user re
 
 ### GitHub Comment Format
 
-The comment must follow this exact structure. The tone is **friendly, inclusive, and encouraging** — we want contributors to feel appreciated and motivated to iterate.
+The comment must follow this exact structure, starting with the universal factory marker line `<!-- gc-agent:v1 -->` (keep it as the first line of the posted body; post with `gh pr comment --body-file`). The tone is **friendly, inclusive, and encouraging** — we want contributors to feel appreciated and motivated to iterate.
 
 ```markdown
+<!-- gc-agent:v1 -->
+
 ## Automated PR Review — <MODE_LABEL>
 
 Where `<MODE_LABEL>` is:
