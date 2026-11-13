@@ -468,6 +468,105 @@ class CreateBeadsFromTasksTests(unittest.TestCase):
         self.assertNotIn(["gc", "convoy", "--rig", "backend", "add", "CONV-1", "BACK-2"], add_commands)
 
 
+    def test_parent_inherits_from_payload_and_convoy_and_bead_overrides(self) -> None:
+        text = (
+            sample_tasks()
+            .replace("target_rig: backend\n", "target_rig: backend\nparent: FEAT-1\n")
+            .replace("  - key: release\n", "  - key: release\n    parent: FEAT-2\n")
+            .replace("      - key: docs\n", "      - key: docs\n        parent: FEAT-3\n")
+        )
+        plan = script.parse_plan(script.extract_payload(text))
+
+        parents = {item.key: item.parent for item in plan.runnables}
+        self.assertEqual(parents, {"schema": "FEAT-1", "docs": "FEAT-3", "announce": "FEAT-2"})
+
+    def test_parent_absent_means_no_parent_flag(self) -> None:
+        plan = script.parse_plan(script.extract_payload(sample_tasks()))
+
+        self.assertEqual({item.parent for item in plan.runnables}, {""})
+
+    def test_parent_must_be_non_empty_string(self) -> None:
+        for bad in ('""', "[]", "7"):
+            text = sample_tasks().replace("target_rig: backend\n", f"target_rig: backend\nparent: {bad}\n")
+            with self.subTest(parent=bad), self.assertRaisesRegex(script.PlanError, "parent must be a non-empty string"):
+                script.parse_plan(script.extract_payload(text))
+
+    def test_dry_run_passes_parent_to_bd_create(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "tasks.md"
+            path.write_text(
+                sample_tasks().replace("target_rig: backend\n", "target_rig: backend\nparent: FEAT-1\n"),
+                encoding="utf-8",
+            )
+
+            with mock.patch("builtins.print") as mocked_print:
+                script.create_from_tasks(path, city=None, dry_run=True, force=False)
+
+        printed = [str(call.args[0]) for call in mocked_print.call_args_list]
+        creates = [line for line in printed if " create --json " in line and line.startswith("gc bd ")]
+        self.assertEqual(len(creates), 3)
+        for line in creates:
+            self.assertTrue(line.endswith("--parent FEAT-1"), line)
+        self.assertIn("gc bd --rig backend show FEAT-1 --json", printed)
+        convoy_creates = [line for line in printed if line.startswith("gc convoy ") and " create " in line]
+        for line in convoy_creates:
+            self.assertNotIn("--parent", line)
+
+    def test_missing_parent_fails_before_any_create(self) -> None:
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, text=None, capture_output=None, check=None):
+            seen.append(cmd)
+            if cmd[-3:] == ["show", "FEAT-404", "--json"]:
+                return subprocess_result("", returncode=1, stderr="no issue found matching FEAT-404")
+            return fake_successful_gc(cmd, text=text, capture_output=capture_output, check=check)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "tasks.md"
+            original = sample_tasks().replace("target_rig: backend\n", "target_rig: backend\nparent: FEAT-404\n")
+            path.write_text(original, encoding="utf-8")
+
+            with mock.patch("subprocess.run", side_effect=fake_run):
+                with self.assertRaisesRegex(script.PlanError, "FEAT-404"):
+                    script.create_from_tasks(path, city=None, dry_run=False, force=False)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+        self.assertFalse([cmd for cmd in seen if "create" in cmd])
+
+    def test_create_passes_parent_for_new_beads_only(self) -> None:
+        created_section = """
+
+## Created Beads
+
+| Key | Kind | Bead ID | Title |
+|---|---|---|---|
+| schema | bead | BACK-1 | Add schema |
+"""
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, text=None, capture_output=None, check=None):
+            seen.append(cmd)
+            return fake_successful_gc(cmd, text=text, capture_output=capture_output, check=check)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "tasks.md"
+            path.write_text(
+                sample_tasks()
+                .replace("status: approved", "status: partial")
+                .replace("target_rig: backend\n", "target_rig: backend\nparent: FEAT-1\n")
+                + created_section,
+                encoding="utf-8",
+            )
+
+            with mock.patch("subprocess.run", side_effect=fake_run):
+                script.create_from_tasks(path, city=None, dry_run=False, force=False)
+
+        bd_creates = [cmd for cmd in seen if cmd[:2] == ["gc", "bd"] and "create" in cmd]
+        self.assertEqual(sorted(cmd[cmd.index("--json") + 1] for cmd in bd_creates), ["Announce release", "Document workflow"])
+        for cmd in bd_creates:
+            self.assertEqual(cmd[-2:], ["--parent", "FEAT-1"])
+
+
 def subprocess_result(stdout: str, returncode: int = 0, stderr: str = ""):
     return mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
 
