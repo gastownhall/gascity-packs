@@ -205,8 +205,13 @@ def analyze(root_id, beads, session_beads, usage_facts=None, usage_malformed=0):
     # profiler that is a first-class case, not an error.
     in_flight = t1 is None
 
+    root_md = root.get("metadata") or {}
+    graph_v2 = (root_md.get("gc.kind") == "workflow"
+                and root_md.get("gc.formula_contract") == "graph.v2")
     steps = []
     for b in beads:
+        if graph_v2 and (b.get("metadata") or {}).get("gc.root_bead_id") != root_id:
+            continue
         if b["id"] == root_id or b.get("issue_type") in ("convoy",):
             continue
         created, started, closed = pt(b.get("created_at")), pt(b.get("started_at")), pt(b.get("closed_at"))
