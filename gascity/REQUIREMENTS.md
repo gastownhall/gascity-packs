@@ -213,6 +213,23 @@ validator point at that `gc.check_path` value. Because resolution follows
 formula-layer shadowing, a higher-priority layer that ships a script with the
 same name under `assets/scripts/checks/` replaces this pack's check.
 
+The validators under `assets/scripts/` run on the `python3` the orchestrator's
+check environment resolves and need PyYAML importable by that interpreter. A
+check gate separates three failures by exit status so the orchestrator can
+tell them apart (Gas City formula spec section 3.1): `1` is a verdict about the
+artifact and costs a producer attempt; `75` means `gc`/`bd` could not answer
+and declares an infrastructure outcome; `78` means this machine cannot run the
+check as configured (no `gc` or `python3`, a `python3` that cannot start, a
+check installed without its validator, or an interpreter that cannot import
+PyYAML). A missing dependency must never be reported as invalid artifact
+content. Gas City versions that include gastownhall/gascity#8378 hold a step
+open on `78` until an operator fixes the environment and spend no attempt;
+earlier versions grade `78`, like `75`, as an ordinary failure, so nothing
+regresses. On those versions the orchestrator records about 256 bytes of the
+gate's first stderr line as the hold reason, so a validator puts the
+interpreter, `HOME`, and `PYTHONUSERBASE` it saw on that line and the remedy on
+the next.
+
 Derived packs may add stricter methodology-specific schemas or extension fields,
 but they must not relax the base schema or replace required base sections,
 fields, statuses, traceability, or coverage.
