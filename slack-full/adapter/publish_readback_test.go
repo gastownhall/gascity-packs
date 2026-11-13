@@ -224,6 +224,114 @@ func TestReadBackPublishedMessageAcceptsSlackCanonicalizedText(t *testing.T) {
 	}
 }
 
+// TestSlackNormalizeTextFoldsLabelledLinks pins the fold on the link shapes
+// Slack completes with a label (gp-dadc6). A consistent `<target|label>` folds
+// to the label the sender typed, so `<http://huggingface.co/x|huggingface.co/x>`
+// compares equal to the posted `huggingface.co/x`; folding only the brackets
+// leaves `http://...|huggingface.co/x`, and the delivered message is reported
+// as a permanent content mismatch.
+func TestSlackNormalizeTextFoldsLabelledLinks(t *testing.T) {
+	tests := []struct {
+		name   string
+		posted string
+		stored string
+		equal  bool
+	}{
+		{
+			name:   "scheme-less domain completed with a scheme",
+			posted: "model card: huggingface.co/org/model today",
+			stored: "model card: <http://huggingface.co/org/model|huggingface.co/org/model> today",
+			equal:  true,
+		},
+		{
+			name:   "typed URL returned with a repeated label",
+			posted: "docs: https://docs.slack.dev/",
+			stored: "docs: <https://docs.slack.dev/|https://docs.slack.dev/>",
+			equal:  true,
+		},
+		{
+			name:   "typed URL returned without a label",
+			posted: "docs: https://docs.slack.dev/",
+			stored: "docs: <https://docs.slack.dev/>",
+			equal:  true,
+		},
+		{
+			name:   "email address completed with mailto",
+			posted: "ping ops@example.com now",
+			stored: "ping <mailto:ops@example.com|ops@example.com> now",
+			equal:  true,
+		},
+		{
+			name:   "file name that ends in a TLD",
+			posted: "see run.sh and main.py",
+			stored: "see <http://run.sh|run.sh> and <http://main.py|main.py>",
+			equal:  true,
+		},
+		{
+			name:   "query string escaped inside target and label",
+			posted: "huggingface.co/x?a=1&b=2",
+			stored: "<http://huggingface.co/x?a=1&amp;b=2|huggingface.co/x?a=1&amp;b=2>",
+			equal:  true,
+		},
+		{
+			name:   "sender-authored link keeps its destination and label",
+			posted: "<https://example.com|the runbook>",
+			stored: "<https://example.com|the runbook>",
+			equal:  true,
+		},
+		{
+			name:   "a different label is a different message",
+			posted: "<https://example.com|the runbook>",
+			stored: "<https://example.com|something else>",
+		},
+		{
+			name:   "a different link is a different message",
+			posted: "model card: huggingface.co/org/model",
+			stored: "model card: <http://huggingface.co/org/other|huggingface.co/org/other>",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := slackNormalizeText(test.stored) == slackNormalizeText(test.posted)
+			if got != test.equal {
+				t.Fatalf("fold(stored)==fold(posted) = %t, want %t\nposted %q -> %q\nstored %q -> %q",
+					got, test.equal,
+					test.posted, slackNormalizeText(test.posted),
+					test.stored, slackNormalizeText(test.stored))
+			}
+		})
+	}
+}
+
+// A matching label alone cannot establish that Slack stored the same link.
+func TestReadbackPreservesLabelledLinkDestination(t *testing.T) {
+	tests := []struct {
+		name, posted, stored string
+		wantErr              bool
+	}{
+		{"authored target changed", "<https://example.com/approved|the runbook>", "<https://example.com/different|the runbook>", true},
+		{"authored scheme changed with same label", "<http://example.com|example.com>", "<https://example.com|example.com>", true},
+		{"authored link replaced by plain label", "<http://example.com|example.com>", "example.com", true},
+		{"authored same URL and label preserved", "<https://example.com|https://example.com>", "<https://example.com|https://example.com>", false},
+		{"authored target unchanged", "<https://example.com/approved|the runbook>", "<https://example.com/approved|the runbook>", false},
+		{"autolink target changed", "model card: huggingface.co/org/model", "model card: <http://huggingface.co/org/other|huggingface.co/org/model>", true},
+		{"autolink http", "model card: huggingface.co/org/model", "model card: <http://huggingface.co/org/model|huggingface.co/org/model>", false},
+		{"autolink https", "model card: huggingface.co/org/model", "model card: <https://huggingface.co/org/model|huggingface.co/org/model>", false},
+		{"scheme changed", "https://example.com/path", "<http://example.com/path|https://example.com/path>", true},
+		{"email target changed", "ops@example.com", "<mailto:other@example.com|ops@example.com>", true},
+		{"email unchanged", "ops@example.com", "<mailto:ops@example.com|ops@example.com>", false},
+		{"escaped query unchanged", "example.com/?a=1&b=2", "<http://example.com/?a=1&amp;b=2|example.com/?a=1&amp;b=2>", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: test.stored}, readbackTarget(test.posted))
+			if (err != nil) != test.wantErr {
+				t.Fatalf("matchReadbackMessage = %v, wantErr %t (posted %q, stored %q)", err, test.wantErr, test.posted, test.stored)
+			}
+		})
+	}
+}
+
 // TestReadBackPublishedMessageMatchesKeyedPublishByReferenceMarker covers the
 // other arm: a keyed publish carries the reference marker as its tail, whose
 // characters are outside Slack's escape set and are not link-shaped, so a tail
@@ -690,6 +798,44 @@ func TestHandlePublishDeliversTextSlackCanonicalizes(t *testing.T) {
 	}
 }
 
+// TestHandlePublishDeliversTextWithLabelledAutoLinks is the end-to-end form of
+// TestSlackNormalizeTextFoldsLabelledLinks (gp-dadc6): a status-report body with
+// mrkdwn, backticks and scheme-less domains was posted, stored by Slack, and
+// still reported Delivered:false/permanent (readback_unconfirmed) with a real
+// message_id, so the caller retried and posted it again. The fake stores the
+// domain the way Slack is documented to, as a labelled link.
+func TestHandlePublishDeliversTextWithLabelledAutoLinks(t *testing.T) {
+	fastReadbackTimings(t)
+	const text = "*Status*\n- model card: huggingface.co/org/model\n- script: `run.sh` and README.md\n- PR https://github.com/o/r/pull/313"
+	var captured slackPostMessageReq
+	server := httptest.NewServer(newFakeSlackPublishHandler(t, &captured, "1700.001", nil))
+	t.Cleanup(server.Close)
+	originalBase := slackAPIBase
+	slackAPIBase = server.URL
+	t.Cleanup(func() { slackAPIBase = originalBase })
+
+	body := mustJSON(t, map[string]any{
+		"session_id":   "gc-1",
+		"conversation": map[string]string{"conversation_id": "C123", "kind": "room"},
+		"text":         text,
+	})
+	recorder := httptest.NewRecorder()
+	handlePublish(config{slackBotToken: "xoxb-test"}, nil, nil, newPublishDedupCache(publishDedupTTL))(
+		recorder, httptest.NewRequest(http.MethodPost, "/publish", strings.NewReader(body)))
+
+	var receipt publishReceipt
+	if err := json.Unmarshal(recorder.Body.Bytes(), &receipt); err != nil {
+		t.Fatalf("decode receipt %q: %v", recorder.Body.String(), err)
+	}
+	if !receipt.Delivered {
+		t.Fatalf("receipt = %+v, want delivered: Slack stored this message with its domains as labelled links",
+			receipt)
+	}
+	if stored := slackCanonicalizeForTest(captured.Text); !strings.Contains(stored, "<http://huggingface.co/org/model|huggingface.co/org/model>") {
+		t.Fatalf("fake Slack did not label-link the domain (%q); the test proves nothing about labelled auto-links", stored)
+	}
+}
+
 func newSlackReadbackServer(
 	t *testing.T,
 	wantPath string,
@@ -741,13 +887,19 @@ func mustJSON(t *testing.T, value any) string {
 	return string(encoded)
 }
 
-// testSlackBareURL matches the URL shape Slack auto-links. `|` is excluded
-// because it is Slack's own label separator inside a link span.
-var testSlackBareURL = regexp.MustCompile(`https?://[^\s<>|]+`)
+// testSlackAutoLinkable matches the text the fake Slack auto-links. `|` is
+// excluded because it is Slack's own label separator inside a link span. The
+// first arm is a URL written with its scheme, which Slack stores as `<url>`; the
+// second is a scheme-less domain or file name ending in a TLD, which Slack
+// completes with a scheme and stores as `<http://text|text>`, keeping what the
+// sender typed as the label. The TLD list is a sample, not Slack's.
+var testSlackAutoLinkable = regexp.MustCompile(
+	`https?://[^\s<>|]+|\b[A-Za-z0-9][A-Za-z0-9-]*\.(?:co|com|io|py|sh|md)\b(?:/[^\s<>|]*)?`)
 
 // slackCanonicalizeForTest models what Slack does to message text between
 // chat.postMessage and conversations.history: it entity-escapes `&`, `<` and
-// `>`, and auto-links bare URLs into `<url>` spans. Markup spans Slack itself
+// `>`, and auto-links URLs into `<url>` spans and scheme-less domains into
+// `<http://domain|domain>` spans. Markup spans Slack itself
 // produced (`<@U…>`, `<#C…>`, `<url|label>`) are passed through, which is why
 // the escape runs on the text between spans rather than over the whole string.
 //
@@ -782,7 +934,12 @@ func slackCanonicalizeForTest(text string) string {
 // this function as evidence about the platform.
 func canonicalizePlainTextForTest(text string) string {
 	escaped := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
-	return testSlackBareURL.ReplaceAllString(escaped, "<$0>")
+	return testSlackAutoLinkable.ReplaceAllStringFunc(escaped, func(linkable string) string {
+		if strings.HasPrefix(linkable, "http://") || strings.HasPrefix(linkable, "https://") {
+			return "<" + linkable + ">"
+		}
+		return "<http://" + linkable + "|" + linkable + ">"
+	})
 }
 
 // newFakeSlackPublishHandler is a fake Slack for tests whose subject is what
@@ -834,5 +991,156 @@ func assertSlackReadbackQuery(t *testing.T, query url.Values, channel, messageTS
 		if got := query.Get(key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
+	}
+}
+
+// Regression controls from the independent gp-9ywz3 destination review.
+func TestReadbackDestinationControls(t *testing.T) {
+	cases := []struct {
+		name, posted, stored string
+		accept               bool
+	}{
+		{"authored target only", "<https://example.com/approved|runbook>", "<https://example.com/other|runbook>", false},
+		{"authored scheme only", "<http://example.com|example.com>", "<https://example.com|example.com>", false},
+		{"authored target label identical", "<https://example.com|https://example.com>", "<https://example.com|https://example.com>", true},
+		{"authored repeated label target changed", "<https://example.com|https://example.com>", "<https://other.example|https://example.com>", false},
+		{"authored rendered as plain label", "<http://example.com|example.com>", "example.com", false},
+		{"authored label only", "<https://example.com|runbook>", "<https://example.com|guide>", false},
+		{"authored mail target only", "<mailto:ops@example.com|on call>", "<mailto:other@example.com|on call>", false},
+		{"authored query escaping", "<https://example.com/?a=1&b=2|guide>", "<https://example.com/?a=1&amp;b=2|guide>", true},
+		{"authored NUL identical", "<https://example.com|a\x00b>", "<https://example.com|a\x00b>", true},
+		{"authored NUL target changed", "<https://example.com|a\x00b>", "<https://other.example|a\x00b>", false},
+		{"NUL sentinel spoof", "<http://example.com|example.com>", "\x00\x01<http://example.com|example.com>\x00\x02", false},
+		{"plain http completion", "example.com/path", "<http://example.com/path|example.com/path>", true},
+		{"plain https completion", "example.com/path", "<https://example.com/path|example.com/path>", true},
+		{"typed https no label", "https://example.com/path", "<https://example.com/path>", true},
+		{"typed https repeated label", "https://example.com/path", "<https://example.com/path|https://example.com/path>", true},
+		{"typed http repeated label", "http://example.com/path", "<http://example.com/path|http://example.com/path>", true},
+		{"typed scheme change", "https://example.com/path", "<http://example.com/path|https://example.com/path>", false},
+		{"typed scheme removal", "https://example.com/path", "<http://example.com/path|example.com/path>", false},
+		{"autolink target only", "example.com/path", "<http://example.com/other|example.com/path>", false},
+		{"mail completion", "ops@example.com", "<mailto:ops@example.com|ops@example.com>", true},
+		{"mail target only", "ops@example.com", "<mailto:other@example.com|ops@example.com>", false},
+		{"query escaping", "example.com/?a=1&b=2", "<http://example.com/?a=1&amp;b=2|example.com/?a=1&amp;b=2>", true},
+		{"entity single pass", "docs &amp;lt;", "docs &lt;", false},
+		{"different text", "approved", "different", false},
+		{"truncated text", "approved text", "approved", false},
+		{"mixed different spans", "<https://docs.example|docs> example.com", "<https://docs.example|docs> <http://example.com|example.com>", true},
+		{"two authored spans exact", "<http://example.com|example.com> <http://example.com|example.com>", "<http://example.com|example.com> <http://example.com|example.com>", true},
+		{"two plain URLs", "example.com example.com", "<http://example.com|example.com> <http://example.com|example.com>", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: c.stored}, readbackTarget(c.posted))
+			if (err == nil) != c.accept {
+				t.Fatalf("accept=%t want=%t err=%v posted=%q stored=%q", err == nil, c.accept, err, c.posted, c.stored)
+			}
+			if err != nil && (slackReadbackFailureKind(err) != slackReadbackUnconfirmed || slackReadbackIsRetryable(err)) {
+				t.Fatalf("mismatch classification changed: %v", err)
+			}
+		})
+	}
+}
+
+func TestReadbackMixedAuthoredAndPlainLinks(t *testing.T) {
+	cases := []struct{ name, posted, stored string }{
+		{"authored then plain domain", "<http://example.com|example.com> example.com", "<http://example.com|example.com> <http://example.com|example.com>"},
+		{"plain then authored domain", "example.com <http://example.com|example.com>", "<http://example.com|example.com> <http://example.com|example.com>"},
+		{"authored then plain email", "<mailto:ops@example.com|ops@example.com> ops@example.com", "<mailto:ops@example.com|ops@example.com> <mailto:ops@example.com|ops@example.com>"},
+		{"authored then repeated typed https", "<https://example.com|https://example.com> https://example.com", "<https://example.com|https://example.com> <https://example.com|https://example.com>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: c.stored}, readbackTarget(c.posted))
+			if err != nil {
+				t.Fatalf("valid unchanged destinations rejected: %v; posted=%q stored=%q", err, c.posted, c.stored)
+			}
+		})
+	}
+}
+
+func TestReadbackAutoLinkSchemeKinds(t *testing.T) {
+	cases := []struct {
+		name, posted, stored string
+		accept               bool
+	}{
+		{"email to mailto positive", "ops@example.com", "<mailto:ops@example.com|ops@example.com>", true},
+		{"email to http changes destination kind", "ops@example.com", "<http://ops@example.com|ops@example.com>", false},
+		{"email to https changes destination kind", "ops@example.com", "<https://ops@example.com|ops@example.com>", false},
+		{"domain to http positive", "example.com", "<http://example.com|example.com>", true},
+		{"domain to mailto changes destination kind", "example.com", "<mailto:example.com|example.com>", false},
+		{"typed mailto repeated label positive", "mailto:ops@example.com", "<mailto:ops@example.com|mailto:ops@example.com>", true},
+		{"typed ftp repeated label", "ftp://example.com:21/a", "<ftp://example.com:21/a|ftp://example.com:21/a>", true},
+		{"uppercase scheme repeated label", "HTTPS://example.com/a", "<HTTPS://example.com/a|HTTPS://example.com/a>", true},
+		{"typed ftp changed target", "ftp://example.com:21/a", "<ftp://example.com:22/a|ftp://example.com:21/a>", false},
+		{"typed mailto doubled scheme", "mailto:ops@example.com", "<mailto:mailto:ops@example.com|mailto:ops@example.com>", false},
+		{"typed mailto to https changes destination kind", "mailto:ops@example.com", "<https://mailto:ops@example.com|mailto:ops@example.com>", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: c.stored}, readbackTarget(c.posted))
+			if (err == nil) != c.accept {
+				t.Errorf("accept=%t want=%t err=%v posted=%q stored=%q", err == nil, c.accept, err, c.posted, c.stored)
+			}
+		})
+	}
+}
+
+func TestReadbackMixedLinkOccurrenceIntegrity(t *testing.T) {
+	tests := []struct {
+		name, posted, stored string
+		accept               bool
+	}{
+		{"changed authored first", "<http://example.com|example.com> example.com", "<https://example.com|example.com> <http://example.com|example.com>", false},
+		{"changed authored second", "example.com <http://example.com|example.com>", "<http://example.com|example.com> <https://example.com|example.com>", false},
+		{"changed plain first", "example.com <http://example.com|example.com>", "<http://other.example|example.com> <http://example.com|example.com>", false},
+		{"consecutive authored and plain", "<http://example.com|example.com>example.com", "<http://example.com|example.com><http://example.com|example.com>", true},
+		{"changed adjacent authored", "example.com<http://example.com|example.com>", "<http://example.com|example.com><https://example.com|example.com>", false},
+		{"web query containing email", "example.com/?email=ops@example.com", "<http://example.com/?email=ops@example.com|example.com/?email=ops@example.com>", true},
+		{"unknown existing scheme not completed", "custom:thing", "<https://custom:thing|custom:thing>", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: test.stored}, readbackTarget(test.posted))
+			if (err == nil) != test.accept {
+				t.Fatalf("accept=%t want=%t err=%v", err == nil, test.accept, err)
+			}
+		})
+	}
+}
+
+// Zero-width normalized spans must retain their own place beside authored links.
+func TestReadbackEmptySpanAndNamedHostPort(t *testing.T) {
+	const link = "<https://good.example|guide>"
+	tests := []struct {
+		name, posted, stored string
+		wantErr              bool
+	}{
+		{"empty before", "<>" + link, "<>" + link, false},
+		{"escaped empty before", "&lt;&gt;" + link, "&lt;&gt;" + link, false},
+		{"empty between", link + "<>" + link, link + "<>" + link, false},
+		{"empty missing", "<>" + link, link, true},
+		{"empty inserted", link, "<>" + link, true},
+		{"empty with changed link", "<>" + link, "<><https://bad.example|guide>", true},
+		{"empty at wrong position", link + "<>" + link, "<>" + link + link, true},
+		{"named port http", "example.com:8080/path", "<http://example.com:8080/path|example.com:8080/path>", false},
+		{"named port https", "example.com:8443/path", "<https://example.com:8443/path|example.com:8443/path>", false},
+		{"root dot port http", "example.com.:8080/path", "<http://example.com.:8080/path|example.com.:8080/path>", false},
+		{"root dot port https", "example.com.:8443/path", "<https://example.com.:8443/path|example.com.:8443/path>", false},
+		{"root dot changed port", "example.com.:8080/path", "<http://example.com.:8081/path|example.com.:8080/path>", true},
+		{"root dot changed target", "example.com.:8080/path", "<http://other.com.:8080/path|example.com.:8080/path>", true},
+		{"changed port", "example.com:8080/path", "<http://example.com:8081/path|example.com:8080/path>", true},
+		{"nonnumeric port", "example.com:abc/path", "<http://example.com:abc/path|example.com:abc/path>", true},
+		{"custom scheme", "ssh:example.com", "<https://ssh:example.com|ssh:example.com>", true},
+		{"double scheme", "http://example.com", "<http://http://example.com|http://example.com>", true},
+		{"double mailto", "mailto:ops@example.com", "<mailto:mailto:ops@example.com|mailto:ops@example.com>", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := matchReadbackMessage(slackReadbackMessage{Text: test.stored}, readbackTarget(test.posted))
+			if (err != nil) != test.wantErr {
+				t.Fatalf("matchReadbackMessage = %v, wantErr %t", err, test.wantErr)
+			}
+		})
 	}
 }
