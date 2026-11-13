@@ -84,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `gc slack events-health`, durable callback liveness records, and the
+  same callback verdict to `gc slack status` and pack doctor checks.
+
 - Accidental-mrkdwn guard on the send path (gp-o42): `gc slack
   reply-current` (legacy and company paths), `publish`,
   `publish-to-channel`, `upload --initial-comment`, and `delegate` now
