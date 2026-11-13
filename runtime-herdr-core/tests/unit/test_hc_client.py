@@ -472,7 +472,7 @@ def test_cancel_interrupts_an_in_flight_call(make_client: ClientFactory, fake_hc
 
 def test_the_conformance_fault_fails_calls_at_the_call_site(make_client: ClientFactory, fake_hc: FakeHc) -> None:
     with pytest.raises(HcUnreachable) as caught:
-        make_client(inject_unavailable=True).list_terminals()
+        make_client(fault="unavailable").list_terminals()
     assert caught.value.written is False
     assert fake_hc.connections == 0
 

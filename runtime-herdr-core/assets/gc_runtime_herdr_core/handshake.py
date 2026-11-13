@@ -1,12 +1,16 @@
 """What runtime ``herdr-core`` declares in its handshake.
 
 v2-ready (``observe.v1`` with ``report-attachment``), ``report-activity``,
-``city-scoped`` (each city key has its own core), ``conformance-faults`` and
+``city-scoped`` (each city key has its own core), ``conformance-faults``,
 ``server-lifecycle`` (``server-stop`` ends the city's core and sessions),
-locality ``local``. A token is declared only together with the ops that
-implement it and the tests that prove them. ``proc.exec``, ``proc.provision``
-and ``input-fence`` never are: under ``proc.exec`` gc would drive the box by
-piping tmux commands to ``exec``.
+``carrier.ops`` (gc drives the box only through the pack's own ``nudge``,
+``peek``, ``send-keys``, ``interrupt`` and ``clear-scrollback``),
+``idle-boundary`` (``peek`` shows the agent's screen, and ``set-meta`` /
+``get-meta`` keep its ready prompt) and ``input-outcome`` (the driving ops'
+typed answers), locality ``local``. A token is declared only together with
+the ops that implement it and the tests that prove them. ``proc.exec``,
+``proc.provision`` and ``input-fence`` never are: under ``proc.exec`` gc
+would drive the box by piping tmux commands to ``exec``.
 
 ``fs.host`` is not declared yet, so gc sends the full start config and the
 pack stages and runs the host work itself (``start`` does what its config
@@ -34,6 +38,9 @@ HANDSHAKE: Final = Handshake(
         "city-scoped",
         "conformance-faults",
         "server-lifecycle",
+        "carrier.ops",
+        "idle-boundary",
+        "input-outcome",
     ),
     locality="local",
 )

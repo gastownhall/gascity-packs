@@ -1,25 +1,40 @@
 """The driving ops: nudge, send-keys, interrupt and clear-scrollback.
 
+Under ``carrier.ops`` these are the only way gc drives a box, and under
+``input-outcome`` each answers with a typed outcome (:mod:`..rpp.outcome`):
+exit 0 when the input was delivered, exit 80 with one outcome line for every
+other outcome, exit 1 when the outcome is unknown.
+
 Input goes to the box's current incarnation by its terminal address, never
 by name, and only while that incarnation is intact: a kept terminal's
-replacement shell is not the agent. Outcomes follow RPP v0: delivered, or a
-box that is gone, exits 0 (best-effort input, exec-session-provider.md
-"Conventions"); a refusal exits 1 with the reason and nothing typed:
+replacement shell is not the agent. A name whose newest record is finished
+or broken, or that no record carries, is ``gone`` (no running box holds it),
+exactly when ``observe`` would answer ``dead`` or ``absent``.
 
-* hc refused (``blocked``: the agent waits on its own question; ``unavailable``:
-  the terminal is still starting or waits for a shell; a failed
-  precondition);
-* the request never reached hc (the core is down, or refused on its hello),
-  or a ``nudge``'s reached it cut short (hc acts on no part of a request);
-* a tmux key with no hc spelling.
+hc's answers map onto gc's words:
+
+* hc refused: ``not_found``/``finished`` are ``gone``; ``blocked`` (the
+  program waits on its own question) is ``pending_interaction``;
+  ``unavailable`` (the terminal is starting or waits for a shell) is
+  ``not_sent``; ``status_mismatch`` is ``busy``; any other kind is exit 1,
+  naming it;
+* the core is down: ``unavailable``; it is a version the pack does not
+  drive: exit 1, "hc version unsupported";
+* the request never reached hc, or reached it cut short (hc acts on no part
+  of a request): ``not_sent``;
+* a tmux key with no hc spelling: ``rejected``, before anything is sent.
 
 A ``nudge`` whose request reached hc whole is delivered, like tmux's
-fire-and-forget ``send-keys``: hc types a send only once a person stops
-typing and finishes it after the pack stops waiting, so one it still holds
-at the op's deadline, or whose reply was lost, is typed later, and gc must
-not send it again. The accepted limit: a nudge hc still holds is lost if the
-core dies before the person stops typing. ``send-keys`` and ``interrupt``
-whose reply was lost after the write answer exit 1 ("unconfirmed").
+fire-and-forget ``send-keys``: hc types a send once a person stops typing and
+finishes it after the pack stops waiting, so one it still holds at the op's
+deadline, or whose reply was lost, is typed later, and gc must not send it
+again. It answers ``delivered_unobserved``, as does a send hc typed into a
+program that reports its status but was not seen starting the turn; a
+program that never reports status is plain ``delivered`` (tmux parity). The
+accepted limit: a nudge hc still holds is lost if the core dies before the
+person stops typing. A ``send-keys``, ``interrupt`` or ``clear-scrollback``
+whose request was written but whose reply never came exits 1 (unknown): a
+retried Esc or Ctrl-C can end the program.
 
 No lock is held across a ``send``, which hc may hold for as long as a person
 types, so ``observe`` keeps answering within its 4 s.
@@ -29,18 +44,40 @@ from __future__ import annotations
 
 import string
 from dataclasses import dataclass
-from typing import Final, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Final, List, Mapping, Optional, Sequence, Tuple, Union
 
 from ..hc.client import HcClient
-from ..hc.errors import HcError, HcRpcError
-from ..hc.types import Terminal
-from ..rpp.ops import OpError, OpResult
+from ..hc.errors import HcError, HcGateError, HcRpcError, HcUnreachable
+from ..hc.types import SendResult, Terminal
+from ..rpp.ops import OpResult
+from ..rpp.outcome import InputOp, InputOutcome, OutcomeWord, outcome_result
 from . import activity
 from .context import OpContext
-from .reads import list_city, session_arg, unreachable
+from .reads import list_city, unreachable
 from .records import is_intact, newest, object_of
 
 GONE_KINDS: Final = frozenset({"not_found", "finished"})
+
+REFUSALS: Final[Mapping[str, OutcomeWord]] = {
+    "not_found": "gone",
+    "finished": "gone",
+    "blocked": "pending_interaction",
+    "unavailable": "not_sent",
+    "status_mismatch": "busy",
+}
+"""hc's refusal kinds as gc's words, for ``nudge``. The other ops answer the
+two nudge-only words with ``not_sent``; hc refuses neither keys nor an
+interrupt with them."""
+
+REFUSAL_DETAILS: Final[Mapping[str, str]] = {
+    "not_found": "the box's terminal is gone",
+    "finished": "the box's program has ended",
+    "blocked": "pending interaction: the agent is waiting on its own question; nothing was typed",
+    "unavailable": "the terminal is not ready for input; nothing was typed",
+    "status_mismatch": "the program's status did not allow it; nothing was typed",
+}
+
+VERSION_KINDS: Final = frozenset({"needs_update", "unsupported_generation", "incompatible"})
 
 TMUX_KEYS: Final[Mapping[str, str]] = {
     "Enter": "enter",
@@ -127,127 +164,207 @@ NUDGE_SEND_RESERVE_S: Final = 5.0
 send hc still holds is delivered, so that answer must reach gc: one cut off
 by gc's own kill reads as a failure, and the queue would resend the text."""
 
-
-def _target(ctx: OpContext, name: str, *, send_reserve: Optional[float] = None) -> Tuple[HcClient, Optional[Terminal]]:
-    client = ctx.client(send_reserve=send_reserve)
-    try:
-        record = newest(list_city(client, ctx, name, finished=False), name)
-    except HcError as err:
-        unreachable(ctx, err)
-        raise OpError(f"not sent: cannot reach the city's core: {err}") from None
-    return client, (record if record is not None and is_intact(record) else None)
-
-
-Outcome = Literal["delivered", "gone", "pending_interaction", "not_sent", "unconfirmed"]
+UNSUPPORTED_CORE: Final = "hc version unsupported: run gc doctor"
 
 
 @dataclass(frozen=True)
-class Delivery:
-    outcome: Outcome
-    detail: str = ""
+class Unknown:
+    """An answer gc reads as untyped (exit 1): the outcome is unknown, or the
+    failure is no outcome gc acts on."""
 
-    @property
-    def answered_ok(self) -> bool:
-        """Whether RPP v0 answers it with exit 0 (delivered, or the box is gone)."""
-        return self.outcome in ("delivered", "gone")
+    detail: str
 
 
-def _refused(err: HcRpcError) -> Delivery:
-    if err.kind in GONE_KINDS:
-        return Delivery("gone")
-    if err.kind == "blocked":
-        return Delivery("pending_interaction", "pending interaction: the agent is waiting on its own question; nothing was typed")
-    if err.kind == "unavailable":
-        return Delivery("not_sent", "not sent: the terminal is not ready for input; nothing was typed")
-    return Delivery("not_sent", f"not sent: {err}")
+Answer = Union[InputOutcome, Unknown]
 
 
-def _lost(what: str, err: HcError) -> Delivery:
-    if err.written:
-        return Delivery("unconfirmed", f"unconfirmed: {what} may still be typed ({err})")
-    return Delivery("not_sent", f"not sent: {err}")
+def answer_result(ctx: OpContext, op: InputOp, answer: Answer) -> OpResult:
+    """``answer`` as ``op``'s exit code and stdout."""
+    if isinstance(answer, Unknown):
+        return OpResult.fail(answer.detail)
+    return outcome_result(op, answer, ctx.request.redactor)
 
 
-def deliver(
-    ctx: OpContext, client: HcClient, name: str, record: Terminal, text: str, *, retry_unavailable: bool = False
-) -> Delivery:
+def _unsent(err: HcError) -> Answer:
+    """A call that failed before hc could act on it."""
+    if isinstance(err, HcGateError):
+        return Unknown(f"{UNSUPPORTED_CORE} ({err})")
+    if isinstance(err, HcUnreachable):
+        return InputOutcome("unavailable", f"cannot reach the city's core; nothing was sent: {err}")
+    return InputOutcome("not_sent", f"nothing reached the core: {err}")
+
+
+def _refused(op: InputOp, err: HcRpcError) -> Answer:
+    """hc's definitive refusal: nothing was typed."""
+    word = REFUSALS.get(err.kind)
+    if word is None:
+        if err.kind in VERSION_KINDS:
+            return Unknown(f"{UNSUPPORTED_CORE} ({err})")
+        return Unknown(f"the core refused the input ({err.kind or 'an error with no kind'}): {err}")
+    if op != "nudge" and word in ("busy", "pending_interaction"):
+        word = "not_sent"
+    return InputOutcome(word, REFUSAL_DETAILS.get(err.kind, f"nothing was typed ({err.kind})"))
+
+
+def _target(
+    ctx: OpContext, name: str, *, send_reserve: Optional[float] = None
+) -> Union[Tuple[HcClient, Terminal], Answer]:
+    """The client and the intact incarnation to drive, or the answer when there is none."""
+    if not name:
+        return InputOutcome("gone", "no session name")
+    client = ctx.client(send_reserve=send_reserve)
+    try:
+        record = newest(list_city(client, ctx, name), name)
+    except HcRpcError as err:
+        return Unknown(f"cannot list the city's terminals: {err}")
+    except HcError as err:
+        unreachable(ctx, err)
+        if isinstance(err, HcGateError):
+            return Unknown(f"{UNSUPPORTED_CORE} ({err})")
+        return InputOutcome("unavailable", f"cannot reach the city's core; nothing was sent: {err}")
+    if record is None:
+        return InputOutcome("gone", "no box holds the name")
+    if not is_intact(record):
+        return InputOutcome("gone", "the box's program has ended")
+    return client, record
+
+
+def _noted(ctx: OpContext, record: Terminal) -> None:
+    obj = object_of(record)
+    if obj is not None:
+        activity.note_input(ctx, obj)
+
+
+def _sent(result: SendResult) -> InputOutcome:
+    if result.started is False:
+        return InputOutcome("delivered_unobserved", "the program reports its status but was not seen starting the turn")
+    return InputOutcome("delivered")
+
+
+def deliver(ctx: OpContext, client: HcClient, record: Terminal, text: str, *, retry_unavailable: bool = False) -> Answer:
     """Send ``text`` to ``record``.
 
     A send whose request reached hc whole is delivered unless hc answers
     that nothing was typed: hc finishes a send after its client stops
     waiting, so one it still holds for a person's pause, or whose reply was
-    lost, is typed; and answering it as a failure would make gc's queue
-    send it again. Only a send never written, one cut short (hc acts on no
-    part of a request), or one hc refused, is not sent."""
-    obj = object_of(record)
+    lost, is typed, and answering it as anything gc retries would make gc's
+    queue send it again."""
     while True:
         try:
-            client.send(record.address, text)
+            result = client.send(record.address, text)
         except HcRpcError as err:
             if retry_unavailable and err.kind == "unavailable" and ctx.request.deadline.budget(1.0) > 0.5:
                 ctx.request.cancel.pause(0.5)
                 continue
-            return _refused(err)
+            return _refused("nudge", err)
         except HcError as err:
             if not err.written or err.partial:
-                return Delivery("not_sent", f"not sent: {err}")
-        if obj is not None:
-            activity.note_input(ctx, obj)
-        return Delivery("delivered")
+                return _unsent(err)
+            _noted(ctx, record)
+            return InputOutcome("delivered_unobserved", f"hc took the text, but its answer did not arrive: {err}")
+        _noted(ctx, record)
+        return _sent(result)
 
 
-def op_nudge(ctx: OpContext) -> OpResult:
-    name = session_arg(ctx.request)
-    text = ctx.request.stdin.decode("utf-8", "surrogateescape")
-    client, record = _target(ctx, name, send_reserve=NUDGE_SEND_RESERVE_S)
-    if record is None:
-        return OpResult.ok()
-    result = deliver(ctx, client, name, record, text)
-    return OpResult.ok() if result.answered_ok else OpResult.fail(result.detail)
+def nudge(ctx: OpContext, name: str, text: str) -> Answer:
+    target = _target(ctx, name, send_reserve=NUDGE_SEND_RESERVE_S)
+    if not isinstance(target, tuple):
+        return target
+    client, record = target
+    return deliver(ctx, client, record, text)
 
 
-def _answer(result: Delivery) -> OpResult:
-    return OpResult.ok() if result.answered_ok else OpResult.fail(result.detail)
+def _written_unknown(what: str, err: HcError) -> Answer:
+    """A key op's call that failed after its request may have reached hc."""
+    if not err.written or err.partial:
+        return _unsent(err)
+    return Unknown(f"outcome unknown: {what} may have reached the program ({err})")
 
 
-def op_send_keys(ctx: OpContext) -> OpResult:
-    name = session_arg(ctx.request)
-    keys, bad = translate_keys(ctx.request.args[1:])
+def send_keys(ctx: OpContext, name: str, tmux_keys: Sequence[str]) -> Answer:
+    keys, bad = translate_keys(tmux_keys)
     if keys is None:
-        return OpResult.fail(f"rejected: tmux key {bad!r} has no herdr-core spelling; nothing was typed")
-    client, record = _target(ctx, name)
-    if record is None or not keys:
-        return OpResult.ok()
+        return InputOutcome("rejected", f"tmux key {bad!r} has no herdr-core spelling; nothing was typed")
+    target = _target(ctx, name)
+    if not isinstance(target, tuple):
+        return target
+    client, record = target
+    if not keys:
+        return InputOutcome("delivered")
     try:
         client.keys(record.address, keys)
     except HcRpcError as err:
-        return _answer(_refused(err))
+        return _refused("send-keys", err)
     except HcError as err:
-        return _answer(_lost("the keys", err))
-    obj = object_of(record)
-    if obj is not None:
-        activity.note_input(ctx, obj)
-    return OpResult.ok()
+        return _written_unknown("the keys", err)
+    _noted(ctx, record)
+    return InputOutcome("delivered")
+
+
+def interrupt(ctx: OpContext, name: str) -> Answer:
+    target = _target(ctx, name)
+    if not isinstance(target, tuple):
+        return target
+    client, record = target
+    try:
+        # Whatever hc saw (stopped, exited, still working): the stop key was pressed.
+        client.interrupt(record.address)
+    except HcRpcError as err:
+        return _refused("interrupt", err)
+    except HcError as err:
+        # Never retried: a second Ctrl-C can end the program.
+        return _written_unknown("the interrupt", err)
+    return InputOutcome("delivered")
+
+
+def clear_scrollback(ctx: OpContext, name: str) -> Answer:
+    """hc keeps no scrollback a client can clear: delivered (a no-op) to the
+    box's intact incarnation, confirmed by its own ``terminal.get``."""
+    target = _target(ctx, name)
+    if not isinstance(target, tuple):
+        return target
+    client, record = target
+    try:
+        current = client.get(record.address)
+    except HcRpcError as err:
+        return _refused("clear-scrollback", err)
+    except HcError as err:
+        return _written_unknown("clearing the scrollback", err)
+    if not is_intact(current):
+        return InputOutcome("gone", "the box's program has ended")
+    return InputOutcome("delivered")
+
+
+def _name(ctx: OpContext) -> str:
+    return ctx.request.args[0] if ctx.request.args else ""
+
+
+def op_nudge(ctx: OpContext) -> OpResult:
+    text = ctx.request.stdin.decode("utf-8", "surrogateescape")
+    return answer_result(ctx, "nudge", nudge(ctx, _name(ctx), text))
+
+
+def op_send_keys(ctx: OpContext) -> OpResult:
+    return answer_result(ctx, "send-keys", send_keys(ctx, _name(ctx), ctx.request.args[1:]))
 
 
 def op_interrupt(ctx: OpContext) -> OpResult:
-    name = session_arg(ctx.request) if ctx.request.args and ctx.request.args[0] else ""
-    if not name:
-        return OpResult.ok()
-    client, record = _target(ctx, name)
-    if record is None:
-        return OpResult.ok()
-    try:
-        client.interrupt(record.address)
-    except HcRpcError as err:
-        return _answer(_refused(err))
-    except HcError as err:
-        # Never retried: a second Ctrl-C can end the program.
-        return _answer(_lost("the interrupt", err))
-    return OpResult.ok()
+    return answer_result(ctx, "interrupt", interrupt(ctx, _name(ctx)))
 
 
 def op_clear_scrollback(ctx: OpContext) -> OpResult:
-    # hc keeps no scrollback a client can clear: delivered (a no-op) or gone.
-    _target(ctx, session_arg(ctx.request))
-    return OpResult.ok()
+    return answer_result(ctx, "clear-scrollback", clear_scrollback(ctx, _name(ctx)))
+
+
+__all__ = [
+    "Answer",
+    "Unknown",
+    "deliver",
+    "op_clear_scrollback",
+    "op_interrupt",
+    "op_nudge",
+    "op_send_keys",
+    "translate_key",
+    "translate_keys",
+]
+

@@ -10,8 +10,9 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
-`city-scoped`, `conformance-faults` and `server-lifecycle` (locality
-`local`; `fs.host` is deferred, see [Host work](#how-sessions-run)), and passes
+`city-scoped`, `conformance-faults`, `server-lifecycle`, `carrier.ops`,
+`idle-boundary` and `input-outcome` (locality `local`; `fs.host` is deferred,
+see [Host work](#how-sessions-run)), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
@@ -40,7 +41,7 @@ runtime-herdr-core/
       handshake.py                 the capabilities this build declares
       rpp/                         provider-neutral RPP kit
         exitcodes.py wire.py ops.py perop.py cancel.py redact.py flock.py
-        statedir.py jsonval.py
+        statedir.py jsonval.py outcome.py
       hc/                          herdr-core client
         paths.py version.py client.py types.py parse.py errors.py
       herdrcore/                   runtime semantics
@@ -278,26 +279,19 @@ checked against the app yet, so the sessions may not appear there.
   skipped, as in gc, and a file staged onto itself (a hard link, or an
   overlay that is the work directory) is left as it is, where gc's copy
   empties it.
-- **Input** (`nudge`, `send-keys`, `interrupt`) goes to the current
-  incarnation by address. RPP v0 outcomes: delivered or gone exits 0; a
-  refusal (the agent waits on its own question, the terminal is not ready, a
-  failed precondition, a tmux key hc cannot spell) or a request that never
-  reached hc exits 1 with nothing typed, as does a `nudge` whose request
-  reached hc cut short (hc acts on no part of a request). A `nudge` whose
-  request reached hc whole is delivered, as tmux's `send-keys` is
-  fire-and-forget: hc types a send
-  only once a person stops typing and finishes it after the pack stops
-  waiting, so a nudge still held at the op's deadline, or whose reply was
-  lost, is typed later, and gc's queue never sends it twice. **Accepted
-  limit:** a nudge hc still holds is lost if the core dies before the person
-  stops typing (rare). gc's typed input outcomes (an exit code for
-  "delivered, not yet observed") will report that case precisely once they
-  land. gc's nudge queue itself is at-least-once: a gc process that dies
-  mid-op redelivers after its claim's lease (about two minutes) runs out,
-  and a send hc holds for a person's pause widens that window to the op's
-  whole budget. A nudge stops waiting for hc 5 s before its deadline, so
-  its answer reaches gc before gc gives up on the op. A `send-keys` or `interrupt` whose reply was lost after the write
-  exits 1 ("unconfirmed").
+- **Input.** gc drives a box only through the pack's own `nudge`, `peek`,
+  `send-keys`, `interrupt` and `clear-scrollback` (`carrier.ops`); it never
+  sends tmux commands, and `exec` exits 2 without reading them. `peek`
+  shows the agent's screen and `set-meta`/`get-meta` keep its ready prompt
+  (`GC_READY_PROMPT_PREFIX`, byte for byte), so gc can find a safe idle
+  boundary (`idle-boundary`). Input goes to the current incarnation by
+  address, and the four driving ops answer with a typed outcome
+  (`input-outcome`): exit 0 when the input was delivered (a `nudge` may add
+  one `delivered_unobserved` line), exit 80 with exactly one
+  `{"outcome":…,"detail":…}` line for every other outcome, exit 1 when the
+  outcome is unknown. A non-success word is never printed on exit 0, so
+  every gc reads the same answer: one that does not read `input-outcome`
+  sees exit 80 as an ordinary failure. See [Input outcomes](#input-outcomes).
 - **Activity.** A program that never reported OSC 7501 status is active
   when its screen changes: `inventory` and `get-last-activity` read the
   screen of each such running agent (hc keeps no output time). `inventory`
@@ -438,6 +432,51 @@ checked against the app yet, so the sessions may not appear there.
   names, parked or not, without starting a core.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
   reading stdin), `program-status` and session events.
+
+## Input outcomes
+
+How each answer from hc reads as gc's outcome words (gascity
+`docs/reference/exec-session-provider.md`, "Typed input outcomes"). It needs
+a gc that reads `carrier.ops` and `input-outcome`; an older gc sees exit 0
+for a delivery and an ordinary failure for exit 80.
+
+| hc's answer | Ops | Outcome | Exit |
+|---|---|---|---|
+| `send` typed, and the program went `working` (`started: true`) | `nudge` | `delivered` | 0 |
+| `send` typed into a program that never reports OSC 7501 status (`started: null`) | `nudge` | `delivered` (as tmux's fire-and-forget `send-keys`) | 0 |
+| `send` typed into a program that reports status but did not go `working` in hc's window (`started: false`) | `nudge` | `delivered_unobserved` | 0 + line |
+| `send` written whole, then no reply: hc still holds it at the op's deadline (a person keeps typing), or the reply was lost | `nudge` | `delivered_unobserved` | 0 + line |
+| `keys` or `interrupt` answered (whatever the interrupt observed) | `send-keys`, `interrupt` | `delivered` | 0 |
+| the box's incarnation is intact (hc keeps no scrollback to clear) | `clear-scrollback` | `delivered` | 0 |
+| no record carries the name; its newest record is finished or broken (a kept terminal's replacement shell, a lost holder); hc answers `not_found` or `finished` | all four | `gone` | 80 |
+| `blocked`: the program waits on its own question | `nudge` | `pending_interaction` | 80 |
+| `status_mismatch` | `nudge` | `busy` | 80 |
+| `unavailable`: the terminal is starting or waits for a shell | all four | `not_sent` | 80 |
+| the request never reached hc, or reached it cut short (hc acts on no part of a request) | all four | `not_sent` | 80 |
+| the core is down (no socket, refused, no connection in time) | all four | `unavailable` | 80 |
+| a tmux key with no herdr-core spelling (nothing is sent) | `send-keys` | `rejected` | 80 |
+| a request written, then no reply (timeout or lost connection) | `send-keys`, `interrupt`, `clear-scrollback` | unknown: a retried Esc or Ctrl-C can end the program | 1 |
+| the core is a version the pack does not drive (`needs_update`, `unsupported_generation`, `incompatible`, a refused hello) | all four | unknown, "hc version unsupported: run gc doctor" | 1 |
+| any other hc error kind | all four | unknown, naming the kind | 1 |
+
+A `nudge` whose request reached hc whole is delivered: hc types a send only
+once a person stops typing and finishes it after the pack stops waiting, so
+a nudge still held at the op's deadline, or whose reply was lost, is typed
+later, and gc's queue never sends it twice. The pack keeps no record of
+sends. **Accepted limit:** a nudge hc still holds is lost if the core dies
+before the person stops typing (rare). gc's nudge queue itself is
+at-least-once: a gc process that dies mid-op redelivers after its claim's
+lease (about two minutes) runs out, and a send hc holds for a person's pause
+widens that window to the op's whole budget. A nudge stops waiting for hc
+5 s before its deadline, so its answer reaches gc before gc gives up on the
+op. `detail` is at most 1 KiB, one line, and redacted like stderr.
+
+Under `conformance-faults` the pack injects `GC_RPP_FAULT` at its hc calls,
+so every op takes its real path: `unavailable` (every call fails before
+anything is written), `blocked` (the core refuses a `send` as `blocked`),
+`lose_reply` and `hold_send` (an input call, and `clear-scrollback`'s
+`terminal.get`, is done and its reply dropped, as a lost connection or a
+send held past the deadline) and `dead` (every record reads finished).
 
 ## Foundations
 

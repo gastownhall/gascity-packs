@@ -420,6 +420,17 @@ def test_server_stop_under_the_conformance_fault_cannot_tell(city: City) -> None
     assert "may survive" in done.stderr
 
 
+@pytest.mark.parametrize("fault", ["blocked", "lose_reply", "hold_send"])
+def test_server_stop_under_an_input_fault_stops_the_city(city: City, fault: str) -> None:
+    # Only ``unavailable`` stands in for a core that is down; the input faults
+    # touch the driving calls, so server-stop still ends the city.
+    assert city.start("mc-a", start_config("exec cat")).code == 0
+    done = city.run("server-stop", extra={"GC_RPP_FAULT": fault})
+    assert done.code == 0, done.stderr
+    running = city.run("is-running", "mc-a")
+    assert running.code == 0 and running.stdout.strip() == b"false", running.stderr
+
+
 # --- a stopped city stays stopped -------------------------------------------------------------
 
 

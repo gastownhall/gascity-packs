@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Callable, Final, Mapping, Optional
 
-from ..hc.client import CallTimeouts, CoreEndpoint, HcClient
+from ..hc.client import BackendFault, CallTimeouts, CoreEndpoint, HcClient
 from ..hc.paths import HcPaths, resolve_paths
 from ..rpp.cancel import CancelToken, Deadline
 from ..rpp.flock import FileLock
@@ -32,7 +32,16 @@ from .config import pin_policy, resolve_hc_binary, test_mode
 from .procs import ProcSource, default_source
 
 FAULT_ENV: Final = "GC_RPP_FAULT"
-"""``conformance-faults``: ``unavailable`` fails every backend call at its call site."""
+"""``conformance-faults``: the backend fault to inject at every hc call
+(:data:`~..hc.client.BackendFault`); any other value injects none."""
+
+FAULTS: Final[Mapping[str, BackendFault]] = {
+    "unavailable": "unavailable",
+    "blocked": "blocked",
+    "lose_reply": "lose_reply",
+    "hold_send": "hold_send",
+    "dead": "dead",
+}
 
 READ_LOCK_WAIT_S: Final = 1.0
 """Reads wait at most this long for a name's lock, then answer unknown."""
@@ -76,8 +85,13 @@ class OpContext:
         self.test = test_mode(self.env)
         self.paths: HcPaths = resolve_paths(self.env, machine=host.machine, home=host.home, city_var=city_var)
         self.pack_state = os.path.join(self.paths.state_root, PACK_SUBDIR, self.paths.city_id)
-        self.fault = self.env.get(FAULT_ENV, "") == "unavailable"
+        self.fault: Optional[BackendFault] = FAULTS.get(self.env.get(FAULT_ENV, ""))
         self._endpoint = CoreEndpoint(self.paths.socket, policy=pin_policy())
+
+    @property
+    def backend_unavailable(self) -> bool:
+        """Whether ``GC_RPP_FAULT=unavailable`` stands in for a core that is down."""
+        return self.fault == "unavailable"
 
     # --- private state ---------------------------------------------------------
 
@@ -116,7 +130,7 @@ class OpContext:
             deadline=self.request.deadline,
             cancel=self.request.cancel,
             timeouts=timeouts,
-            inject_unavailable=self.fault,
+            fault=self.fault,
         )
 
     def rollback_client(self, seconds: float) -> HcClient:

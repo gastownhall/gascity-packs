@@ -1,11 +1,12 @@
 """The op table and the handshake of runtime ``herdr-core``.
 
-The handshake declares observe.v1 with ``report-attachment`` (v2-ready),
-``report-activity``, ``city-scoped`` (each city key has its own core),
-``conformance-faults`` and ``server-lifecycle`` (``server-stop``); not
-``fs.host`` yet (:mod:`..handshake`). It never declares ``proc.exec``,
-``proc.provision`` or ``input-fence``: under ``proc.exec`` gc would drive the
-box by piping tmux commands to ``exec``. ``exec``, ``provision`` and ``check-image`` are absent
+The handshake (:mod:`..handshake`) declares observe.v1 with
+``report-attachment`` (v2-ready), ``report-activity``, ``city-scoped`` (each
+city key has its own core), ``conformance-faults``, ``server-lifecycle``
+(``server-stop``), ``carrier.ops``, ``idle-boundary`` and ``input-outcome``;
+not ``fs.host`` yet. It never declares ``proc.exec``, ``proc.provision``
+or ``input-fence``: under ``proc.exec`` gc would drive the box by piping tmux
+commands to ``exec``. ``exec``, ``provision`` and ``check-image`` are absent
 from the table, so they exit 2 without reading stdin.
 """
 

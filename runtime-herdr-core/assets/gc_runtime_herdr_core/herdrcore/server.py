@@ -86,7 +86,7 @@ UNREACHABLE_SURVIVORS: Final = "the city's sessions may survive"
 
 
 def op_server_stop(ctx: OpContext) -> OpResult:
-    if ctx.fault:
+    if ctx.backend_unavailable:
         return OpResult.fail(f"the backend is unavailable (GC_RPP_FAULT=unavailable): {UNREACHABLE_SURVIVORS}")
     client = ctx.client()
     warnings: List[str] = []
