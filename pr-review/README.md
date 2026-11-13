@@ -8,7 +8,9 @@ gate before finalize and a publish/merge handoff to mayor.
 
 - **`mol-adopt-pr` formula** — 5-step molecule: intake, rebase-check, review,
   human-gate, finalize
-- **`/review-pr` skill** — multi-model code review engine (overlay)
+- **`/review-pr` skill** — multi-model code review engine (overlay), including
+  explicit doc-contract, error-path parity, lock-contract, and Gas City
+  mechanical-sync checks
 
 ## Prerequisites
 
@@ -57,6 +59,32 @@ gc sling <rig>/polecat mol-adopt-pr --formula \
 | B | Maintainer changes + edits enabled | Merge commit (preserves dual authorship) |
 | C | Maintainer changes + edits disabled | New PR from maintainer's fork |
 | D | Original PR already merged | Follow-up PR for fixups |
+
+## Publication hand-off
+
+`mol-pr-from-issue`, `mol-pr-revert` and `mol-pr-merge-only` perform no GitHub
+write and no push. Each run ends at `branch-ready` with the finished work local and the exact publish
+commands recorded on the molecule root bead:
+
+| Formula | Recorded command keys |
+|---------|-----------------------|
+| `mol-pr-from-issue` | `evidence.publish_push_cmd`, `evidence.publish_create_cmd` |
+| `mol-pr-revert` | `evidence.publish_push_cmd`, `evidence.publish_create_cmd`, `evidence.publish_comment_cmd` |
+| `mol-pr-merge-only` | `evidence.publish_ack_cmd`, `evidence.publish_push_cmd`, `evidence.publish_merge_cmd` |
+
+The publisher (the `publish_owner` var, default `maintainer`, recorded as
+`evidence.publish_owner`) runs them in that order from its own login and its
+own checkout, after human approval of the artifact. Every command is fully resolved and shell-quoted: it
+names the repository, pushes an exact SHA by URL from the recorded git
+directory (pinned by a `refs/staged-gh/<root>` ref), and needs no hand edits.
+Comment and label writes the pool used to post are staged under
+`.gc/staged-gh/<root>-pr-<n>/` with their commands in the root bead notes.
+`pr-review/tests/test_handoff_publish_commands.py` replays the recorded
+commands through bash to hold that contract.
+
+Recommended deployment: give unattended pool seats a read-only `GH_TOKEN`.
+Without it the pool itself can publish, and only this prose stands between
+an unreviewed branch and the forge.
 
 ## Importing into pack.toml
 
