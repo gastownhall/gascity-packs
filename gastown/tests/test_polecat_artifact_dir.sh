@@ -903,7 +903,13 @@ printf '%s\n' "$*" >>"$GC_STUB_CALLS"
 bd_subcommand=$(printf '%s%s' b d)
 case "$*" in
     "$bd_subcommand --rig "*" list --status=closed --has-metadata-key=artifact_cleanup_state --limit=0 --json")
-        cat "$GC_STUB_BEAD_JSON"
+        cat "${GC_STUB_BEAD_JSON_CLEANUP_STATE:-$GC_STUB_BEAD_JSON}"
+        ;;
+    "$bd_subcommand --rig "*" list --status=closed --has-metadata-key=artifact_dir --limit=0 --json")
+        cat "${GC_STUB_BEAD_JSON_ARTIFACT_DIR:-$GC_STUB_BEAD_JSON}"
+        ;;
+    "$bd_subcommand --rig "*" list --status=closed --has-metadata-key=work_dir --limit=0 --json")
+        cat "${GC_STUB_BEAD_JSON_WORK_DIR:-$GC_STUB_BEAD_JSON}"
         ;;
     "$bd_subcommand --rig "*" show "*" --json")
         if [ -n "${GC_STUB_BEAD_JSON_SECOND:-}" ]; then
@@ -1113,6 +1119,203 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
         fail "older non-terminal cleanup row starved the actionable row"
     grep -qF 'list --status=closed --has-metadata-key=artifact_cleanup_state' "$calls" ||
         fail "no-argument cleanup did not query the durable pending queue"
+    grep -qF 'list --status=closed --has-metadata-key=artifact_dir' "$calls" ||
+        fail "no-argument cleanup did not derive the queue from the artifact path key"
+}
+
+test_cleanup_sweep_derives_unmarked_terminal_rows() {
+    # The sweep used to select on --has-metadata-key=artifact_cleanup_state
+    # alone. That key is armed only by the refinery rebase step, so a closed
+    # bead whose terminal handoff never traversed rebase was invisible forever:
+    # its artifact could not be retired, and no blocked or deferred record ever
+    # explained why. Selection is now derived from the artifact path keys, so an
+    # unmarked terminal row is found -- while the rows that must survive an
+    # unmarked sweep still do: a non-terminal row (a halted lane whose artifact
+    # is a retained deliverable, not dead weight) and a row a previous run
+    # already stamped blocked. Selection is a queue, never a delete list: every
+    # row still faces the per-artifact validators and the live remote evidence.
+    local tmp rig remote city bin calls all_json progress_json
+    local dir_json marker_json legacy_json output bead
+    local retained_artifact blocked_artifact derived_artifact legacy_artifact
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    rig="$tmp/rig"
+    remote="$tmp/remote.git"
+    city="$tmp/city"
+    bin="$tmp/bin"
+    calls="$tmp/calls"
+    all_json="$tmp/all.json"
+    progress_json="$tmp/progress.json"
+    dir_json="$tmp/dir.json"
+    marker_json="$tmp/marker.json"
+    legacy_json="$tmp/legacy.json"
+
+    init_repo "$rig"
+    git -C "$rig" branch -M main
+    git init -q --bare "$remote"
+    git -C "$remote" symbolic-ref HEAD refs/heads/main
+    git -C "$rig" remote add origin "$remote"
+    git -C "$rig" push -qu origin main
+    mkdir -p "$city/.gc/worktrees/demo/artifacts/worktrees" \
+        "$city/.gc/worktrees/demo/polecats"
+    write_cleanup_gc_stub "$bin"
+
+    retained_artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-retained"
+    blocked_artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-blocked"
+    derived_artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-derived"
+    legacy_artifact="$city/.gc/worktrees/demo/artifacts/worktrees/ac-legacy"
+    for bead in ac-retained ac-blocked ac-derived ac-legacy; do
+        git -C "$rig" worktree add -q --detach \
+            "$city/.gc/worktrees/demo/artifacts/worktrees/$bead" HEAD
+    done
+    # Only the two actionable rows ever published a work branch; the retained
+    # row halted before push and the blocked row already failed its evidence.
+    for bead in ac-derived ac-legacy; do
+        git -C "$rig" push -qu origin "HEAD:refs/heads/polecat/$bead"
+    done
+
+    # Oldest first: a selection that ignored the non-terminal or blocked filter
+    # would pick ac-retained or ac-blocked instead of the actionable row.
+    jq -n \
+        --arg retained "$retained_artifact" \
+        --arg blocked "$blocked_artifact" \
+        --arg derived "$derived_artifact" \
+        --arg legacy "$legacy_artifact" \
+        --arg sha "$(git -C "$rig" rev-parse HEAD)" \
+        '[
+          {
+            id: "ac-retained", status: "closed",
+            updated_at: "2026-11-01T00:00:00Z",
+            metadata: {
+              artifact_dir: $retained, artifact_source_sha: $sha,
+              branch: "polecat/ac-retained", merged_target: "main",
+              halt_reason: "auto_push_false"
+            }
+          },
+          {
+            id: "ac-blocked", status: "closed",
+            updated_at: "2026-11-02T00:00:00Z",
+            metadata: {
+              merge_result: "mr_merged", artifact_cleanup_state: "blocked",
+              artifact_dir: $blocked, artifact_source_sha: $sha,
+              pr_head_sha: $sha, merged_sha: $sha,
+              branch: "polecat/ac-blocked", merged_target: "main"
+            }
+          },
+          {
+            id: "ac-derived", status: "closed",
+            updated_at: "2026-11-03T00:00:00Z",
+            metadata: {
+              merge_result: "mr_merged", artifact_dir: $derived,
+              artifact_source_sha: $sha, pr_head_sha: $sha, merged_sha: $sha,
+              branch: "polecat/ac-derived", merged_target: "main"
+            }
+          },
+          {
+            id: "ac-legacy", status: "closed",
+            updated_at: "2026-11-04T00:00:00Z",
+            metadata: {
+              merge_result: "mr_merged", work_dir: $legacy,
+              artifact_source_sha: $sha, pr_head_sha: $sha, merged_sha: $sha,
+              branch: "polecat/ac-legacy", merged_target: "main"
+            }
+          }
+        ]' >"$all_json"
+    jq '[.[] | select(.id == "ac-blocked")]' "$all_json" >"$marker_json"
+    jq '[.[] | select((.metadata.artifact_dir // "") != "")]' \
+        "$all_json" >"$dir_json"
+    jq '[.[] | select((.metadata.work_dir // "") != "")]' \
+        "$all_json" >"$legacy_json"
+
+    # Nothing is armed: the marker queue alone would idle here, which is the
+    # defect. The derived queue must still find the actionable row.
+    : >"$calls"
+    output=$(
+        GC_STUB_BEAD_JSON="$all_json" \
+            GC_STUB_BEAD_JSON_CLEANUP_STATE="$marker_json" \
+            GC_STUB_BEAD_JSON_ARTIFACT_DIR="$dir_json" \
+            GC_STUB_BEAD_JSON_WORK_DIR="$legacy_json" \
+            GC_STUB_CALLS="$calls" \
+            GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+            PATH="$bin:$PATH" "$ARTIFACT_CLEANUP"
+    )
+    [[ "$output" == *"ARTIFACT_CLEANUP_IDLE"* ]] &&
+        fail "an unmarked terminal row was still invisible to the sweep"
+    grep -qF 'show ac-derived --json' "$calls" ||
+        fail "sweep did not derive the unmarked terminal artifact_dir row"
+    [[ ! -e "$derived_artifact" ]] ||
+        fail "derived unmarked terminal row did not retire its artifact"
+    [[ -d "$retained_artifact" ]] ||
+        fail "sweep removed the unmarked non-terminal retained deliverable"
+    [[ -d "$blocked_artifact" ]] ||
+        fail "sweep retried a row already stamped blocked"
+    [[ -d "$legacy_artifact" ]] ||
+        fail "sweep retired more than one artifact per invocation"
+    ! grep -qF 'show ac-retained --json' "$calls" ||
+        fail "an unmarked non-terminal row entered the deletion gate"
+    ! grep -qF 'show ac-blocked --json' "$calls" ||
+        fail "a blocked row re-entered the deletion gate"
+    for bead in artifact_cleanup_state artifact_dir work_dir; do
+        grep -qF "list --status=closed --has-metadata-key=$bead" "$calls" ||
+            fail "sweep did not derive the queue from $bead"
+    done
+
+    # Model the store after that retirement and re-run: the sweep must make
+    # forward progress to the legacy work_dir row rather than re-selecting the
+    # row it just completed. This is the resumable backfill -- one bd write per
+    # invocation, no one-shot script, safe to interrupt between fires.
+    jq 'map(if .id == "ac-derived"
+            then .metadata |= (del(.artifact_dir) + {artifact_cleanup_state: "complete"})
+            else . end)' "$all_json" >"$progress_json"
+    jq '[.[] | select(.id == "ac-blocked")]' "$progress_json" >"$marker_json"
+    jq '[.[] | select((.metadata.artifact_dir // "") != "")]' \
+        "$progress_json" >"$dir_json"
+    jq '[.[] | select((.metadata.work_dir // "") != "")]' \
+        "$progress_json" >"$legacy_json"
+    : >"$calls"
+    GC_STUB_BEAD_JSON="$progress_json" \
+        GC_STUB_BEAD_JSON_CLEANUP_STATE="$marker_json" \
+        GC_STUB_BEAD_JSON_ARTIFACT_DIR="$dir_json" \
+        GC_STUB_BEAD_JSON_WORK_DIR="$legacy_json" \
+        GC_STUB_CALLS="$calls" \
+        GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+        PATH="$bin:$PATH" "$ARTIFACT_CLEANUP" >/dev/null
+    grep -qF 'show ac-legacy --json' "$calls" ||
+        fail "sweep did not derive the unmarked terminal legacy work_dir row"
+    [[ ! -e "$legacy_artifact" ]] ||
+        fail "derived legacy work_dir row did not retire its artifact"
+    grep -qF -- '--unset-metadata artifact_dir --unset-metadata work_dir --set-metadata artifact_cleanup_state=complete' "$calls" ||
+        fail "legacy retirement did not clear both path keys"
+    [[ -d "$retained_artifact" ]] ||
+        fail "resumed sweep removed the unmarked non-terminal retained deliverable"
+
+    # With every terminal row retired the derived queue must converge to idle
+    # instead of revisiting the retained or blocked rows forever.
+    jq 'map(if .id == "ac-legacy"
+            then .metadata |= (del(.work_dir) + {artifact_cleanup_state: "complete"})
+            else . end)' "$progress_json" >"$all_json"
+    jq '[.[] | select((.metadata.artifact_cleanup_state // "") != "")]' \
+        "$all_json" >"$marker_json"
+    jq '[.[] | select((.metadata.artifact_dir // "") != "")]' \
+        "$all_json" >"$dir_json"
+    jq '[.[] | select((.metadata.work_dir // "") != "")]' \
+        "$all_json" >"$legacy_json"
+    : >"$calls"
+    output=$(
+        GC_STUB_BEAD_JSON="$all_json" \
+            GC_STUB_BEAD_JSON_CLEANUP_STATE="$marker_json" \
+            GC_STUB_BEAD_JSON_ARTIFACT_DIR="$dir_json" \
+            GC_STUB_BEAD_JSON_WORK_DIR="$legacy_json" \
+            GC_STUB_CALLS="$calls" \
+            GC_CITY_PATH="$city" GC_RIG=demo GC_RIG_ROOT="$rig" \
+            PATH="$bin:$PATH" "$ARTIFACT_CLEANUP"
+    )
+    [[ "$output" == *"ARTIFACT_CLEANUP_IDLE"* ]] ||
+        fail "a fully retired population did not converge to idle: $output"
+    ! grep -qF ' show ' "$calls" ||
+        fail "an idle sweep still opened a deletion gate"
+    [[ -d "$retained_artifact" && -d "$blocked_artifact" ]] ||
+        fail "converged sweep removed a surviving artifact"
 }
 
 test_cleanup_command_rejects_cross_city_and_dirty_artifacts() {
@@ -1808,6 +2011,7 @@ test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch
 test_shutdown_probe_scopes_rig_and_fails_closed
 test_shutdown_probe_ignores_closed_namesakes
 test_cleanup_command_is_idempotent_and_mr_retryable
+test_cleanup_sweep_derives_unmarked_terminal_rows
 test_cleanup_command_rejects_cross_city_and_dirty_artifacts
 test_cleanup_requires_live_remote_evidence_and_stable_state
 test_git_status_failures_preserve_artifacts_and_provider_state
