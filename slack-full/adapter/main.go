@@ -9,6 +9,11 @@
 //	                        signing secret, normalize, and POST to
 //	                        gc /v0/city/{city}/extmsg/inbound.
 //
+// With SLACK_APP_TOKEN set, the adapter also opens a Socket Mode WebSocket
+// to Slack (socketmode.go) and feeds its envelopes into the same handler
+// /slack/events uses after verification. /slack/events stays up as the
+// fallback.
+//
 // Threading: gc.PublishRequest.ReplyToMessageID is mapped to Slack
 // thread_ts. Slack message ts is returned as PublishReceipt.MessageID
 // so subsequent replies thread correctly.
@@ -61,6 +66,17 @@
 //     keep using this env var alone. With neither
 //     source set, every inbound is rejected 401
 //     (correct fail-closed behavior).
+//     Socket Mode envelopes are not signed and do
+//     not consult it.
+//   - SLACK_APP_TOKEN         App-level token (xapp-...) with the
+//     connections:write scope. When set, inbound
+//     also arrives over a Socket Mode WebSocket
+//     (no public ingress needed) for the app that
+//     owns the token; the public listener keeps
+//     serving as the fallback, for registered
+//     agent apps, and for OAuth/interactivity.
+//     A value without the xapp- prefix is
+//     rejected at startup.
 //
 // Optional override (sane default; set to override):
 //
@@ -235,6 +251,11 @@ var slackAPIBase = "https://slack.com/api"
 // Folding the hook into the WG is left as a future cleanup.
 var dispatchInflightWG sync.WaitGroup
 
+// socketMode reports whether the adapter also takes inbound over a Socket
+// Mode WebSocket. The app-level token is the selector: it is required for
+// Socket Mode and useless without it, so its presence is the switch.
+func (c config) socketMode() bool { return c.appToken != "" }
+
 // acquireDispatchSlot tries to acquire one slot on cfg.dispatchSem
 // without blocking. On success it returns a release func bound to
 // the channel observed at acquire time, plus the channel's capacity
@@ -292,7 +313,19 @@ type config struct {
 	// — never the legacy trial set and never a registered agent record that
 	// happens to share the id. Empty preserves the pre-Phase-4 behavior (the
 	// switchboard's events fall through to the legacy lookupSigningSecrets path).
-	slackAppID      string
+	slackAppID string
+	// appToken is the app-level token (SLACK_APP_TOKEN, xapp-..., scope
+	// connections:write). When set, the adapter also takes inbound over a
+	// Socket Mode WebSocket for the app that owns it (socketmode.go); the
+	// public /slack/events listener stays up as the fallback and for
+	// registered agent apps. Empty keeps HTTP-only inbound.
+	appToken string
+	// eventDedup absorbs a Slack event delivered more than once — over
+	// both transports, or as a redelivery — before dispatch
+	// (event_dedup.go). main() wires one cache shared by /slack/events and
+	// Socket Mode; nil (every unit test that builds a config by hand)
+	// disables it.
+	eventDedup      *inboundEventDedup
 	registerOnStart bool
 	// identityStorePath is the JSON file backing the per-session Slack
 	// identity registry (chat:write.customize username/avatar overrides).
@@ -560,6 +593,7 @@ func loadConfigFromEnv(getenv func(string) string) (config, error) {
 		slackBotToken:        getenv("SLACK_BOT_TOKEN"),
 		slackSigningKey:      getenv("SLACK_SIGNING_SECRET"),
 		slackAppID:           getenv("SLACK_APP_ID"),
+		appToken:             strings.TrimSpace(getenv("SLACK_APP_TOKEN")),
 		registerOnStart:      envOrFn("REGISTER_ON_START", "true") == "true",
 		identityStorePath:    envOrFn("IDENTITY_STORE_PATH", "/tmp/gc-slack-adapter/identities.json"),
 		handlePrefix:         envOrFn("HANDLE_PREFIX", "@"),
@@ -746,6 +780,13 @@ func loadConfigFromEnv(getenv func(string) string) (config, error) {
 	}
 	if len(missing) > 0 {
 		return cfg, fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
+	}
+	// Fail fast on the easiest Socket Mode mistake: pasting the bot token
+	// (xoxb-) into SLACK_APP_TOKEN. Slack would answer invalid_auth on every
+	// connect attempt, and the adapter would redial forever while the
+	// operator wonders why no events arrive.
+	if cfg.socketMode() && !strings.HasPrefix(cfg.appToken, "xapp-") {
+		return cfg, errors.New("SLACK_APP_TOKEN must be an app-level token (xapp-...); the bot token belongs in SLACK_BOT_TOKEN")
 	}
 	// cityName is interpolated into every /v0/city/{cityName}/... URL the
 	// adapter constructs. URL-significant characters (/, ?, #, %) here
@@ -1110,12 +1151,20 @@ func main() {
 	// Wire the process-wide thread-context cache. Nil-safe consumer
 	// path; only the production main() initializes it. gc-px8.5.
 	cfg.threadContextCache = newThreadContextCache()
+	// One event dedup shared by /slack/events and Socket Mode, so the same
+	// event_id arriving over both transports (or redelivered) is dispatched
+	// once. Wired before any handler closes over cfg.
+	cfg.eventDedup = newInboundEventDedup(inboundEventDedupTTL)
 	internalDescr := cfg.internalListen
 	if cfg.serviceSocket != "" {
 		internalDescr = "uds:" + cfg.serviceSocket
 	}
-	log.Printf("starting gc-slack-adapter public=%s internal=%s gc=%s city=%s dispatch_concurrency=%d",
-		cfg.publicListen, internalDescr, cfg.gcAPIBase, cfg.cityName, cfg.dispatchConcurrency)
+	inboundDescr := "http"
+	if cfg.socketMode() {
+		inboundDescr = "socket-mode+http"
+	}
+	log.Printf("starting gc-slack-adapter public=%s internal=%s gc=%s city=%s inbound=%s dispatch_concurrency=%d",
+		cfg.publicListen, internalDescr, cfg.gcAPIBase, cfg.cityName, inboundDescr, cfg.dispatchConcurrency)
 
 	// Tighten any pre-existing /tmp/gc-slack-adapter/* state from
 	// pre-fix installs to 0o700 dirs / 0o600 files. Must run BEFORE
@@ -1208,7 +1257,11 @@ func main() {
 	log.Printf("apps registry: store=%s entries=%d (read-only; SIGHUP or restart to reload)",
 		cfg.appsRegistryPath, appsReg.Len())
 	if appsReg.Len() == 0 && cfg.slackSigningKey == "" {
-		log.Printf("WARN: apps registry is empty and SLACK_SIGNING_SECRET is unset — all inbound Slack requests will be rejected with 401 until an app is imported (gc slack import-app + OAuth) or the env var is set")
+		if cfg.socketMode() {
+			log.Printf("WARN: apps registry is empty and SLACK_SIGNING_SECRET is unset — Socket Mode events are unaffected, but the HTTP fallback (/slack/events, /slack/interactions) rejects every request with 401 until an app is imported or the env var is set")
+		} else {
+			log.Printf("WARN: apps registry is empty and SLACK_SIGNING_SECRET is unset — all inbound Slack requests will be rejected with 401 until an app is imported (gc slack import-app + OAuth) or the env var is set")
+		}
 	}
 
 	// Cross-store overlap WARN: surface contradictory bindings (cby.3
@@ -1330,6 +1383,25 @@ func main() {
 	// serve immediately (they never consulted the gateway). The recovery
 	// pass and sweep are no-ops when the gateway is nil.
 	companyGW.startRecovery(janitorCtx)
+
+	// Socket Mode (socketmode.go): an outbound WebSocket that carries the
+	// token-owning app's events with no public ingress. It runs alongside
+	// the public listener, never instead of it — agent apps, OAuth, and
+	// interactivity still arrive there, and it is the fallback if Socket
+	// Mode is switched off in the app settings. Envelopes go through the
+	// same post-verification handler /slack/events uses.
+	if cfg.socketMode() {
+		socketModeEnabled.Store(true)
+		serve := serveVerifiedSlackEvents(cfg, aliasReg, threadReg, roomLaunchReg, subteamAliases, threadHandleSticky)
+		transport := newSocketModeTransport(cfg.appToken, socketEventDeliverer(serve, cfg.companyGateway.agentAppsSnapshot))
+		go func() {
+			log.Printf("socket mode: enabled (SLACK_APP_TOKEN set); HTTP listener stays up as the fallback")
+			// run reconnects internally and returns only on shutdown.
+			if err := transport.run(janitorCtx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("socket mode: stopped: %v", err)
+			}
+		}()
+	}
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -2418,7 +2490,17 @@ func postMessageWithClient(client *http.Client, token string, req slackPostMessa
 	return &sr, nil
 }
 
+// verifiedEventServer serves a /slack/events body whose authenticity is
+// already established: by HMAC on the HTTP path, or by the TLS connection
+// the adapter itself opened on the Socket Mode path (socketmode.go).
+// agentApps is the caller's once-per-delivery registration snapshot.
+type verifiedEventServer func(w http.ResponseWriter, r *http.Request, body []byte, agentApps *AgentApps)
+
+// handleSlackEvents is the /slack/events HTTP handler: it reads and verifies
+// the signed body, then hands it to the same serveVerifiedSlackEvents path the
+// Socket Mode transport uses.
 func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *threadSessionRegistry, roomLaunchReg *roomLaunchMappingRegistry, subteamMap *subteamAliasMap, threadHandleSticky *threadHandleStickiness) http.HandlerFunc {
+	serve := serveVerifiedSlackEvents(cfg, aliasReg, threadReg, roomLaunchReg, subteamMap, threadHandleSticky)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2449,19 +2531,52 @@ func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
+		serve(w, r, body, agentApps)
+	}
+}
 
+// serveVerifiedSlackEvents returns the post-verification half of
+// /slack/events, shared by both inbound transports so routing cannot drift
+// between them. Everything from envelope decode onward lives here: the
+// url_verification echo, the cross-transport event dedup, company-room
+// admission, and legacy dispatch.
+func serveVerifiedSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *threadSessionRegistry, roomLaunchReg *roomLaunchMappingRegistry, subteamMap *subteamAliasMap, threadHandleSticky *threadHandleStickiness) verifiedEventServer {
+	return func(w http.ResponseWriter, r *http.Request, body []byte, agentApps *AgentApps) {
 		var env slackEventEnvelope
 		if err := json.Unmarshal(body, &env); err != nil {
 			http.Error(w, fmt.Sprintf("decode: %v", err), http.StatusBadRequest)
 			return
 		}
 
-		// URL verification challenge.
+		// URL verification challenge. The handshake is HMAC-verified, and
+		// Slack's challenge is an opaque token; echo only that shape, as
+		// plain text and before any response wrapper, and refuse the rest.
 		if env.Type == "url_verification" && env.Challenge != "" {
+			if !validSlackChallenge(env.Challenge) {
+				http.Error(w, "invalid challenge", http.StatusBadRequest)
+				return
+			}
 			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			_, _ = w.Write([]byte(env.Challenge))
 			return
 		}
+
+		// Duplicate delivery (event_dedup.go): the same (api_app_id,
+		// event_id) already handled, or in flight, on either transport.
+		// Acked with 200 and never dispatched twice. A first copy that
+		// answers 5xx releases its claim, so the redelivery Slack makes for
+		// it is processed.
+		dedupKey := inboundEventKey(env)
+		if !cfg.eventDedup.claim(dedupKey) {
+			log.Printf("slack events: duplicate delivery event_id=%q api_app_id=%q — acked, not dispatched again",
+				clipTeamIDForLog(env.EventID), clipTeamIDForLog(env.APIAppID))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		sw := &statusCapture{ResponseWriter: w}
+		defer func() { cfg.eventDedup.finish(dedupKey, sw.accepted()) }()
+		w = sw
 
 		// Company-rooms durable admission (Slack company-rooms Phase 1d).
 		// When the event targets an imported company room, the gateway
@@ -2491,6 +2606,28 @@ func handleSlackEvents(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 		// Phase 4 review fix).
 		go processSlackEvent(cfg, aliasReg, threadReg, roomLaunchReg, subteamMap, threadHandleSticky, env, release)
 	}
+}
+
+// maxSlackChallengeLen bounds the url_verification challenge echoed back.
+// Slack's are ~50 characters; the cap leaves ample margin.
+const maxSlackChallengeLen = 128
+
+// validSlackChallenge reports whether s has the shape of a Slack
+// url_verification challenge: 1..maxSlackChallengeLen characters from the
+// URL-safe token set [A-Za-z0-9_-]. Anything else is not echoed.
+func validSlackChallenge(s string) bool {
+	if s == "" || len(s) > maxSlackChallengeLen {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // parseTeamIDFromEventsBody extracts the JSON `team_id` field from a
