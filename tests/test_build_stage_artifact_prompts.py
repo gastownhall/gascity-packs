@@ -53,11 +53,25 @@ REVIEW_BUILDS = (
     ("superpowers", "superpowers-build"),
 )
 
+LAUNCHER_CHECK_CALL = f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}"
+# Packs whose prompts run the check gc resolved from the gascity pack's assets,
+# recorded as `gc.check_path`, instead of a launcher-local .gc/scripts copy that
+# no city materializes (#593). The others still carry the launcher form.
+RESOLVED_CHECK_PACKS = frozenset({"bmad"})
+RESOLVED_CHECK_CALL = 'gc_bead_id=<claimed-step-id> "<gc.check_path>"'
+
+
+def pack_fragment(pack: str, fragment: str) -> str:
+    if pack in RESOLVED_CHECK_PACKS:
+        return fragment.replace(LAUNCHER_CHECK_CALL, RESOLVED_CHECK_CALL)
+    return fragment
+
+
 # Shared by every checked `{target}` prompt: validate before passing, and on a
 # repair attempt start from the validator errors.
 VALIDATION_FRAGMENTS = (
     "on the workflow root bead, not on the claimed step bead",
-    f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}",
+    LAUNCHER_CHECK_CALL,
     "fix any error before setting `gc.outcome=pass`",
     "read the validator errors from `gc.attempt_log` on the validation loop control bead",
 )
@@ -202,6 +216,7 @@ class ReviewReportPathContractTests(unittest.TestCase):
             exp_path, _, _, target = expansion_target(pack, build, "review")
             text = prompt_text(exp_path, target)
             for fragment in REVIEW_TARGET_FRAGMENTS:
+                fragment = pack_fragment(pack, fragment)
                 with self.subTest(pack=pack, fragment=fragment):
                     self.assertIn(normalize(fragment), text)
 
@@ -332,7 +347,17 @@ class ApplyFindingsFrontMatterTests(unittest.TestCase):
             for artifact in artifacts:
                 schema_id = f"gc.build.{artifact}.v1"
                 with self.subTest(pack=pack, lane=lane, schema=schema_id):
-                    self.assertIn(f"python3 .gc/scripts/validate_build_artifact.py --schema {schema_id} --path", text)
+                    if pack in RESOLVED_CHECK_PACKS:
+                        self.assertIn(
+                            normalize('validate_build_artifact.py` sits in that directory\'s parent'),
+                            text,
+                        )
+                        self.assertIn(f'python3 "$validator" --schema {schema_id} --path', text)
+                    else:
+                        self.assertIn(
+                            f"python3 .gc/scripts/validate_build_artifact.py --schema {schema_id} --path",
+                            text,
+                        )
                 with self.subTest(pack=pack, lane=lane, schema=schema_id, check="allowed statuses"):
                     self.assertIn(status_sentence(artifact), text)
 
