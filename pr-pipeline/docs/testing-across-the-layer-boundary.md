@@ -95,6 +95,7 @@ A reviewer who cannot find that sentence has found the finding.
 
 A test that checks the function returned success is testing the report. A test
 that checks launchd no longer holds a restartable job is testing the world.
+`success: true` is an exit line, not an outcome.
 
 ## 4. Kill the fix, then kill the stub
 
@@ -204,6 +205,11 @@ pack conformance matrix are for: the pack *declares* its requirement, core
 that needs something core cannot express is a request for a new declaration, not
 a new special case.
 
+Prefer content-based discovery over hand-maintained lists on both sides. A check
+that walks every `*.json` carrying an `oauth_config` key keeps working when a
+pack adds a second manifest; a check that reads a list of paths silently skips
+it.
+
 This is also where reported breakage comes from. Derived 2026-08-17 from the CI
 lint loop and `registry.toml`: **11 of the 16 registry packs never meet a running
 `gc` at all**. Those eleven are `cass`, `contributing`, `discord`,
@@ -237,6 +243,18 @@ exercised pack from an unexercised one.
 That is the same failure as #5333 at a different scale: a green suite about the
 artifact's fixtures rather than about the system it runs in.
 
+A sharper instance, found in this repo's own suite on 2026-08-17: several pack
+test suites were green in CI and red on every machine actually running Gas City.
+A live agent seat exports `GC_API_BASE_URL`, `GC_TEMPLATE`, `BEADS_ACTOR` and
+others into every child process, at a higher precedence than a fixture's own
+`city.toml`. CI runners export none of them. The suites passed for a reason
+unrelated to the code under test, which is the failure this whole document is
+about, reproduced inside the tooling that is supposed to catch it. The fix is in
+`discord/tests/`, `github/tests/` and `gascity/tests/`: strip the pack's own
+environment prefixes in `setUp`, build subprocess environments from a filtered
+copy rather than `os.environ`, and add an AST guard that fails when a module
+starts reading a variable outside the stripped prefixes.
+
 ## What a reviewer asks
 
 Five questions, in order. Any "no" is the review comment.
@@ -256,7 +274,6 @@ from any directory, and under `set -u` an unset one aborts it immediately:
 ```sh
 GASCITY=/path/to/gastownhall/gascity        # a checkout of gastownhall/gascity
 PACKS=/path/to/gastownhall/gascity-packs    # a checkout of gastownhall/gascity-packs
-
 # the five stubbed seams in #5333
 gh issue view 5333 --repo gastownhall/gascity --json body \
   | grep -oE '[a-zA-Z]+Hook = ' | sort -u
