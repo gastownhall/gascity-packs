@@ -1,0 +1,16 @@
+2026/10/15 04:24:08 publish: conv=C1 text=20ch posted=20ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 04:24:08 publish: conv=C1 text=20ch posted=20ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 04:24:08 publish: conv=C1 text=18ch posted=18ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 04:24:08 publish: conv=C1 text=20ch posted=20ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.01s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_curly_double_opening_quote_stays_literal (0.00s)
+        publish_readback_test.go:576: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_curly_single_opening_quote_stays_literal (0.00s)
+        publish_readback_test.go:576: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_guillemet_opening_quote_stays_literal (0.00s)
+        publish_readback_test.go:576: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_single_guillemet_opening_quote_stays_literal (0.00s)
+        publish_readback_test.go:576: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.258s
+FAIL

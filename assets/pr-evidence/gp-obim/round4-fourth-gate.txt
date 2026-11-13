@@ -1,0 +1,13 @@
+# codex-gate review: base e6163fcaef4fb0a225e0234ba7d39204eedc929f (merge base of --base e6163fcaef4fb0a225e0234ba7d39204eedc929f = e6163fcaef4fb0a225e0234ba7d39204eedc929f and the head) head 9a55738eec21a93b604523b8d4536018bfe62fa6; 4 file(s); class QUICK; model gpt-6-astra; 2026-10-15T09:41:35Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 30 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |   5 +
+#  slack-full/adapter/publish_readback.go       |   5 +
+#  slack-full/adapter/publish_readback_match.go | 407 +++++++++++++++++++++++++++++++++----------------------------------
+#  slack-full/adapter/publish_readback_test.go  | 164 ++++++++++++++++++++++++++-
+#  4 files changed, 369 insertions(+), 212 deletions(-)
+
+- **Major — [publish_readback_match.go:521](/var/folders/n0/yx26c20j4y5b0597zqpc5kzh0000gn/T/codex-gate-tree.4KgmQG/tree/slack-full/adapter/publish_readback_match.go:521): Internal query emoji can hide changed URL parameters.** For posted `https://a.co/?q=🎉&id=:id:`, the new matcher accepts `<https://a.co/?q=>🎉&id=:ok:`. The backward scan treats the emoji as a URL boundary because `&id=` does not set `pathAfter`; the remaining query then receives lossy emoji matching, equating `:id:` with `:ok:`. The base rejects this mismatch. Preserve URL protection across query continuations and add this negative regression case.
+
+Tests could not run because the read-only sandbox prevents Go from creating its build directory.
+
+VERDICT: BLOCK

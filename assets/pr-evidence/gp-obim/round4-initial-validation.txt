@@ -1,0 +1,39 @@
+round4-fork-go-tests.txt
+Source: fcc0fffbd6568d289d0c743fbd284f22244829c3
+cwd: slack-full/adapter
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go test -json ./... -count=1
+go version go1.26.5 darwin/arm64
+7303 passed cases (1349 top-level); 0 failures; 0 skipped; exit 0.
+
+round4-fork-python-tests.txt
+Source: fcc0fffbd6568d289d0c743fbd284f22244829c3
+cwd: .
+env -u GC_TEMPLATE GC_NO_INSTALL=1 TMPDIR="${TMPDIR%/}" make test PYTEST_DIRS=slack-full/tests
+655 passed, 2 skipped, 2 warnings in 38.33s
+
+round4-upstream-go-tests.txt
+Source: 61943887a043e58e230bfdb9410c311f555e63b6
+cwd: slack-full/adapter
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go test -json ./... -count=1
+go version go1.26.5 darwin/arm64
+6499 passed cases (722 top-level); 0 failures; 0 skipped; exit 0.
+
+round4-upstream-python-tests.txt
+Source: 61943887a043e58e230bfdb9410c311f555e63b6
+cwd: .
+env -u GC_TEMPLATE GC_NO_INSTALL=1 TMPDIR="${TMPDIR%/}" uv run --offline --with pytest --with pyyaml --with jsonschema python3 -m pytest slack-full/tests -q
+479 passed, 2 skipped, 2 warnings in 22.08s
+
+round4-fork-go-race.txt
+Source: fcc0fffbd6568d289d0c743fbd284f22244829c3
+cwd: slack-full/adapter
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go test -race -json ./... -run 'Test(PublishReceipt|HandlePublishKeyed|HandlePublishPersists|HandlePublishPersistence|HandlePublishReplay|PublishReplay|PublishDedup|ReadBackPublishedMessage|SlackNormalize)' -count=1
+go version go1.26.5 darwin/arm64
+5283 passed cases (28 top-level); 0 failures; 0 skipped; exit 0.
+
+round4-upstream-go-race.txt
+Source: 61943887a043e58e230bfdb9410c311f555e63b6
+cwd: slack-full/adapter
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go test -race -json ./... -run 'Test(PublishReceipt|HandlePublishKeyed|HandlePublishPersists|HandlePublishPersistence|HandlePublishReplay|PublishReplay|PublishDedup|ReadBackPublishedMessage|SlackNormalize)' -count=1
+go version go1.26.5 darwin/arm64
+5277 passed cases (25 top-level); 0 failures; 0 skipped; exit 0.

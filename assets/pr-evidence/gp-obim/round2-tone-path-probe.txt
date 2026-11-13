@@ -1,0 +1,7 @@
+Supplemental failing Go overlay reproduction before the fix; excluded from final suite counts.
+Source: 95dbd62b
+--- FAIL: TestRound2ToneInURLSuffix (0.00s)
+    round2_performance_probe_test.go:17: missing literal tone shortcode in URL suffix was confirmed
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.250s
+FAIL

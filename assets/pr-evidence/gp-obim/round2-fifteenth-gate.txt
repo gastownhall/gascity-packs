@@ -1,0 +1,9 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (2836 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T05:23:32Z
+
+- **Major — Emoji can incorrectly open formatting** at [publish_readback_match.go:244](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:244). The `*` in `*️⃣` toggles bold state. Consequently, posted `*️⃣ example.com/x*:id:` matches stored `:keycap_star: <http://example.com/x|example.com/x>*:ok:`: the later literal `*` ends suffix validation before the changed path shortcode. Skip keycap sequences when tracking formatting and add this negative regression case.
+
+- **Major — Added implicit-URL suffix content escapes validation** at [publish_readback_match.go:372](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:372). Posted `example.com/:id:` matches stored `<http://example.com/|example.com/>:id::ok:`. The literal loop consumes `:id:` and returns success with `:ok:` unchecked; the general emoji comparison removes that addition. Require both suffixes to reach corresponding boundaries and test added path/query/fragment shortcodes.
+
+Go tests were not run under the read-only gate; findings were checked by source inspection and in-memory branch traces.
+
+VERDICT: BLOCK

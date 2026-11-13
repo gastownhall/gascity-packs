@@ -1,0 +1,35 @@
+Pre-fix regressions at base 355a458adad243a7e17968e72832b9ffc73df6d5, with new tests only.
+GC_NO_INSTALL=1; GC_TEMPLATE unset; Darwin ICU CGO flags applied.
+
+go -C slack-full/adapter test ./... -run '^TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate$' -count=1
+
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.16s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_bold_before_prose_alias (0.00s)
+        publish_readback_test.go:546: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_italic_before_prose_alias (0.00s)
+        publish_readback_test.go:546: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_strike_before_prose_alias (0.00s)
+        publish_readback_test.go:546: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.331s
+FAIL
+exit 1
+
+go -C slack-full/adapter test ./... -run 'Test(HandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_(bold|italic|strike|unformatted)|PublishReceiptPrunesCorruptFiles|PublishReceiptGET)' -count=1
+
+--- FAIL: TestPublishReceiptPrunesCorruptFiles (0.06s)
+    --- FAIL: TestPublishReceiptPrunesCorruptFiles/truncated (0.02s)
+        publish_receipts_test.go:149: first corrupt lookup = 500: receipt lookup failed
+    --- FAIL: TestPublishReceiptPrunesCorruptFiles/invalid_fields (0.02s)
+        publish_receipts_test.go:149: first corrupt lookup = 500: receipt lookup failed
+    --- FAIL: TestPublishReceiptPrunesCorruptFiles/oversized (0.02s)
+        publish_receipts_test.go:149: first corrupt lookup = 500: receipt lookup failed
+--- FAIL: TestPublishReceiptGET (0.02s)
+    --- FAIL: TestPublishReceiptGET/corruptGET (0.00s)
+        publish_receipts_test.go:192: status = 500, want 404: receipt lookup failed
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.313s
+FAIL
+exit 1
+
+The combined -run expression skipped link rows; the separate full link table above reproduced all three formatted failures (pc_a071f67e0d98). Unformatted control and added/changed-content negatives passed.

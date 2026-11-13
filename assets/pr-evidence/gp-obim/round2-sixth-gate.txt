@@ -1,0 +1,9 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (1593 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T03:40:56Z
+
+- **Major — Explicit destinations can bypass validation** at [publish_readback_match.go:46](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:46). Posted `<https://jane@example.com|jane@example.com>` and returned `<mailto:jane@example.com|jane@example.com>` now both normalize to `jane@example.com`. The guard skips the returned `mailto:` span, falsely confirming a changed destination. Require every original explicit target to match its returned target, and add this reverse-userinfo regression.
+
+- **Major — Truncated literal URL paths can confirm** at [publish_readback_match.go:88](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:88). Posted `see hou.vc/:id:` and returned `see <http://hou.vc/|hou.vc/>` pass: the guard matches the shorter `hou.vc/` prefix, then emoji folding removes the missing `:id:` segment. This newly confirms a different URL. Preserve literal URL suffixes during comparison and add a path-deletion regression alongside the substitution cases.
+
+No additional findings in receipt cleanup, retention documentation, or normalized offset mapping. Validation used source tracing and in-memory probes; Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

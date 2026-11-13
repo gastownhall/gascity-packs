@@ -1,0 +1,16 @@
+Source: b9a9f4d4
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher can falsely confirm an altered quoted URL path. Go tests could not run because the read-only sandbox prevents creation of the build work directory.
+
+Review comment:
+
+- [P2] Keep internal apostrophes in quoted URL paths literal — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:233-234
+  For posted text `'hou.vc/O'Reilly/:id:'`, the matcher incorrectly accepts `'<http://hou.vc/O|hou.vc/O>'Reilly/:ok:'`. This shortcut treats the apostrophe inside `O'Reilly` as the closing quote, ending suffix verification before the changed path segment; ordinary emoji folding then hides the `:id:` versus `:ok:` difference. This produces confirmed delivery evidence for altered content. Apply the apostrophe handling already present in `slackReadbackFormatting` before accepting this boundary.
+The new matcher can falsely confirm an altered quoted URL path. Go tests could not run because the read-only sandbox prevents creation of the build work directory.
+
+Review comment:
+
+- [P2] Keep internal apostrophes in quoted URL paths literal — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:233-234
+  For posted text `'hou.vc/O'Reilly/:id:'`, the matcher incorrectly accepts `'<http://hou.vc/O|hou.vc/O>'Reilly/:ok:'`. This shortcut treats the apostrophe inside `O'Reilly` as the closing quote, ending suffix verification before the changed path segment; ordinary emoji folding then hides the `:id:` versus `:ok:` difference. This produces confirmed delivery evidence for altered content. Apply the apostrophe handling already present in `slackReadbackFormatting` before accepting this boundary.

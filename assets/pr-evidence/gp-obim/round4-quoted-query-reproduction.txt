@@ -1,0 +1,7 @@
+2026/10/15 04:36:55 publish: conv=C1 text=39ch posted=39ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.01s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_paired_query_quotes_stay_literal (0.00s)
+        publish_readback_test.go:577: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.268s
+FAIL

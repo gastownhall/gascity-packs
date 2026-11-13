@@ -1,0 +1,16 @@
+Source: 12b12672
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The bare-domain normalization introduces false delivery confirmations for changed URL paths. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Review comment:
+
+- [P2] Preserve bare URL paths through emoji normalization — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:265-268
+  When a bare-domain URL contains an emoji-named path segment, returning its label removes the scheme that `slackVerbatimSpan` requires to protect URLs from emoji folding. For example, posted `example.com/:id:/x` and readback `<http://example.com/:ok:/x|example.com/:ok:/x>` now both normalize to `example.com//x`. This falsely confirms a changed destination and can persist `delivered=true`; the previous implementation rejected this pair. Preserve these URL spans through `slackFoldEmoji` and the expansion matcher, and add a changed-path regression test.
+The bare-domain normalization introduces false delivery confirmations for changed URL paths. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Review comment:
+
+- [P2] Preserve bare URL paths through emoji normalization — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:265-268
+  When a bare-domain URL contains an emoji-named path segment, returning its label removes the scheme that `slackVerbatimSpan` requires to protect URLs from emoji folding. For example, posted `example.com/:id:/x` and readback `<http://example.com/:ok:/x|example.com/:ok:/x>` now both normalize to `example.com//x`. This falsely confirms a changed destination and can persist `delivered=true`; the previous implementation rejected this pair. Preserve these URL spans through `slackFoldEmoji` and the expansion matcher, and add a changed-path regression test.

@@ -1,0 +1,42 @@
+Single-iteration benchmark of the exact 39,970-underscore review case.
+Before: source 7163d9b5b8610c1ccefc88f132669844194f3789.
+After: same source plus honoring width for literal delimiter runs.
+Go 1.26.5 darwin/arm64; GC_TEMPLATE unset; GC_NO_INSTALL=1.
+CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib
+Command (adapter cwd): go test ./... -run '^$' -bench BenchmarkRound4LiteralDelimiter -benchtime=1x -count=1
+Temporary benchmark (removed after measurement):
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+func BenchmarkRound4LiteralDelimiter(b *testing.B) {
+	expected := "a" + strings.Repeat("_", 39970) + "b www.a.co"
+	stored := "a" + strings.Repeat("_", 39970) + "b <http://www.a.co|www.a.co>"
+	b.ResetTimer()
+	for range b.N {
+		if !slackReadbackTextMatches(expected, stored) {
+			b.Fatal("readback mismatch")
+		}
+	}
+}
+
+Before:
+goos: darwin
+goarch: arm64
+pkg: github.com/sjarmak/gc-slack-adapter
+cpu: Apple M3 Ultra
+BenchmarkRound4LiteralDelimiter-32    	       1	 317145125 ns/op
+PASS
+ok  	github.com/sjarmak/gc-slack-adapter	0.573s
+
+After:
+goos: darwin
+goarch: arm64
+pkg: github.com/sjarmak/gc-slack-adapter
+cpu: Apple M3 Ultra
+BenchmarkRound4LiteralDelimiter-32    	       1	   6857250 ns/op
+PASS
+ok  	github.com/sjarmak/gc-slack-adapter	0.241s

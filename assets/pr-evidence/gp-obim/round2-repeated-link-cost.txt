@@ -1,0 +1,14 @@
+Supplemental Go overlay probe, separate from suite counts. No repository file was created by the overlay.
+Before: source 563be684
+=== RUN   TestRound2RepeatedLinkCost
+    round2_performance_probe_test.go:9: 100 repeated links: 160.391584ms
+    round2_performance_probe_test.go:9: 300 repeated links: 4.22091175s
+    round2_performance_probe_test.go:9: 1000 repeated links: 2m30.316059625s
+--- PASS: TestRound2RepeatedLinkCost (154.70s)
+PASS
+ok  	github.com/sjarmak/gc-slack-adapter	154.937s
+
+After: matcher at 0a9e38a6 (measured immediately before its fixture-only final addition). Later matcher changes are validated by the final suites, including both 4000-link integration cases.
+    round2_performance_probe_test.go:9: 100 repeated links: 182.708µs
+    round2_performance_probe_test.go:9: 300 repeated links: 564.084µs
+    round2_performance_probe_test.go:9: 1000 repeated links: 3.210375ms

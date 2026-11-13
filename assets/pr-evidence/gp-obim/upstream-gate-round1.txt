@@ -1,0 +1,7 @@
+# codex-gate exec: prompt /tmp/gp-obim-review-ci-wisp-h56lxfv/upstream-gate-prompt.txt (2787 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T02:25:57Z
+
+- **Major — concurrent retries can crash the adapter during storage failures.** [publish_receipts.go:288](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_receipts.go:288): After Slack delivery succeeds but receipt persistence fails, the cached receipt contains a non-nil `Metadata` map. Dedup returns shallow copies, so concurrent retries share that map. The new replay persistence call writes `receipt_store` after releasing the store mutex, racing with other retries and JSON encoding. This can cause fatal concurrent-map access errors. Previously, delivered replays only read the cached receipt. Give each replay its own metadata map before mutation, and cover concurrent retries with unavailable storage under the race detector.
+
+Static review of the specified immutable delta completed; `git diff --check` passed. Suites were not rerun.
+
+VERDICT: BLOCK

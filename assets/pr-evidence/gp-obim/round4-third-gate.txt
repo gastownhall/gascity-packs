@@ -1,0 +1,12 @@
+# codex-gate review: base e6163fcaef4fb0a225e0234ba7d39204eedc929f (merge base of --base e6163fcaef4fb0a225e0234ba7d39204eedc929f = e6163fcaef4fb0a225e0234ba7d39204eedc929f and the head) head 290bee1ed30f4aac41747b28d657e6df94880bc9; 3 file(s); class QUICK; model gpt-6-astra; 2026-10-15T09:25:17Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 27 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |   5 +
+#  slack-full/adapter/publish_readback_match.go | 394 ++++++++++++++++++++++++++++++++-----------------------------------
+#  slack-full/adapter/publish_readback_test.go  | 158 ++++++++++++++++++++++++++-
+#  3 files changed, 345 insertions(+), 212 deletions(-)
+
+- **Major — Query-value quotes can hide changed URL content.** [publish_readback_match.go:517](/var/folders/n0/yx26c20j4y5b0597zqpc5kzh0000gn/T/codex-gate-tree.LScg5N/tree/slack-full/adapter/publish_readback_match.go:517): Expected `'See https://a.co/?q='abc':id: details'` accepts stored `'See <https://a.co/?q=>'abc':ok: details'`. The quote after `abc` incorrectly closes the surrounding prose quotation, making the remaining query eligible for emoji folding. Consequently, changed `:id:` → `:ok:` confirms delivery; the base rejected it. Preserve paired quotes within query values before recognizing an enclosing delimiter, and add this regression case.
+
+Go tests could not run because the read-only sandbox denied temporary build-directory creation.
+
+VERDICT: BLOCK

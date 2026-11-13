@@ -1,0 +1,16 @@
+Source: bcb518ad
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher introduces a false-negative readback regression when an unwrapped formatted URI precedes an auto-linked URL with an emoji alias.
+
+Review comment:
+
+- [P2] Preserve closing formatting markers on unwrapped URIs — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:269-273
+  When an earlier URI remains unwrapped, this scan includes its closing formatting delimiter in the opaque span. For example, `*s3://bucket/x* *www.a.co/x*:thumbsup:` fails verification against `*s3://bucket/x* *<http://www.a.co/x|www.a.co/x>*:+1:`. Skipping the first closing `*` leaves the formatting state inverted, so the suffix checker treats the legitimate emoji alias conversion as a changed URL path. The previous matcher accepted this pair; handle closing delimiters on unwrapped URIs consistently with matched URIs to avoid reporting delivered messages as permanently unconfirmed.
+The new matcher introduces a false-negative readback regression when an unwrapped formatted URI precedes an auto-linked URL with an emoji alias.
+
+Review comment:
+
+- [P2] Preserve closing formatting markers on unwrapped URIs — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:269-273
+  When an earlier URI remains unwrapped, this scan includes its closing formatting delimiter in the opaque span. For example, `*s3://bucket/x* *www.a.co/x*:thumbsup:` fails verification against `*s3://bucket/x* *<http://www.a.co/x|www.a.co/x>*:+1:`. Skipping the first closing `*` leaves the formatting state inverted, so the suffix checker treats the legitimate emoji alias conversion as a changed URL path. The previous matcher accepted this pair; handle closing delimiters on unwrapped URIs consistently with matched URIs to avoid reporting delivered messages as permanently unconfirmed.

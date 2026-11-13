@@ -1,0 +1,22 @@
+Source: 3ea272f8
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matching logic rejects valid canonicalized readbacks in repeated-label and emoji-bearing explicit-link cases. Go test execution was blocked by the read-only sandbox.
+
+Full review comments:
+
+- [P2] Align explicit links before exhausting the candidate budget — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:87-91
+  For a post such as `"🎉 " + strings.Repeat("@U123 ", 200) + "<@U123>"`, a readback that only converts the emoji and labels the final mention fails verification. The raw prefix fast path misses because of the emoji conversion, and searching the preceding literal IDs exhausts `budget` before reaching the actual mention. The explicit-link fallback then also fails because its comparisons share the exhausted budget. This previously confirmed, roughly 1.2KB message becomes a permanent `readback_unconfirmed` failure. Use the known explicit-link offset before scanning unrelated prose candidates.
+
+- [P2] Preserve link structure across display-label emoji conversion — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:272-275
+  When Slack converts an emoji in a redundant display label, this condition normalizes the two sides differently. For example, `<https://example.com/🎉|example.com/🎉>` collapses to its label, but `<https://example.com/🎉|example.com/:tada:>` retains its destination and separator. Although the destination is unchanged and the previous normalizer accepted this label conversion, both the new explicit-link fallback and final comparison reject it. Preserve a consistent representation for explicit links and compare their display-label emoji separately.
+The new matching logic rejects valid canonicalized readbacks in repeated-label and emoji-bearing explicit-link cases. Go test execution was blocked by the read-only sandbox.
+
+Full review comments:
+
+- [P2] Align explicit links before exhausting the candidate budget — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:87-91
+  For a post such as `"🎉 " + strings.Repeat("@U123 ", 200) + "<@U123>"`, a readback that only converts the emoji and labels the final mention fails verification. The raw prefix fast path misses because of the emoji conversion, and searching the preceding literal IDs exhausts `budget` before reaching the actual mention. The explicit-link fallback then also fails because its comparisons share the exhausted budget. This previously confirmed, roughly 1.2KB message becomes a permanent `readback_unconfirmed` failure. Use the known explicit-link offset before scanning unrelated prose candidates.
+
+- [P2] Preserve link structure across display-label emoji conversion — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:272-275
+  When Slack converts an emoji in a redundant display label, this condition normalizes the two sides differently. For example, `<https://example.com/🎉|example.com/🎉>` collapses to its label, but `<https://example.com/🎉|example.com/:tada:>` retains its destination and separator. Although the destination is unchanged and the previous normalizer accepted this label conversion, both the new explicit-link fallback and final comparison reject it. Preserve a consistent representation for explicit links and compare their display-label emoji separately.

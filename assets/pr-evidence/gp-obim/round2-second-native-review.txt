@@ -1,0 +1,22 @@
+Source: 6a3a5b0d
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The normalization changes can reject correctly delivered numeric prose and confirm explicitly changed link destinations. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Keep numeric prose out of the verbatim-domain matcher — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:221-222
+  For ordinary prose such as `Result: 0.5/2✅`, this pattern treats `0.5/2✅` as a URL because it accepts entirely numeric domain components. Slack's emoji-converted readback, `Result: 0.5/2:white_check_mark:`, then fails both normalization and the expansion fallback, which also uses this pattern. This previously confirmed delivery now returns a permanent failure, and a retry can duplicate it because unconfirmed receipts are not cached. Exclude non-domain numeric/version expressions from this branch and add a regression case.
+
+- [P2] Preserve explicit link schemes during normalization — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:267-270
+  When the caller posts `<https://example.com|example.com>` but readback contains `<http://example.com|example.com>`, the new conditions normalize both to `example.com` and incorrectly confirm delivery. The previous comparison rejected this destination change. Accepting either implicit scheme for bare-domain prose should not erase a scheme explicitly supplied in a mrkdwn link; preserve explicit destinations and add this negative case.
+The normalization changes can reject correctly delivered numeric prose and confirm explicitly changed link destinations. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Keep numeric prose out of the verbatim-domain matcher — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:221-222
+  For ordinary prose such as `Result: 0.5/2✅`, this pattern treats `0.5/2✅` as a URL because it accepts entirely numeric domain components. Slack's emoji-converted readback, `Result: 0.5/2:white_check_mark:`, then fails both normalization and the expansion fallback, which also uses this pattern. This previously confirmed delivery now returns a permanent failure, and a retry can duplicate it because unconfirmed receipts are not cached. Exclude non-domain numeric/version expressions from this branch and add a regression case.
+
+- [P2] Preserve explicit link schemes during normalization — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback.go:267-270
+  When the caller posts `<https://example.com|example.com>` but readback contains `<http://example.com|example.com>`, the new conditions normalize both to `example.com` and incorrectly confirm delivery. The previous comparison rejected this destination change. Accepting either implicit scheme for bare-domain prose should not erase a scheme explicitly supplied in a mrkdwn link; preserve explicit destinations and add this negative case.

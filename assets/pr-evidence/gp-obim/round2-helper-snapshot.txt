@@ -1,0 +1,3 @@
+Installed helper copied byte-for-byte to scratch before execution because the prior run was interrupted by live replacement of its script (pc_e88e1abf1b6a). Exec mode remains read-only in this lane and validates the final verdict.
+f0f2ce967a3a9a64f7e61b2c8caf94a8e136bbd0c331472071cd92e0eac8dde1  /Users/tailor512/city/assets/ops/mayor-tools/codex-gate.sh
+f0f2ce967a3a9a64f7e61b2c8caf94a8e136bbd0c331472071cd92e0eac8dde1  /tmp/gp-obim-round2.LCwHSC/codex-gate.snapshot.sh
