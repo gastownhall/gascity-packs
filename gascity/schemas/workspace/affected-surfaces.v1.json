@@ -1,0 +1,2496 @@
+{
+  "version": 1,
+  "scope": "Current formula and workflow assets; classification describes declared source responsibility, not delivered lifecycle migration.",
+  "packs": [
+    "gascity",
+    "compound-engineering",
+    "superpowers",
+    "bmad",
+    "gstack"
+  ],
+  "inventory": {
+    "gascity/formulas/build-base.formula.toml": {"classification":"legacy","responsibility":"canonical-summary,implementation-delegator,path-reader,publish,review,review-fix,source-writer","sha256":"2c40e9fb93ccc13ed40d4f28e589b64511f76d55705127d159eed6a4a9415b36"},
+    "gascity/formulas/build-basic-review.formula.toml": {"classification":"legacy","responsibility":"path-reader,review,review-fix,source-writer","sha256":"19d6fadd0eb61989c795e50b302d5375f97f4424756b555a1c3c4e0085cfcf2f"},
+    "gascity/formulas/build-basic.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator,publish,review-delegator","sha256":"3d5d0a7e0a178f6df1caa2b54c6ae70174e13d63bfd0ad8f3e80ce4277986f73"},
+    "gascity/formulas/build-from-convoy-base.formula.toml": {"classification":"legacy","responsibility":"canonical-summary,continuation,implementation-delegator","sha256":"7770fc7dc71c98f617fd4692791d8ea20cdfd8b4b09ab047fe074705550c0004"},
+    "gascity/formulas/build-from-convoy.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"3495520bced9cbc114a9debbcfa237913d5b0a75633f080cfeb0c337678d7a33"},
+    "gascity/formulas/build-from-decompose-base.formula.toml": {"classification":"legacy","responsibility":"continuation","sha256":"85210b60ecc0854e8c40f9b8aca8a66c61f450e933686990c84ac459f8a0c9f8"},
+    "gascity/formulas/build-from-decompose.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"e5250b6cb520cc136e00b145a00ad64b7e8313442a92dec72860aa72f622210f"},
+    "gascity/formulas/build-from-plan-base.formula.toml": {"classification":"legacy","responsibility":"continuation","sha256":"7a7622c5c2b2953c702e031ab86e5b14a16f38bf304125216ce1274963cc0c3a"},
+    "gascity/formulas/build-from-plan.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"69cf5c32b8e0d9dad07fe7049e11aabcb125fdd2a504790f491ddaf4421dca47"},
+    "gascity/formulas/build-from-requirements-base.formula.toml": {"classification":"legacy","responsibility":"continuation","sha256":"ebe64b479c2113073ee9fd69109c831e67d8abe27e0a8ffbfcf00037e319f034"},
+    "gascity/formulas/build-from-requirements.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"c3e203bea27ee4a02802d56219872db87e191f91dae18a6fbfd1b236f7078d02"},
+    "gascity/formulas/build-from-review-base.formula.toml": {"classification":"legacy","responsibility":"canonical-summary,continuation,publish,review","sha256":"c248e0d6b9c59f57c6a21f5ef81d88cd7cf9f970001eacffb2c248322e0769d6"},
+    "gascity/formulas/build-from-review.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"116eae4570adc2894c9bc5b7f22496c31f65dab9ec5b8ec819a35494a52a18b1"},
+    "gascity/formulas/code-review-base.formula.toml": {"classification":"legacy","responsibility":"review","sha256":"ec42fc5369a052c21911bac9764ea558d218719cae7d0126bf79629751a3389f"},
+    "gascity/formulas/decomposition-base.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"25e44ab3c5b9af696d7fa27b626971a1dde317449b2ae2c420ce1efd87484614"},
+    "gascity/formulas/design-review.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"8fe7fd1e03f84ee54d388fbcd22d29e15d8f466f151998cf9211fddc27b94e3d"},
+    "gascity/formulas/do-work-item.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"8cb121777c4efa53268acf4aee535b858dd257762d08ce5a92741ddc87f5edda"},
+    "gascity/formulas/do-work.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-close,source-writer,workspace-prepare","sha256":"2e6a6689dd080793996c5c6a1f49d52e1c39c3bd7c0cea827c3d72a3fda93e1c"},
+    "gascity/formulas/fix-convoy.formula.toml": {"classification":"legacy","responsibility":"fix-generation","sha256":"f080613185691e4f1193eb511eefa030164051465860b21dcc3ceca9da5cb40c"},
+    "gascity/formulas/fix-loop-base.formula.toml": {"classification":"legacy","responsibility":"fix-generation,implementation-delegator,review-delegator","sha256":"a16d50d4ac9c913daf761d63d13a50219380019a44263129975ffe0ed3ce2a49"},
+    "gascity/formulas/gap-analysis.formula.toml": {"classification":"legacy","responsibility":"review","sha256":"f31283fe98844aa25ba9e1d18347de83ec698faf7e6fb4f6a993ddfd7e7de39a"},
+    "gascity/formulas/github-issue-fix-base.formula.toml": {"classification":"legacy","responsibility":"publish","sha256":"daa8ed7cc98c15f067fa5428b01d63b8fb8f3c7bba6cc65d3a34703f1f69c0f0"},
+    "gascity/formulas/github-issue-fix-design-review-work.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"7798d581fbb2eefa904d8b50306680e7af3bf3c4082ebb2d5f1772293f97c299"},
+    "gascity/formulas/github-issue-fix.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"bcc0424d6c6885fcc9eec9c38bdb77b2f140ad27cf07d6b7eb694e868a31b3de"},
+    "gascity/formulas/github-issue-triage-base.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"1a5bff75e6fc0c17c0c3a6a20a6567286882b284b0b23fdb3bc65a76743cc85f"},
+    "gascity/formulas/github-issue-triage.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"b33b073c7a858c7229eec9af85f194522058ce8f77eb4d59e06d8c62ef7b510b"},
+    "gascity/formulas/github-pr-review.formula.toml": {"classification":"legacy","responsibility":"review","sha256":"52554e311c32c3e7a27bd0fd67ac96d7371884bd99e3f4bc776d47cfebaa247e"},
+    "gascity/formulas/implement.formula.toml": {"classification":"legacy","responsibility":"canonical-summary,implementation-delegator,path-reader,publish","sha256":"836969cdc0ac8b036f67714ea7b5744a85d6fbee1c4f5d80b5f134ee7a1ec194"},
+    "gascity/formulas/implementation-base.formula.toml": {"classification":"legacy","responsibility":"path-reader,source-close,workspace-prepare","sha256":"aea93db06268fee99f9d93e76b54916e4ea065577c7bc7be9cd495176e64cca1"},
+    "gascity/formulas/implementation-item-base.formula.toml": {"classification":"legacy","responsibility":"path-reader","sha256":"e88b246c7e7d72c82157d6bb5e99aa42af92a1dff74a625181ca707f0f9f1508"},
+    "gascity/formulas/planning-base.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"428b9a8a4aeb07701b020fda978bc89c257f2b43997628fc60d0510a99a0cbed"},
+    "gascity/formulas/publish.formula.toml": {"classification":"legacy","responsibility":"publish","sha256":"d29d9421c9d35b6e80d9efb52055cc46d72d1a3bec2ad85540ef8d1570cf5f7d"},
+    "gascity/formulas/review.formula.toml": {"classification":"legacy","responsibility":"path-reader,review","sha256":"48d2ce07a13237bd7927d6c2ee090bcdceb181a1829810df4a1657557d89a2a2"},
+    "gascity/formulas/same-session-implement.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"b2c23f6fa34dc5de867b9eb707850a321bd10d928745f8ff477764ecbceaac88"},
+    "gascity/assets/workflows/build-base/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"ccba2e68c77083722977fdc2286c4204f98f373fc93ddddf2fdfd4055274170a"},
+    "gascity/assets/workflows/build-base/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"e6b74c68e8d13173c970d0ba03274a3cf17d5df65b1026d990d78dd06faa0b73"},
+    "gascity/assets/workflows/build-base/implement-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"8c572f05cb244feb057595afb1d45b4756c4b97500064ded4fc37cb77be7ad21"},
+    "gascity/assets/workflows/build-base/implement.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"e8c8c675f49a00a4d1f405dde93b7835787e8f93bf8ff7c2a9b1ad05cfff291b"},
+    "gascity/assets/workflows/build-base/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"fda0924148aeecb7d208ed19366b5fb170116ab129782c4dd6a6fe7dc4e2d258"},
+    "gascity/assets/workflows/build-base/plan.md": {"classification":"reference","responsibility":"reference","sha256":"c625e528e9c7dbe931db5473747e328f5b0ffafb5de952db924457f18da348bb"},
+    "gascity/assets/workflows/build-base/prepare.md": {"classification":"reference","responsibility":"reference","sha256":"3941b1fe647fcd44ab268c6267758d09dc13395d842caa5ca90d3f34ffd82432"},
+    "gascity/assets/workflows/build-base/publish.md": {"classification":"legacy","responsibility":"publish","sha256":"f1f7c05fb5fe86b609a55c28a42587ab00f51286e3082e44f6f4a64d2cacec80"},
+    "gascity/assets/workflows/build-base/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"7160b5ac0dca34cd9f267136230149c2478c92caa434367038eee52c1e434736"},
+    "gascity/assets/workflows/build-base/review.md": {"classification":"legacy","responsibility":"review,review-fix,source-writer","sha256":"e8bfa4dac4984b50eb7f4a7e0a540186a16e71f3d43ca8873f3d3ec4c58beb72"},
+    "gascity/assets/workflows/build-base/summarize-implementation.md": {"classification":"legacy","responsibility":"canonical-summary,path-reader","sha256":"2b18f1178aaf8f9f271f4b88ecfcb79fbb450778d921375b4afbf9ed12a64080"},
+    "gascity/assets/workflows/build-basic/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"267f2b546d3fdfa4fd5546cc6bffcea679f43fceb2f854074b8eea44b542479e"},
+    "gascity/assets/workflows/build-basic/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"f4f48a5aeadbf5d54f66ada21a2822565afc39fc3f9904ac41ca4ffd20278afe"},
+    "gascity/assets/workflows/build-basic/implement-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"1bc44b8c1b760652b2591445ceea7d02e191ddcee585dd43e574367504717f7d"},
+    "gascity/assets/workflows/build-basic/implement.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"d5fdb2c4815f6086b0e1f7ffc8bdd8acb51bbe70ebe4cbedee4a58f1be5b7115"},
+    "gascity/assets/workflows/build-basic/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"200990e67efe711c19fcece4edff87c8f3a0fd29fcf1746e156da4c132b43036"},
+    "gascity/assets/workflows/build-basic/plan.md": {"classification":"reference","responsibility":"reference","sha256":"8c94aa9cbb1b2513e594567cdf11dd80fe1b38d853f79f78d3b51e7ebc576784"},
+    "gascity/assets/workflows/build-basic/publish.md": {"classification":"legacy","responsibility":"publish","sha256":"c2e35bc550e3c601b2b3a68d76d82aa8c18d856403386eba907b4135fe36dc59"},
+    "gascity/assets/workflows/build-basic/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"e2310f1df31a999555364e999f3d5e8fb6e3ee730afdd91cb2547264bb87415a"},
+    "gascity/assets/workflows/build-basic/review.md": {"classification":"legacy","responsibility":"review-delegator","sha256":"2a622a6352f2b29f320ba93d8184474756b21fc5803173fab99185a2041a97a5"},
+    "gascity/assets/workflows/build-basic-review/{target}.acceptance-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"340f9f9b2cbcb13fee694668e299a0cbd9535a735104aa98f5ee3770af27d6c9"},
+    "gascity/assets/workflows/build-basic-review/{target}.apply-review-findings.md": {"classification":"legacy","responsibility":"path-reader,review-fix,source-writer","sha256":"9d582a837e2f8bda2a8cd1401ddff6053f7142fe5cf36fb20b33e344f957bfa1"},
+    "gascity/assets/workflows/build-basic-review/{target}.build-basic-review-loop.md": {"classification":"legacy","responsibility":"review","sha256":"2ab0c580ed8850f57731edfc47428cdfbd54c270b2353f8c07ceea8fae1619f0"},
+    "gascity/assets/workflows/build-basic-review/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"74a0863e05fb0db48c62e9ae0394671c5be51c36d67964318f4bb41eb92c3df9"},
+    "gascity/assets/workflows/build-basic-review/{target}.setup-build-basic-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"5558f18ec338d62eda30a456c730b7ed42e7230aaa653b46dd49109af1e5462e"},
+    "gascity/assets/workflows/build-basic-review/{target}.simplicity-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"813117dec69364991bcdd63a33033e303d7cbc9a4e24d6e8a5c84738a7f3b07c"},
+    "gascity/assets/workflows/build-basic-review/{target}.synthesize-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"822e86e151cbd9c7f5f87d6d02c2d31d5d0839965bd33378b0cf19a97ccab887"},
+    "gascity/assets/workflows/build-basic-review/{target}.test-evidence-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"523fedbde92be8433f9c9e6131e0c95c5a29692ad562acb44920802e246f2cd3"},
+    "gascity/assets/workflows/build-from-convoy-base/implement-same-session.md": {"classification":"legacy","responsibility":"continuation,implementation-delegator","sha256":"f6f704dfe1ad7345267be711b15960571c1235fa7809381ce029839341a0698e"},
+    "gascity/assets/workflows/build-from-convoy-base/implement.md": {"classification":"legacy","responsibility":"continuation,implementation-delegator","sha256":"37fd27fcb9c81e74d1e6a56523a69d59323fa35abceeb3348b313eea0ba7b2c8"},
+    "gascity/assets/workflows/build-from-convoy-base/prepare-convoy.md": {"classification":"legacy","responsibility":"continuation","sha256":"05ea6898fc95d17f17c12ea5f9b88addd00fd520913c61bfc4dbcb6dfb23650f"},
+    "gascity/assets/workflows/build-from-convoy-base/prepare-review.md": {"classification":"legacy","responsibility":"canonical-summary,continuation","sha256":"ea6f29b87c3b0d073762ae339701c620cede68d7eddf2b249fa7dbd9762688ff"},
+    "gascity/assets/workflows/build-from-decompose-base/decompose.md": {"classification":"legacy","responsibility":"continuation","sha256":"49885a23a8febe343ec87e28e681a21e9e2b6723cae3f5775287b3fc474ca59b"},
+    "gascity/assets/workflows/build-from-decompose-base/prepare-convoy.md": {"classification":"legacy","responsibility":"continuation","sha256":"8b425866df83922c309c4df5a2e9abd88df4ceab5213d7e98bfd6252d8f91bae"},
+    "gascity/assets/workflows/build-from-decompose-base/prepare-decompose.md": {"classification":"legacy","responsibility":"continuation","sha256":"4a5d3d0e05ec3ddfabee79b8d0298650b12141bd39e91f1fd35699cee01531f3"},
+    "gascity/assets/workflows/build-from-plan-base/plan-review.md": {"classification":"legacy","responsibility":"continuation","sha256":"862be938d7f203ac14b53b3944ed7970592d80ffdc247ecd9868e5c42c1e3b5f"},
+    "gascity/assets/workflows/build-from-plan-base/plan.md": {"classification":"legacy","responsibility":"continuation","sha256":"d3ec659f1978b0843131b9405db94169e009dcd6223a1926fca2611ad05a782e"},
+    "gascity/assets/workflows/build-from-plan-base/prepare-decompose.md": {"classification":"legacy","responsibility":"continuation","sha256":"fac98229561c94b90974e7b48503c31c833a9d12ac0219fd8086491977bc4044"},
+    "gascity/assets/workflows/build-from-plan-base/prepare-plan.md": {"classification":"legacy","responsibility":"continuation","sha256":"29cf4afeaf7d503f8670aec53b03f0bf501ea872f46863ccf2e2d13f96fd5a01"},
+    "gascity/assets/workflows/build-from-requirements-base/prepare-plan.md": {"classification":"legacy","responsibility":"continuation","sha256":"42e23329ae6a3f6d57040690977b81a92e65a90cf6c904d5702fce1fef912fd0"},
+    "gascity/assets/workflows/build-from-requirements-base/prepare-requirements.md": {"classification":"legacy","responsibility":"continuation","sha256":"228c56142274865f1e4300ffd44dc4bfda6a3b306b57a9c15dec3e0e135a201c"},
+    "gascity/assets/workflows/build-from-requirements-base/requirements.md": {"classification":"legacy","responsibility":"continuation","sha256":"aa93c77b19d22d54ebdc714d578437b15245eee8374d3cfdc182ae94bad07a0b"},
+    "gascity/assets/workflows/build-from-review-base/finalize.md": {"classification":"legacy","responsibility":"continuation,review","sha256":"9e330751dcbb5f018ac8af5f7e6154dfcf336a1c33071093e87ac54533a77207"},
+    "gascity/assets/workflows/build-from-review-base/prepare-review.md": {"classification":"legacy","responsibility":"canonical-summary,continuation,review","sha256":"0c5213a8d57c42585aa5ce1e1bc81fd76c88fe6b8f3c558e0724a277ad2f2b9c"},
+    "gascity/assets/workflows/build-from-review-base/publish.md": {"classification":"legacy","responsibility":"continuation,publish,review","sha256":"f625e75bf07771e2d1cbeb7987260e33e642743f2331ff0ab1b6bb96ab107616"},
+    "gascity/assets/workflows/build-from-review-base/repair-review.md": {"classification":"legacy","responsibility":"continuation,review","sha256":"c21f2e60884f76cc528d36c40df4b7f8ee6faface3b06fbaf020b69a3ddcbb17"},
+    "gascity/assets/workflows/build-from-review-base/review.md": {"classification":"legacy","responsibility":"continuation,review","sha256":"2216a95e327fe0f56b54820e627cbed55dd6392aceaa78169f8eb501fd06770b"},
+    "gascity/assets/workflows/code-review-base/validate-context.md": {"classification":"legacy","responsibility":"review","sha256":"a7e9a17ad0d6c8c239a9cb9dc66213322c3e91d40705c140f883c9b69e4f9386"},
+    "gascity/assets/workflows/code-review-base/write-report.md": {"classification":"legacy","responsibility":"review","sha256":"687864afef6cecf47ecea8c14518da38bb93608bd793162a8c0999f4a1068211"},
+    "gascity/assets/workflows/decomposition-base/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"5b2dad80658dcb5da593d2e5c6d60a678e736314a4b4939a6617c15e6ee17e1f"},
+    "gascity/assets/workflows/design-review/body.md": {"classification":"reference","responsibility":"reference","sha256":"463d83f0e738337dc0a20785bb75129f9cadf65b7bcd3f250c2f896155ff1f8f"},
+    "gascity/assets/workflows/design-review/design-review.md": {"classification":"reference","responsibility":"reference","sha256":"82125258088d58ef58cf4afead54777035883399f15e8d5e0ed668b1f58ec37f"},
+    "gascity/assets/workflows/design-review/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"5a3f10197d700591db9a9b1344a701935c997def22540771e5949cb237aeea2e"},
+    "gascity/assets/workflows/do-work/close-source-anchor.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-close","sha256":"5c2e83351ffac5b7ebabb28cc5abd499f611650aa826ab0a79a0aae8bb75bbac"},
+    "gascity/assets/workflows/do-work/implement.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"e5434b3fd606560a467daffb2615420bd36c5353c1ffa96559c53c8ef8df54f1"},
+    "gascity/assets/workflows/do-work/prepare-worktree.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,workspace-prepare","sha256":"2355e3391a9bb564f4127f4330d0fd430c72f76a696480458b05d705937d12ff"},
+    "gascity/assets/workflows/do-work-item/implement-item.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"ea8d0a9c4cda90ea382a5971c883a4510179a4b0405bb02b32a9728e68a69096"},
+    "gascity/assets/workflows/fix-convoy/create-fix-convoy.md": {"classification":"legacy","responsibility":"fix-generation","sha256":"4836fc55a768a37f6a2d7c8b2bc9c61afd18b019665c51e0a6a1ecc18c3ff95e"},
+    "gascity/assets/workflows/fix-convoy/synthesize-fix-plan.md": {"classification":"legacy","responsibility":"fix-generation","sha256":"d2c3a96f12d4372dbbf5b2e99a1c30bd708c9eb8e363d9e8f05e0ce151a0a2c8"},
+    "gascity/assets/workflows/fix-convoy/validate-fix-plan.md": {"classification":"legacy","responsibility":"fix-generation","sha256":"6af9c09c5e389b5c3801e0841818246408a3663a3b408e0c916046c0cb6466d1"},
+    "gascity/assets/workflows/fix-loop-base/apply-fixes.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"562d6e2c63e9264b898834806d77355bed6b6e9f9c7f25ad50f706f9018795c5"},
+    "gascity/assets/workflows/fix-loop-base/plan-fixes.md": {"classification":"legacy","responsibility":"fix-generation","sha256":"7faf7aca4ad0c55a2522c851e32515c45ea46e2df67d7d82f1051c28adf3afe0"},
+    "gascity/assets/workflows/fix-loop-base/re-review.md": {"classification":"legacy","responsibility":"review-delegator","sha256":"2d8953c13f1dd1bf400d4e0ddbdb02f8fbf4213851a284393ee0b3f556d6197a"},
+    "gascity/assets/workflows/gap-analysis/validate-context.md": {"classification":"legacy","responsibility":"review","sha256":"05bd886b512f44385427a31a5da00532e61c9b2a5e9fa118f5e67c632900b3d4"},
+    "gascity/assets/workflows/gap-analysis/write-report.md": {"classification":"legacy","responsibility":"review","sha256":"fc55fe84dbda7568006b9273c529915a1836776b75ab81681e4b58547b8797f8"},
+    "gascity/assets/workflows/github-issue-fix-base/build.md": {"classification":"reference","responsibility":"reference","sha256":"5bcbab4d36b3fddfbd89170b5d17166466b104d7e2c97d6e99aef8738c1b9e59"},
+    "gascity/assets/workflows/github-issue-fix-base/create-beads.md": {"classification":"reference","responsibility":"reference","sha256":"c783b2c9036816a2d04a6fced7b9768dc1df7faff280b9d9afb57f3accb83a67"},
+    "gascity/assets/workflows/github-issue-fix-base/design-review.md": {"classification":"reference","responsibility":"reference","sha256":"cdd247c5bd2f71c9b3e4c82141be20f7a835021cd6d4d3dc813f61635847daf0"},
+    "gascity/assets/workflows/github-issue-fix-base/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"88459bc6a44994322796c9c2f6e61dcf16213094ad81016289b6ca39f7981620"},
+    "gascity/assets/workflows/github-issue-fix-base/generate-requirements.md": {"classification":"reference","responsibility":"reference","sha256":"09ad64f7ee111e1d251f10ec3d13f5929e36293dda834198aef1ec5d62df5bfd"},
+    "gascity/assets/workflows/github-issue-fix-base/implementation-plan.md": {"classification":"reference","responsibility":"reference","sha256":"f4e1baa93963bc3e8015fec51ee9b84054f08e9265ec08134db27082f08b9c33"},
+    "gascity/assets/workflows/github-issue-fix-base/publish-pr.md": {"classification":"legacy","responsibility":"publish","sha256":"18a0a28680088f4fe92e330c41b5c138386aaedc22724e189f746343df2af2fd"},
+    "gascity/assets/workflows/github-issue-fix-base/resume-or-create-run.md": {"classification":"reference","responsibility":"reference","sha256":"5d0e56500678acd3f61ab6a46b0682d23de9803879658547ee8d988402490764"},
+    "gascity/assets/workflows/github-issue-fix-base/snapshot.md": {"classification":"reference","responsibility":"reference","sha256":"a28c7f5d34190cc60249e05eb2ea9cdf08406cf926ec01b4fe47047e2a1cea9c"},
+    "gascity/assets/workflows/github-issue-fix-base/triage-gate.md": {"classification":"reference","responsibility":"reference","sha256":"29379e72ab77e2068c2a60dee19794d02f7e80a215e567488b7fc9269411abdf"},
+    "gascity/assets/workflows/github-issue-fix-base/triage.md": {"classification":"reference","responsibility":"reference","sha256":"1e99d93fdb6f38a5f054232882d1efed996c92c214a831b34abad63af6ca7e9b"},
+    "gascity/assets/workflows/github-issue-fix-base/update-status-started.md": {"classification":"reference","responsibility":"reference","sha256":"4df018594c3c6544f736ad13a07d11dcc85af38e0437fd9011ff3d718f2a8a70"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.apply-design-review-findings.md": {"classification":"reference","responsibility":"reference","sha256":"eb035d60cfb6df832b90c7ffe58ea2f6c5cbadfd759ca791b59d5d9275fba834"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.implementation-review.md": {"classification":"reference","responsibility":"reference","sha256":"2a574568452eddd88f7eec727e2aa56d56752e20774866aac8b565e2ba8f2490"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"91dea0e79fc52845acb905fa46ac9eab73bcab1cfbc449355ca85e2115a64464"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.review-loop.md": {"classification":"reference","responsibility":"reference","sha256":"9068aae9036f30f182201ab824893e9997f8344bb66fe5e7dc159a00d28cc544"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.setup-design-review.md": {"classification":"reference","responsibility":"reference","sha256":"96f20644aa58c072954b4c7bb33432da7f97c76fcb50ec9fe511bd105135e9d5"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.synthesize-review.md": {"classification":"reference","responsibility":"reference","sha256":"d099def407b73f086d84f07ad54198ef690cb40a69e5536a684673eba94fb90a"},
+    "gascity/assets/workflows/github-issue-fix-design-review-work/{target}.testing-risk-review.md": {"classification":"reference","responsibility":"reference","sha256":"62c3c7c59d0bcc58911d067f840926aece288bedc21e44aae05c7e668077c81e"},
+    "gascity/assets/workflows/github-issue-triage-base/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"7efa6176438fe8adedd348eed4fddfa4e23a7db07eb63e327d4a4bb939051003"},
+    "gascity/assets/workflows/github-issue-triage-base/human-gate-sensitive-output.md": {"classification":"reference","responsibility":"reference","sha256":"548359370ae4ce125ef9b9440d375b5118fc502a17fd13bc8fcd512fbb0800f3"},
+    "gascity/assets/workflows/github-issue-triage-base/post-comment.md": {"classification":"reference","responsibility":"reference","sha256":"92100bd248d187d97d122966747ab0da85aa82e197d25150523f6de30a8ab687"},
+    "gascity/assets/workflows/github-issue-triage-base/render-comment.md": {"classification":"reference","responsibility":"reference","sha256":"04cfcaa146c4b93512166d822327b668ee8962367b5262df24e4f5dd1e9112a6"},
+    "gascity/assets/workflows/github-issue-triage-base/reuse-current-body-hash.md": {"classification":"reference","responsibility":"reference","sha256":"c949a5ee3cd795b340fac11c3bdb2cc06838de6d780c1616769ad479208c3825"},
+    "gascity/assets/workflows/github-issue-triage-base/snapshot.md": {"classification":"reference","responsibility":"reference","sha256":"045dd5759ea7a63708ff36146e64c915bcc124e23ec59b14f6054637e7945681"},
+    "gascity/assets/workflows/github-issue-triage-base/write-triage-report.md": {"classification":"reference","responsibility":"reference","sha256":"88474a3b4082567a81ae600b4edf431789efb932384747c99c1c8165db2889a3"},
+    "gascity/assets/workflows/github-pr-review/finalize.md": {"classification":"legacy","responsibility":"review","sha256":"5a14064fe48527835e7124c62413f76b9ca40c4c99e3f0a230dac80c555bb39c"},
+    "gascity/assets/workflows/github-pr-review/human-gate-comment.md": {"classification":"legacy","responsibility":"review","sha256":"d64fbcaeba7a843567b07d83e76090ab73c0832cddf44214aad4a8cca5536d9d"},
+    "gascity/assets/workflows/github-pr-review/post-comment.md": {"classification":"legacy","responsibility":"review","sha256":"2235458a2468139cc7df927b9a8b48e2147034b39db8675dca33e4a9460b8c10"},
+    "gascity/assets/workflows/github-pr-review/render-comment.md": {"classification":"legacy","responsibility":"review","sha256":"7ce694883bc320311d8f27f14a61bd725061e54abfa5f4ad39904599d31d562e"},
+    "gascity/assets/workflows/github-pr-review/reuse-current-head.md": {"classification":"legacy","responsibility":"review","sha256":"4a8a83117fbac1347e8d0a7cda630a2fcd7fa330f8c06a305b0bb5c29f079c79"},
+    "gascity/assets/workflows/github-pr-review/run-review.md": {"classification":"legacy","responsibility":"review","sha256":"87259c336731f49349e0d1636af4fa1e312ef8f466c2812c20a13c8f87b37616"},
+    "gascity/assets/workflows/github-pr-review/snapshot.md": {"classification":"legacy","responsibility":"review","sha256":"3af2752afd3ebb054879df9441d880600a9fbd25e530b18ee0dde8cd26503d93"},
+    "gascity/assets/workflows/implement/drain-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"75ba4cecb89b25bb2659fd9bf652e6591f4bbc282bc5888b817c11a665b73c71"},
+    "gascity/assets/workflows/implement/drain-separate.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"af2a4ca8dfca9830e2f1b1dba180d01cce0273366b903fe8efdb33332dd30379"},
+    "gascity/assets/workflows/implement/prepare.md": {"classification":"reference","responsibility":"reference","sha256":"9668e7d92e9e2bb9f252558a71eeb0ec0fc25382b6b5e1f1b2da5c4ca3c4602d"},
+    "gascity/assets/workflows/implement/publish.md": {"classification":"legacy","responsibility":"publish","sha256":"ca7dd7c6d431a7616670f26db73f64621df693d1f20f090e0afaf49c00323bd4"},
+    "gascity/assets/workflows/implement/summarize.md": {"classification":"legacy","responsibility":"canonical-summary,path-reader","sha256":"59581042f02c13183405a002ddad17aeb4129b01e55ab02fa25616bbecee313c"},
+    "gascity/assets/workflows/implement/wait-for-drain.md": {"classification":"reference","responsibility":"reference","sha256":"a2133778dec469672e4d6431caa612c81a1f252e06c8fa93c8976b9e65e1d59c"},
+    "gascity/assets/workflows/implementation-base/close-source-anchor.md": {"classification":"legacy","responsibility":"source-close","sha256":"408bfd788b0520f71311b0077c336a47c0cea705fee497a31b833a0ff6bf01c8"},
+    "gascity/assets/workflows/implementation-base/implement.md": {"classification":"legacy","responsibility":"path-reader","sha256":"e7966703bb2b8947f6079214fdf1e5a3a148bb3a9c425990748af562d3dcda3c"},
+    "gascity/assets/workflows/implementation-base/prepare-worktree.md": {"classification":"legacy","responsibility":"workspace-prepare","sha256":"2a2decff1587efcb27037a1369914ece58ff8a7c0b34b85aaad93aa429a302cd"},
+    "gascity/assets/workflows/implementation-item-base/implement-item.md": {"classification":"legacy","responsibility":"path-reader","sha256":"374e71dcb64bf571985a3f24344c37712aca3c8cbf64db0262ae467b2a509f8b"},
+    "gascity/assets/workflows/planning-base/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"b04dd2e54a56c22c32345e34529bee8df06bfebf84e875535113179a6cee7fc7"},
+    "gascity/assets/workflows/planning-base/plan.md": {"classification":"reference","responsibility":"reference","sha256":"2b0abb08f1eaf0915b77599fbdf0980e4707935de5be858bd5d4b30271da28ef"},
+    "gascity/assets/workflows/planning-base/prepare-planning.md": {"classification":"reference","responsibility":"reference","sha256":"fd38bd19b214f28a9eeec1cd478569fd0f4906d8730849d0a5266eee335f63d7"},
+    "gascity/assets/workflows/planning-base/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"8c8788db0d553b2081c9eb211a6c8522b627b45d6f697fb0e9351a8a80ac5b8c"},
+    "gascity/assets/workflows/publish/open-pr.md": {"classification":"legacy","responsibility":"publish","sha256":"eede779d841386fc4cc88132ae9366728a4e198641c33c81a90d5b82621ad325"},
+    "gascity/assets/workflows/publish/preflight.md": {"classification":"legacy","responsibility":"publish","sha256":"0e202c720eb72858b77c4c0cd68385ca3b448b905e52059f8862262a2930ac6d"},
+    "gascity/assets/workflows/publish/push.md": {"classification":"legacy","responsibility":"publish","sha256":"a6d6ca450aa7c8a4c4ad5d3bc75e9a920a8ccaab56136f5ec544290066209a90"},
+    "gascity/assets/workflows/review/validate-context.md": {"classification":"legacy","responsibility":"review","sha256":"05bd886b512f44385427a31a5da00532e61c9b2a5e9fa118f5e67c632900b3d4"},
+    "gascity/assets/workflows/review/write-report.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"07b951c59fdbf507513584039ca1cd3b034d8c576c75e2b3b2c6857c4ae16d92"},
+    "gascity/assets/workflows/same-session-implement/shared-drain.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"e85a36a01d2b94c13e4aab3296cfae9f83776b55dbdef0200c9b31c05e3f9a99"},
+    "compound-engineering/formulas/compound-build.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator,review-delegator","sha256":"b6023b7617f44f2647cb434354398be0db289b47a5de91344d3fb18050b1f93b"},
+    "compound-engineering/formulas/compound-code-review.formula.toml": {"classification":"legacy","responsibility":"path-reader,review,review-fix,source-writer","sha256":"70f191add439c996ac264c4ead3fe39e4179f0a76fb0ce2124e95c35c6410046"},
+    "compound-engineering/formulas/compound-decomposition.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"978c2c05df1cffdeab6f1bf996a932b6620ee35c9f2649fd5c6df06954902e95"},
+    "compound-engineering/formulas/compound-fix-loop.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"1a34c173a2a18ff4e9902663814463c7dcd9f605286245ebe2703b47c3174050"},
+    "compound-engineering/formulas/compound-implementation.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"69855e16028b6346e80e1bbd239ceb08f2e4f2864e5d0316b7998835079fc9ef"},
+    "compound-engineering/formulas/compound-plan-review.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"d0b9f305f0f9542af388086b4a6c15d87026b33e0662a84bc73df0370dc593cd"},
+    "compound-engineering/formulas/compound-planning.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"a8baa2af426d49bdafd16eddc1b76f785da79c1a17b198552d50d85aadb7f45f"},
+    "compound-engineering/formulas/compound-resolution.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"5644126897178149e4479308ba1da74343c21bf22c5db74cc81482e07e686ae7"},
+    "compound-engineering/formulas/compound-review.formula.toml": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"7a254f00381e2cea1ecf34479500c5399be85e419e96a0f0ce221cbeecc8187a"},
+    "compound-engineering/formulas/compound-work-item.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"1ed2cfeb313a4456db0fcadc1627e49a29525b8f6fa880fcdb1caf4acba0d67f"},
+    "compound-engineering/formulas/compound-work.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"7b82e57a85280e50625d41ef9c01a9889299a0559121c4c938f6d2e10c538a1d"},
+    "compound-engineering/assets/workflows/compound-build/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"ebdb88e25f03448301e33be3f2c0ef0e867f1f3b8f26b24835f976089d63adaa"},
+    "compound-engineering/assets/workflows/compound-build/implement-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"552895c8396d15f33e61f90b612e2cf76fec111669b74063e7c8512a08e56142"},
+    "compound-engineering/assets/workflows/compound-build/implement.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"95ff99bcccb8bda01d6d5574a843e19e9363809c0209975c9de6e7350bbcc80b"},
+    "compound-engineering/assets/workflows/compound-build/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"bcdd589a5508f883ba78e2e262da1e68707e6d5be0f1b0d3f172375ad1234041"},
+    "compound-engineering/assets/workflows/compound-build/plan.md": {"classification":"reference","responsibility":"reference","sha256":"a90768a9ffdd72c4c5b9fe5fc4e4205ce3d0a218f4add06ae2ae7e242878f356"},
+    "compound-engineering/assets/workflows/compound-build/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"1acf1eb990845e9eea7d965c6489c042e042f3b990c468ad684765a1bb2efc75"},
+    "compound-engineering/assets/workflows/compound-build/review.md": {"classification":"legacy","responsibility":"review-delegator","sha256":"50a42b4a2e2e15069d5bef31bb8445cf96b27bf410f18709b7ac7401e44ed564"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.adversarial-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"bf0e0fcc0844c5cb66f05710d4b5c2ae74aa9cdf93f0824f231a0e497fcc5c01"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.agent-native-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"ab10d83fb93e2c67fd648e8c0b925343a2e27dffe09414a2edc75978ef046a53"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.api-contract-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"fef7fbad0bf94c0d90c551f2d01f0218cb5518cab387ef966a592a6ac6078d4e"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.apply-review-findings.md": {"classification":"legacy","responsibility":"review-fix,source-writer","sha256":"b803b63419554dcad4a9ef8df661dbb7cf100db97533a7ca01fc6602c968a414"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.compound-code-review-loop.md": {"classification":"legacy","responsibility":"review","sha256":"c11f4529a9ce70ec42c7de472a7f842933603937c3c77e82589043469b6e6a8d"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md": {"classification":"legacy","responsibility":"review","sha256":"fba5e28a486f5a4b38fe873a51b3c67ed4fd65a8c65ef31c5e8ff0ee23624962"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.correctness-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"67eede7df10739a2b52fbf0a1ee3619af02833500f206540ffb7c06636383a2f"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.data-migration-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"e0facba348a01ca9516818bdce66f65760745a17c301837713d32b2371683bb8"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.deployment-verification.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"63dd4da0efc6554b927217517f2fd8cd1fb715ec3843a857b67d0597880c4376"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.gap-analysis-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"fca6c8a7a21cb2e05df05dff32ec96a71851380acfd529b2f8914afaaf319290"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.julik-frontend-races-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"08815a4e0f169fd3f1e7ed5d375f7d2c1796f26525ba3ca5e1932c4430be9152"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.learnings-research.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"10638e6d2513cad0e33fef65045c8ccc5dbb5a67993a365382558ced7d9934cb"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.maintainability-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"57b4f95afbf8e45f653bfb013084e00a33d107e62791a5a85bcf257ff8f48696"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"967c8de15d4c298f450e9935bdf53be412065835fb79c48a9377d372c46c71cd"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.performance-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"a13d78e7a941b378234b38bbd635b56a81c41fdf38dd7db397f02b3ccff43b8d"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.previous-comments-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"b254510a93a13411eb729ac9c08c246f2a2fa2982c7f793c45829fbde51195d0"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.reliability-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"d4d957a4cb2b03916305468b8794f855ca531932731fa978527bf8e3e4efa1b2"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.security-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"2f9f1073b5d7f8ee52b75fd6175b987e49293f7b059a113984baf4a6adad3a54"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.select-compound-reviewers.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"506d6a8f5484382bc23c7af3afe7a0cdf370e7aeebfdc3e45ec01ed92ff7a063"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.setup-compound-code-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"0d3163d41cfe22b15df23221b7a21c81b3a58cef9e76b67bc312b6f893af54aa"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.standards-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"7523f233c688e1be81edb24c2f6975d466f7c8aaea6d9345baec72d840d59efe"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.swift-ios-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"6d783f40db78c10ca3395e56909896320a262e573927713e2bab2185b81a2197"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.synthesize-code-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"70115536dc69b1846d10774b5763fc223ae8ec4446b39117277822af7f311f3f"},
+    "compound-engineering/assets/workflows/compound-code-review/{target}.testing-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"00358456c6cdd89ea979bf862af6bd1c798c720b0bac50f655af133c725b3a3b"},
+    "compound-engineering/assets/workflows/compound-decomposition/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"a333508fa42d1f89b9a9f405585ed21dcda57a00f6ef965aa3922ff7468757cd"},
+    "compound-engineering/assets/workflows/compound-implementation/drain-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"827e7d6161e7e18340de2bead4d8d449dcf08df71eacb19875089693d792d504"},
+    "compound-engineering/assets/workflows/compound-implementation/drain-separate.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"a98783c8d95c0fe6cf571d78a4e2ba76d02a6e427521ffc1e57a64e370e1c377"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.apply-plan-findings.md": {"classification":"reference","responsibility":"reference","sha256":"1475bc8b45eba1b46324643ff4f8dab00965f4408056babc9143657bffd4ae6b"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.architecture-review.md": {"classification":"reference","responsibility":"reference","sha256":"afd45290730511b77184d894f24c0bed95dd07aad0350da3afca9b6d7f1fd921"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.coherence-review.md": {"classification":"reference","responsibility":"reference","sha256":"2104d470ce6b3f8f4ec415b69500787d357f3a9a1f217e49e3361976a167317d"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.compound-plan-review-loop.md": {"classification":"reference","responsibility":"reference","sha256":"876b62954ac91644ea4a2f27bf4de9b6c56286ca5ebec8699483a17f559baaaa"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.feasibility-review.md": {"classification":"reference","responsibility":"reference","sha256":"9d85fcdd95e872e72839273031624720fbf94d22f31e9925e7e6293fbe0cb61a"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"3d0a447c0b4e79cf647f294bcce33e3075834afbb9f086b02f11d899da78b628"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.scope-review.md": {"classification":"reference","responsibility":"reference","sha256":"699ff239fcb5ed41269c9583e6a6302eff6e00b0a9f6e5b1c4ac0742b662cf3c"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.setup-compound-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"94f3326b7ed8b758d8a7e2ffeb3b8e1ac5105cd067e2d3a7cc3dd1cfcc0bf25d"},
+    "compound-engineering/assets/workflows/compound-plan-review/{target}.synthesize-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"c84fa90481d5f84df81d1f6b8f7cd1a33ac09bb075dffe2d86610afd3ffd672c"},
+    "compound-engineering/assets/workflows/compound-planning/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"2ad690638cb8e17b60ef31d98c884378d99024117c091275d5b7c33557e33815"},
+    "compound-engineering/assets/workflows/compound-planning/plan.md": {"classification":"reference","responsibility":"reference","sha256":"d5d0431ccdfb11f33e2f040a3dc57dcfd861d21b13275651694d80f0556d910b"},
+    "compound-engineering/assets/workflows/compound-planning/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"45279983b70ad63215d794d8fe1fe6dc41d2be3534035e3c8be3d3a356011efc"},
+    "compound-engineering/assets/workflows/compound-resolution/{target}.inventory-artifacts.md": {"classification":"reference","responsibility":"reference","sha256":"ae562087cdecf88ebf0c6bad8e4c0b0bc873ec26088446a0fd32a869a0c0f16d"},
+    "compound-engineering/assets/workflows/compound-resolution/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"d2879236cc3dc625e890b1d81ad28131320b02d77e6b63f760e47317b55011b5"},
+    "compound-engineering/assets/workflows/compound-resolution/{target}.review-resolution.md": {"classification":"reference","responsibility":"reference","sha256":"1f650b67876723045f82a81ebdb70dbf1f36b98340575d6acee3ff24a84110d1"},
+    "compound-engineering/assets/workflows/compound-resolution/{target}.synthesize-resolution.md": {"classification":"reference","responsibility":"reference","sha256":"642da15a4908fb1e98d77c601a989592e8de0cf66e261dfce7d81685ddc758ff"},
+    "compound-engineering/assets/workflows/compound-review/write-report.md": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"b9ac4dfb5b93e4f52a0483e99d99651ce60e0b031ae32a972f7b00d18810b306"},
+    "compound-engineering/assets/workflows/compound-work/implement.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"fd73d0f5b5ec76dc6282bd4c6164d02212dc76fdfea4f485c7b0a1104182ab0f"},
+    "compound-engineering/assets/workflows/compound-work-item/implement-item.md": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"7a22ac451bd67b8cd43590b46070e827e040dcbbf40d4229cb76cc95de74aa78"},
+    "superpowers/formulas/superpowers-brainstorming.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"68c064fbfe14657afcd18c9d7596f377a9383409b71d2afe04242313c1a703fc"},
+    "superpowers/formulas/superpowers-build.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator,review-delegator","sha256":"b630adeac303d53cb2be925bf351131ecc0ab2c1e755db64ab48b794fb9b005b"},
+    "superpowers/formulas/superpowers-code-review.formula.toml": {"classification":"legacy","responsibility":"path-reader,review,review-fix,source-writer","sha256":"4c7652b72d1bb9e99d11371eb3598ccf812d46d3f294349ef7130513df61f953"},
+    "superpowers/formulas/superpowers-decomposition.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"1cbd9bc05e1d336fed96538d3934714171c12a2830e60bcb96b592c092274a75"},
+    "superpowers/formulas/superpowers-development-item.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,review-delegator,source-close,source-writer","sha256":"245d4e140be30bb6136937220b5c7fae81dee014fad7ffa4bfe4b900dc1fbb3a"},
+    "superpowers/formulas/superpowers-development.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,review-delegator,source-close,source-writer","sha256":"2db0f2bb2fa5aa015da8bf161596d5bc89fa0931e979a7a0cd3536b3685f1c83"},
+    "superpowers/formulas/superpowers-fix-loop.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"503f7db5b7432837993f7381c7e7300a96ec56ed9cb412af6d4502634b77279e"},
+    "superpowers/formulas/superpowers-implementation.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"8d8bd269cf0de46b5000c428bc61f739d0fc412574f76d150e1dbb967be61cb2"},
+    "superpowers/formulas/superpowers-plan-review.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"6e442dd55f637d3d855ac0ddc491e3d18fae19a410e382e251250291e8178a12"},
+    "superpowers/formulas/superpowers-planning.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"c40d28416154cd7cf8f42ad32a6c1ed548f04b9e58294ee7cb5447432f92dbdd"},
+    "superpowers/formulas/superpowers-review.formula.toml": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"f4eaccdf2c607284f44e491efc61df8e5852549fc6ae1c69f7bc9f65ea8a9fd9"},
+    "superpowers/formulas/superpowers-task-review.formula.toml": {"classification":"legacy","responsibility":"review,review-fix,source-writer","sha256":"0600103b9e1722247abd300f45b1350a5c436bfbac354130d02e105111780ed4"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.apply-spec-feedback.md": {"classification":"reference","responsibility":"reference","sha256":"bce097a272f67fe6e27f32166dccee104a07d71e13e92a3647699a33c56efa1e"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.brainstorm-design.md": {"classification":"reference","responsibility":"reference","sha256":"f49d4427b0037dabb010a1bc093dd01014aa52cfb1124aff39ae47f07ff5a555"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.confirm-design-approval.md": {"classification":"reference","responsibility":"reference","sha256":"706d280a9408f054eb7d60d9c966372c118ec4594a7891ec818ecc7ba73238ad"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.confirm-spec-approval.md": {"classification":"reference","responsibility":"reference","sha256":"1d2314783d55106016361d88ec0d43996ef982888419c9ab5d0bfa8f2d327c30"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"8f0ecbe926a6b1e879dde70713b3ab89921c8ff22a2629ab5d0186e5ad41c5aa"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.review-written-spec.md": {"classification":"reference","responsibility":"reference","sha256":"f4b936eb24e9267d2f43d93cc0bbffc1ed73ee026d6da4f572e4a0fd2d095ceb"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.setup-superpowers-brainstorming.md": {"classification":"reference","responsibility":"reference","sha256":"db17ae3b509dda90fbe27ce5b6a6d263f45f65971ce404679b7ae4480295a96a"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.superpowers-design-approval-loop.md": {"classification":"reference","responsibility":"reference","sha256":"8f2b3605f736b7f08b3c3874d54d03f4dd47bd005df46f8e26344ce92979e1ad"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.superpowers-written-spec-loop.md": {"classification":"reference","responsibility":"reference","sha256":"fff155bf39623aa8f9bffc6aac91082cb98526b8d63c0f5cd9deae022c9f9af0"},
+    "superpowers/assets/workflows/superpowers-brainstorming/{target}.write-requirements-spec.md": {"classification":"reference","responsibility":"reference","sha256":"4d4b82863bac14bde31112cb3f30b0c68081561cc8b521ab2838ea4febb0fdf6"},
+    "superpowers/assets/workflows/superpowers-build/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"7afe66bf398a926d5f896bad486ee61c2eb9720f9965e8963b0b15a897befae1"},
+    "superpowers/assets/workflows/superpowers-build/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"171bafcad28e4d5188e1836b4fa55fb78079974a9690f85f49929fad8f7a0323"},
+    "superpowers/assets/workflows/superpowers-build/implement-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"965a30bdc5a0ea432e5c603f84d850bf810b55f672978b37d2a0c6c4d8b1b91d"},
+    "superpowers/assets/workflows/superpowers-build/implement.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"4dec63da0ddac9a078f61968a146840207a7f73de04406a65749bb12434aac6e"},
+    "superpowers/assets/workflows/superpowers-build/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"aea9e44ebabf121eb6c780afba7b0e20f90728678f67e7426b2db5afe472ba1c"},
+    "superpowers/assets/workflows/superpowers-build/plan.md": {"classification":"reference","responsibility":"reference","sha256":"085ac2811cff0e9aee4adfe822670e3c195bad8e90c18dff289e8e091b1fdef5"},
+    "superpowers/assets/workflows/superpowers-build/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"7928d3195135ef6ba01d303a705b5f52ef1d32d5ffa8792d819abd2b94ac769a"},
+    "superpowers/assets/workflows/superpowers-build/review.md": {"classification":"legacy","responsibility":"review-delegator","sha256":"a17f0901b770137b41ab54dfb214c874b6927f9c5d519522db927ff39ab928b8"},
+    "superpowers/assets/workflows/superpowers-code-review/{target}.gap-analysis-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"a6197e91882c21108f8be8a32a8a121f196e2c98484b10d54e9afbb2ea3b049a"},
+    "superpowers/assets/workflows/superpowers-code-review/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"7390a971fb4835702dde6faf94979c805c3fbce9acb2862d9df82c2ced5adb9f"},
+    "superpowers/assets/workflows/superpowers-code-review/{target}.process-code-review.md": {"classification":"legacy","responsibility":"path-reader,review-fix,source-writer","sha256":"e3ad314d1acdeff12e7a41a283fcbe01dc2199acb6f3ee3028d403d63e00aa50"},
+    "superpowers/assets/workflows/superpowers-code-review/{target}.request-code-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"e6e868e0fc051ccea8308a34a70a7f99f2595e30b72f69327a62af643acd85cc"},
+    "superpowers/assets/workflows/superpowers-code-review/{target}.setup-superpowers-code-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"8aa41beab14e16bf2785f4f70a1e8fdd20f063acde2196355f8d1a2f9cf58409"},
+    "superpowers/assets/workflows/superpowers-code-review/{target}.superpowers-code-review-loop.md": {"classification":"legacy","responsibility":"review","sha256":"bca33a4d878f8f4704206d0e97bda341d455f481dfef144fa31711766501300f"},
+    "superpowers/assets/workflows/superpowers-decomposition/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"b5d15a2392b6c704148fd95c2c4b4914f8d55a437d5826898f2cf4b3b7828174"},
+    "superpowers/assets/workflows/superpowers-development/close-source-anchor.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-close","sha256":"75261a6e53b7ba69765e48e75eab9c547cd8d115944863230499a448c39c1fbc"},
+    "superpowers/assets/workflows/superpowers-development/implement-change.md": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"9fc081b3dc6b0f088782b776ccb14966c1b3720eeaf039dfadcbc45b4b5b29eb"},
+    "superpowers/assets/workflows/superpowers-development/implement-item.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"ed009b1310bfebf07784470d9d35c77c95401926e950f289d1539f03bc8d7137"},
+    "superpowers/assets/workflows/superpowers-development/implement.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader","sha256":"041a990eecbb1b0513a9c2cf9b8d32d682e0a4969900359c07793e70d1ff1096"},
+    "superpowers/assets/workflows/superpowers-development/record-item-result.md": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"0f730feeae335fdbc28abfa931dc3717dfb4597ac199e5c78ff531936c21a454"},
+    "superpowers/assets/workflows/superpowers-development/task-review.md": {"classification":"legacy","responsibility":"implementation-flow,review-delegator","sha256":"e97e5d411ddc7cc352fcd3db4329d3fec856d59f958862f2c1d9801bec16c579"},
+    "superpowers/assets/workflows/superpowers-development/verify-test-fails.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"52fec8e4236d813b45c816a477ab80ca437ea30b29bbcb5d8a682b12e9c097ee"},
+    "superpowers/assets/workflows/superpowers-development/verify-test-passes.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"56e06285f5c013c448297d6e4aca7b55f8d5c3ba8288c41849947a0ae83d1e11"},
+    "superpowers/assets/workflows/superpowers-development/write-failing-test.md": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"2ce0d2388419909297ff4a20bf0bcc62c6098c4dbec96c93a5e57beb96565184"},
+    "superpowers/assets/workflows/superpowers-implementation/drain-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"962afee6b8313a2db03240945259838e6e042488e549a8fa3021dc4d6bfab989"},
+    "superpowers/assets/workflows/superpowers-implementation/drain-separate.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"e28b1800239acc42b0ba90fa57aa40c54a5790e66873118deb9c2dc8a01a4ad3"},
+    "superpowers/assets/workflows/superpowers-plan-review/{target}.apply-plan-feedback.md": {"classification":"reference","responsibility":"reference","sha256":"b534fa3a1b400c01a73617e9b650742bd0ae118e4c29c18c6e9635de2f395f6b"},
+    "superpowers/assets/workflows/superpowers-plan-review/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"e92a16fac82eb27c78ac4bec6382575458df4c2ae7513ed78e5500a6fb99ccf2"},
+    "superpowers/assets/workflows/superpowers-plan-review/{target}.plan-document-review.md": {"classification":"reference","responsibility":"reference","sha256":"64daa8d6dff4f3c4b01f6c902e3aae6926ff99c118202a7f22b86a9e7015ec82"},
+    "superpowers/assets/workflows/superpowers-plan-review/{target}.setup-superpowers-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"dbc11cb260c4e75de71fa06e0bc18a166224ecf977581c15b55d6c13b26ffc80"},
+    "superpowers/assets/workflows/superpowers-plan-review/{target}.superpowers-plan-review-loop.md": {"classification":"reference","responsibility":"reference","sha256":"42de43b084b1aa6b29c424d67b24ed8bdbfa4ef82e86730e6d2a8c2ecee0cef1"},
+    "superpowers/assets/workflows/superpowers-planning/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"119a2b7133c680de07cc476bb6102e5dd709f14191492489c0e2b2fc0bfbe493"},
+    "superpowers/assets/workflows/superpowers-planning/plan.md": {"classification":"reference","responsibility":"reference","sha256":"a30648becc6e7774b3be9716c63d8b3d76b48ef210c419f955a4a666cec9f4c8"},
+    "superpowers/assets/workflows/superpowers-planning/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"63bb9dbac50432951c72409f45493e9f0602fa96be5f3a2d745ccc73f31fe282"},
+    "superpowers/assets/workflows/superpowers-review/write-report.md": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"3ed038828a5303c079d46dd19abf8f1c2364c3da5efce01292b0549fd7c50b86"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.apply-code-quality-findings.md": {"classification":"legacy","responsibility":"review-fix,source-writer","sha256":"b9dd61aa4888fd6a98d50fc0314dc2dbeb68d8d66e1a5a430962a80a7211e6f0"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.apply-spec-compliance-findings.md": {"classification":"legacy","responsibility":"review-fix,source-writer","sha256":"85a0fa9d0d658aed395c0cb7370bf0968b24935e56e58c24d755505d58d04a3e"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.code-quality-review.md": {"classification":"legacy","responsibility":"review","sha256":"0a2ed11f84cb77916775da23b9b5ac7f9e3e1cb8616e24388124bbff90ffd824"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"8d23aec5190e2eaab00638efc018a91b3603b5654a8dbd29b4a243203f1d7357"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.setup-superpowers-task-review.md": {"classification":"legacy","responsibility":"review","sha256":"b104bc774a6d73a9aa9c5974e8e3e392e02174e6b5ae303cc2b96d5b05335525"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.spec-compliance-review.md": {"classification":"legacy","responsibility":"review","sha256":"df2937a5add637a8dfdcf6042ad31fcc8f8e0448937d241abc1927e783bd46e0"},
+    "superpowers/assets/workflows/superpowers-task-review/{target}.superpowers-task-review-loop.md": {"classification":"legacy","responsibility":"review","sha256":"bc927d2c6c4aec51c85721ac6cc9c2939900f13622ce468678f542dc6363fdae"},
+    "bmad/formulas/bmad-build.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator,review-delegator","sha256":"30c530adc722759dd557bab48455667417c94f689cd25b062e8e5495070b84b6"},
+    "bmad/formulas/bmad-code-review-flow.formula.toml": {"classification":"legacy","responsibility":"path-reader,review,review-fix,source-writer","sha256":"bd08a6d3a8561c366fd668af63fc23a4170858308381530ea08587bec60c407c"},
+    "bmad/formulas/bmad-decomposition.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"4b36854db656f215934720b4fba4c0f1e4cdb110d55d025249a127ac8b81c6f2"},
+    "bmad/formulas/bmad-fix-loop.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"803fb0ee5a0b3886df7d27eb4ccb55d381e19cd391c5aa0e4e913e4b76d29dff"},
+    "bmad/formulas/bmad-implementation.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"0856065b76f80026fad87703157c728cfcd70d09c0eb62c174ffbe490dc4472c"},
+    "bmad/formulas/bmad-planning.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"657d03fd7a29924d4a10b8e38f05166abe9fc8831328746d6a9e8d979c741129"},
+    "bmad/formulas/bmad-review.formula.toml": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"b8fc6295ece206ef3b923d75c948568e919a6022e49750050bda9545f9156a2f"},
+    "bmad/formulas/bmad-story-development-item.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"f1876678f35c9b6ec2b72ba8beff484eda0040581069b76f0e5657cd35c509e0"},
+    "bmad/formulas/bmad-story-development.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"06ebe211faa9d276dce8d23ea1f52084b7ec04cdde66d6107805637781aab02e"},
+    "bmad/assets/workflows/bmad-build/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"30db1f4af3102a7086baecb3122a7fc9191ccb5dbc9a8ddf845b2079845b1bcb"},
+    "bmad/assets/workflows/bmad-build/implement-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"0407ce98821cc8d5f3e0aeb4e0196bab8dd5e0cd7040a138b57c9a06d669edb9"},
+    "bmad/assets/workflows/bmad-build/implement.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"d8f795aaa82c1cb9be56fb6075eb9e8d02997cf3d4f496684e0a2bb0c3e5211a"},
+    "bmad/assets/workflows/bmad-build/implementation-readiness.md": {"classification":"reference","responsibility":"reference","sha256":"5cc57d0a89de813c348d538cc71196cacd4c1832c332e64401e2462049e7810e"},
+    "bmad/assets/workflows/bmad-build/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"9695ee568ba876c569a22e47c24d500c83537b0801f0e85fa9991c467bc9dc6e"},
+    "bmad/assets/workflows/bmad-build/plan.md": {"classification":"reference","responsibility":"reference","sha256":"a60468b498fbce495594fa4fb0e5ef81693f8dd97da83b4b2034558f31535313"},
+    "bmad/assets/workflows/bmad-build/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"5480342897cfc841f1fcd7af82ddb4516da38fefbb7df5aa094873b98dc13474"},
+    "bmad/assets/workflows/bmad-build/review.md": {"classification":"legacy","responsibility":"review-delegator","sha256":"c06223f469831bba537de118280a3b3c3f4d9051dd9d8b6816ed8daec2c61845"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.acceptance-auditor-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"c045f185999d2cd384e854b46f437a69b93c8c28b2f64cef852f5e91c30be93e"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.apply-bmad-review-findings.md": {"classification":"legacy","responsibility":"review-fix,source-writer","sha256":"bbad2a1ef6c482d343c88c34c6c206f98fe118b31ab503c9c8b1060fd81cd024"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.blind-hunter-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"dc084096602cfa50f3520aea98128df433bebca15efbcad90c7e2fc7e387ba2c"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.bmad-code-review-loop.md": {"classification":"legacy","responsibility":"review","sha256":"35e51ff30b63c3ba1d5d6b1ab063ecaf056e85b50256bcd312e2a162431fd2dd"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.edge-case-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"c20744037c65e06a30d1cf29f3aee852206689432d072712d1b4fc533e77ecae"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.gap-analysis-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"d6640ad176f4c65e3b5f21bbbe0430c35e6f771febfb6ae063dfb9775984c40d"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.gather-bmad-review-context.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"02241ff81900beac6a3f28a336f23349f191538e8abecf4561fdd8f6acf78681"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"e03206bb8a1691c7f26e8466b88a6965c827ae6b4e8b77cd403b96781c7396e2"},
+    "bmad/assets/workflows/bmad-code-review-flow/{target}.synthesize-bmad-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"ad8a7d436c6f7756234018c0af9b0b64099d43ee283784f3f9ef4d2b82e26bc9"},
+    "bmad/assets/workflows/bmad-decomposition/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"b32ddab451471eaff49a0a035ef7a45f16b54f2a1d091c1a4aa099a5267990b4"},
+    "bmad/assets/workflows/bmad-decomposition/implementation-readiness.md": {"classification":"reference","responsibility":"reference","sha256":"e4697fc843ac2c7aeb6200fba8524fb2f3d272c60d136b281b2549fe450601d9"},
+    "bmad/assets/workflows/bmad-implementation/drain-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"fdf79de11771ef96afaa571bbc4849ab7b55b4f48d29438d7c2ab591b6f0bf75"},
+    "bmad/assets/workflows/bmad-implementation/drain-separate.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"777a7890e3d67c39f9670c571df689a713da028b27a11e029ccb4c924fd65c4b"},
+    "bmad/assets/workflows/bmad-planning/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"e19ad1c9449de60106f6fff2edd7fb6edaaa24528e3c90a4474bdaff930414aa"},
+    "bmad/assets/workflows/bmad-planning/plan.md": {"classification":"reference","responsibility":"reference","sha256":"d23373aac05767edffc2f361d3cfc371fe26f6092fd91a4b22e61dfce898c1a4"},
+    "bmad/assets/workflows/bmad-planning/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"d3a1fea1a528f89f2df4afd0626a4febf02208a85dac26b8bf075cc3d7a5db94"},
+    "bmad/assets/workflows/bmad-review/write-report.md": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"64901d6c374565c49c7fad0bda30e57fc6e357c1947de68a6ea3a6487877e9ff"},
+    "bmad/assets/workflows/bmad-story-development/acceptance-audit.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"619bd7ab400b7d0639925e348ea8ec7570bd70dbab187b1aab5fb0ff1ee8024d"},
+    "bmad/assets/workflows/bmad-story-development/apply-story-findings.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"3cdb00511731b8858d9a06335e3f6470d2c90262755b559586d7eb1c11e0778b"},
+    "bmad/assets/workflows/bmad-story-development/implement-item.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"0268215a9bb65225ea06b3bc77c6a21fa3da38767e6a6583c4f1352a63c308fd"},
+    "bmad/assets/workflows/bmad-story-development/implement-story.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"b0f97cef66930588462c39b03816564d20fb2df278b43692df9c3e7d5221d21f"},
+    "bmad/assets/workflows/bmad-story-development/implement.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader","sha256":"cc2e3a5bc326d238ef37367c61bc6fe813b1b2c404a004a02387711f822eb614"},
+    "bmad/assets/workflows/bmad-story-development/setup-bmad-story-development.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"23f17d3bbaf5afdd6a3af171a36270ab7cbc7988e94ea020a47d024d99c619ba"},
+    "bmad/assets/workflows/bmad-story-development/story-self-check.md": {"classification":"legacy","responsibility":"implementation-flow","sha256":"8c9ce26e9c725df279ccd46562cd665d2ab7f9eae2cf6c8a1001a77505d98f53"},
+    "gstack/formulas/gstack-build.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator,publish,review-delegator","sha256":"830358aa72c5a014a9c6aa49c0713f352d059e3a2c74411776011ecb532c7bf2"},
+    "gstack/formulas/gstack-code-review.formula.toml": {"classification":"legacy","responsibility":"path-reader,review,review-fix,source-writer","sha256":"3e0aa6030921a83179e8232c8750b2054437c01dcb192d5f617f002f8c16f98d"},
+    "gstack/formulas/gstack-decomposition.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"e494468203f3ededbe505a0872efa602e877b0467b17747e77198c38daf31760"},
+    "gstack/formulas/gstack-fix-loop.formula.toml": {"classification":"legacy","responsibility":"inherited-contract","sha256":"0c5762f4346d6a11dd8cca13b663687e513e3f285032fa34de3538eba9c7de42"},
+    "gstack/formulas/gstack-implementation.formula.toml": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"cffcae4e70f53f4bfd99bfb9bf453ea6a56ea73ca839aeef8306fa282a8f3106"},
+    "gstack/formulas/gstack-plan-review.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"bbf1a2b286be4acdc4909141ac9d6f1451009b81e95d1c43798f01e64ecb5100"},
+    "gstack/formulas/gstack-planning.formula.toml": {"classification":"reference","responsibility":"reference","sha256":"b559b8fc1380289decbd7452fbc534402bf35dbc7f423db959b2d267934c025a"},
+    "gstack/formulas/gstack-qa-review.formula.toml": {"classification":"legacy","responsibility":"review,review-fix,source-writer","sha256":"908942f3460d14ec83118aa7f34e6bc3a92e12b77f9bfe31499bdcdb0a776a45"},
+    "gstack/formulas/gstack-release-readiness.formula.toml": {"classification":"legacy","responsibility":"source-writer","sha256":"d724f76a7c8cb16438aedb20f2b4efdd994f72301376a81a2751a51ba9f1d4c6"},
+    "gstack/formulas/gstack-review.formula.toml": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"22ba356e90c5259f85c323a948ea44f92a3a607028ef4dbec0b4ea9b00ff222b"},
+    "gstack/formulas/gstack-work-item.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"743bb0ac8fee68f4447a835b66e516c4eb2b5a40d7cff2dee34fef069b038e2e"},
+    "gstack/formulas/gstack-work.formula.toml": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"befe586944cd5b2bec52692d5288cab80236f2c96ec28fb567def72e841baaa1"},
+    "gstack/assets/workflows/gstack-build/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"51a513c6dc3661e4ffed5fc1f3212131387ae1d80fdc292a81d374b31e08ef1d"},
+    "gstack/assets/workflows/gstack-build/finalize.md": {"classification":"reference","responsibility":"reference","sha256":"00e4943225ae52f2596a84179360e7585b4975f08e26e38bd8b417a44b211fd5"},
+    "gstack/assets/workflows/gstack-build/implement-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"efbcf18e353a681f962c47aa0837d4738cd6b1b1edcc7482e69386bced7444e0"},
+    "gstack/assets/workflows/gstack-build/implement.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"7bc1f64524ab54be62871d3293e32a8985f459d875593fc3c3669917d0ff9eba"},
+    "gstack/assets/workflows/gstack-build/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"ab4147d0b6eb312cb666c10b9a60cd6597b7852266ad5925573ed275d9296af4"},
+    "gstack/assets/workflows/gstack-build/plan.md": {"classification":"reference","responsibility":"reference","sha256":"f63c259f229c2628f3da533843d237e15785e9ff863d6441265587f1eb55f42c"},
+    "gstack/assets/workflows/gstack-build/publish.md": {"classification":"legacy","responsibility":"publish","sha256":"be063660afb750c720b12965ff0b52237118ae8906fc1f9fef2524f56cf1b9e4"},
+    "gstack/assets/workflows/gstack-build/qa.md": {"classification":"reference","responsibility":"reference","sha256":"6aabb9af54721f0dde43300267b8a85961e451ecf7970ad900cd9bf1fb27c177"},
+    "gstack/assets/workflows/gstack-build/release-readiness.md": {"classification":"reference","responsibility":"reference","sha256":"19b787ef0f47624afbcf0011377a02b66ceaf2b414951590d238714ac0c053dc"},
+    "gstack/assets/workflows/gstack-build/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"8a8a49c78066cc196d71e43bb3178db98af0b1e58685bbb917ebe70ccfd0cbe7"},
+    "gstack/assets/workflows/gstack-build/review.md": {"classification":"legacy","responsibility":"review-delegator","sha256":"dbe9852adba0f12fa525f32627ca47baee46fcc4fdfbbe16f97e13c27537db43"},
+    "gstack/assets/workflows/gstack-code-review/{target}.apply-review-findings.md": {"classification":"legacy","responsibility":"review-fix,source-writer","sha256":"0005d1f0a959ceb55ff100d3e445918ea7fb8a7c917c84a745cff7a0324eb007"},
+    "gstack/assets/workflows/gstack-code-review/{target}.gap-analysis-review.md": {"classification":"legacy","responsibility":"review","sha256":"a955d77e1db6b5d3ddbcd5ce8c146dbee1a1b956238cffe936bc37c657a999e3"},
+    "gstack/assets/workflows/gstack-code-review/{target}.gstack-code-review-loop.md": {"classification":"legacy","responsibility":"review","sha256":"f9a79520547685665db03ff3c46ca04f787c883c57e54a5d7995554bc2f1a718"},
+    "gstack/assets/workflows/gstack-code-review/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"fc9a5b5cf845fac8577b55d6cef2f78fca27b4ea8c2e86028285a340b62a4833"},
+    "gstack/assets/workflows/gstack-code-review/{target}.qa-evidence-review.md": {"classification":"legacy","responsibility":"review","sha256":"a5949f37225ed0d2b6ebddb5906a9d7f67120a69104d2772afa63e02c1113838"},
+    "gstack/assets/workflows/gstack-code-review/{target}.security-review.md": {"classification":"legacy","responsibility":"review","sha256":"79e00f7afb4ef93ded9e778ce79ad3c1e26fdd19bcd12c1f83cd74c59058da24"},
+    "gstack/assets/workflows/gstack-code-review/{target}.setup-gstack-code-review.md": {"classification":"legacy","responsibility":"path-reader,review","sha256":"0488dc98d5cf86440044941781f51777a804c0b0c5703842c062b04ce695c87b"},
+    "gstack/assets/workflows/gstack-code-review/{target}.staff-code-review.md": {"classification":"legacy","responsibility":"review","sha256":"f13c33ee33c02b6a1b48d1cd17f8715cd5d035720f235459007f703a5620a5c2"},
+    "gstack/assets/workflows/gstack-code-review/{target}.synthesize-code-review.md": {"classification":"legacy","responsibility":"review","sha256":"0804da85f5829dba4e92fa8f47b4e4f897f3f19db657769ee22d4b71345790ca"},
+    "gstack/assets/workflows/gstack-decomposition/decompose.md": {"classification":"reference","responsibility":"reference","sha256":"bebd773f5fd9046c12eaa9085f4cc497c39fa5093b8170ffb92f3a5fd4ee9bf7"},
+    "gstack/assets/workflows/gstack-implementation/drain-same-session.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"af16956e82e27b1bcf969399cb589da2fb311b98d83315f86b19694e6d3a6ac7"},
+    "gstack/assets/workflows/gstack-implementation/drain-separate.md": {"classification":"legacy","responsibility":"implementation-delegator","sha256":"0c58e444a4ce993c0d85fe66fbbc8f3376789c093acf624f1a284927b94e364a"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.apply-plan-review-findings.md": {"classification":"reference","responsibility":"reference","sha256":"df6c50e7e3fb1ba773bc1bb0f8e5d62f6270e7e16f200d39e823fc6f75081546"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.design-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"73d3ff39dbd84f738d43fbc9b11748fdcf9cf7868a76d090f80ff18a0c81e768"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.devex-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"59ed840a9aa8d085018ba72bf23ac08d2b8e89a9f1df9ac14170907033b053d8"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.engineering-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"d1ef3a278127d0097d5c57e6adaa507e09be20f1e7840a551f25237be37cffef"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.founder-scope-review.md": {"classification":"reference","responsibility":"reference","sha256":"b3e8ff6e7bce245d1e82719c761b6ad9f04693746739af014ac60039628e3b64"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.gstack-plan-review-loop.md": {"classification":"reference","responsibility":"reference","sha256":"ef255255e23e707965ef2185a1ad273e431bd283ceb71bd35693ea085f0510b5"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"5c1515c70b3ab8aeada333d6d6d372be2e1af1e47e0df8502a1ce64eb6be40a8"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.setup-gstack-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"9a700ac8939c0faeb81fac9f40a9bd6913e9d7f51e16c98dc5e63ea7af69087a"},
+    "gstack/assets/workflows/gstack-plan-review/{target}.synthesize-plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"5b7277757f6a9d37b086449d58f2252c9c70e51dd0572a338bd3c8ad25d6e76e"},
+    "gstack/assets/workflows/gstack-planning/plan-review.md": {"classification":"reference","responsibility":"reference","sha256":"8c60191b9ed4e657ca69ac5fd83ce336a421234301e0a0d60d12536e3d0f6aec"},
+    "gstack/assets/workflows/gstack-planning/plan.md": {"classification":"reference","responsibility":"reference","sha256":"7e45d4ce8b3caef9f326570a69da871abf205a22f4b518e59d66972357790305"},
+    "gstack/assets/workflows/gstack-planning/requirements.md": {"classification":"reference","responsibility":"reference","sha256":"283c8fa593d146cd5d68fa591dad8cd062f28ae57679f0fd4f4aab3126475fc7"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.browser-qa.md": {"classification":"legacy","responsibility":"review","sha256":"5711469a201318e941e7efa91189ac5e0ca77cfbab3b4e047e2a8aa212e0e6ec"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.gstack-qa-loop.md": {"classification":"legacy","responsibility":"review","sha256":"cc3d709c1c08ef24c36d6dc2e3af322621458364c6b8716a21f6151961e0cc9e"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.md": {"classification":"legacy","responsibility":"review","sha256":"bf993a9dae8d7a1de3b76d09313fcf967656dcd94d9414ec230ecd284c41c2b2"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.qa-fix-findings.md": {"classification":"legacy","responsibility":"review-fix,source-writer","sha256":"cc845c91caa1bacc4e4618bdd1b1c32350f6797f538b217c9cb0f320bd05556d"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.regression-test-review.md": {"classification":"legacy","responsibility":"review","sha256":"b44e87d76f6a2e60155e4493c22124f07afe17bb65b7c083a3b90db4be529ded"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.setup-gstack-qa.md": {"classification":"legacy","responsibility":"review","sha256":"fb4ff657bcc0b8f3f8b5fe1e7db9d2d483e5cabdfac1ed268478a749e726f2ff"},
+    "gstack/assets/workflows/gstack-qa-review/{target}.synthesize-qa.md": {"classification":"legacy","responsibility":"review","sha256":"513fd0b7ce75bee85c027582da1e5c719fa1c45b16ed978a1e9cc29aaae70479"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.deployment-readiness.md": {"classification":"reference","responsibility":"reference","sha256":"126bc7103a0f96d7bd83bb61cd89a3136787c115d6ca2c7105bc80bdf69be0f1"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.document-release.md": {"classification":"legacy","responsibility":"source-writer","sha256":"4fcd98857895c057c025c1a384205b1bfeef398fda32a4e11ff869ab8679f663"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.gstack-release-readiness-loop.md": {"classification":"reference","responsibility":"reference","sha256":"69afe6ac3208cac0f2946dd9c46eec8bf25afc865ef77f4279e207a080fb7512"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.md": {"classification":"reference","responsibility":"reference","sha256":"aeabdf2f1a512992479a29f722205a9b8bc7018210aacfa5e9a6d77a7ed9148d"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.setup-gstack-release.md": {"classification":"reference","responsibility":"reference","sha256":"64aeb6107e23f4187517bf5f443defa3571d4cde970618807476560be20a7088"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.ship-readiness.md": {"classification":"reference","responsibility":"reference","sha256":"b992b3232a5265f43e856d47ddd4cdb506d1667f93c580cf733d9af91ed39827"},
+    "gstack/assets/workflows/gstack-release-readiness/{target}.synthesize-release-readiness.md": {"classification":"reference","responsibility":"reference","sha256":"e6105e6cac22f202b62d3f8749b804cff6f2851966c6de197dca3d936c08087e"},
+    "gstack/assets/workflows/gstack-review/write-report.md": {"classification":"legacy","responsibility":"review,review-delegator","sha256":"27a12df2206ad25196ed69835f2cfb9a93dbffb9d8a69267370a2a5ff7d93f65"},
+    "gstack/assets/workflows/gstack-work/implement.md": {"classification":"legacy","responsibility":"implementation-flow,path-reader,source-writer","sha256":"0dfac803cb0a696218b5b8b792b26524a8af35374a4d600921c73e5bc7c8aaf9"},
+    "gstack/assets/workflows/gstack-work-item/implement-item.md": {"classification":"legacy","responsibility":"implementation-flow,source-writer","sha256":"da57b591ef752364e95906c8c9481bc670822a6a8a6337c4a4d3ebca58473ee5"}
+  },
+  "source_helpers": {
+    "gascity/assets/scripts/checks/build-artifact-valid.sh": {
+      "classification": "legacy",
+      "responsibility": "artifact path/rig-root reader and validator lookup",
+      "sha256": "2c5abb9c75f4ced3a7d275fe5b8559679a247b275b79ad32e98ffe5a6d5261b1"
+    }
+  },
+  "source_owners": [
+    {
+      "formula": "gascity/formulas/do-work.formula.toml",
+      "context": "separate",
+      "delegators": [
+        {
+          "formula": "gascity/formulas/build-base.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "gascity/formulas/build-basic.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "gascity/formulas/build-from-convoy-base.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "gascity/formulas/implement.formula.toml",
+          "step_id": "drain-separate"
+        }
+      ],
+      "inherited_entrypoints": [
+        "gascity/formulas/build-base.formula.toml",
+        "gascity/formulas/build-basic.formula.toml",
+        "gascity/formulas/build-from-convoy-base.formula.toml",
+        "gascity/formulas/build-from-convoy.formula.toml",
+        "gascity/formulas/build-from-decompose-base.formula.toml",
+        "gascity/formulas/build-from-decompose.formula.toml",
+        "gascity/formulas/build-from-plan-base.formula.toml",
+        "gascity/formulas/build-from-plan.formula.toml",
+        "gascity/formulas/build-from-requirements-base.formula.toml",
+        "gascity/formulas/build-from-requirements.formula.toml",
+        "gascity/formulas/implement.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement"
+      ],
+      "final_source_step": {
+        "formula": "gascity/formulas/do-work.formula.toml",
+        "step_id": "implement",
+        "asset": "gascity/assets/workflows/do-work/implement.md",
+        "roles": [
+          "implementation-flow",
+          "path-reader",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "gascity/formulas/do-work-item.formula.toml",
+      "context": "shared",
+      "delegators": [
+        {
+          "formula": "gascity/formulas/build-base.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "gascity/formulas/build-basic.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "gascity/formulas/build-from-convoy-base.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "gascity/formulas/implement.formula.toml",
+          "step_id": "drain-same-session"
+        },
+        {
+          "formula": "gascity/formulas/same-session-implement.formula.toml",
+          "step_id": "shared-drain"
+        }
+      ],
+      "inherited_entrypoints": [
+        "gascity/formulas/build-base.formula.toml",
+        "gascity/formulas/build-basic.formula.toml",
+        "gascity/formulas/build-from-convoy-base.formula.toml",
+        "gascity/formulas/build-from-convoy.formula.toml",
+        "gascity/formulas/build-from-decompose-base.formula.toml",
+        "gascity/formulas/build-from-decompose.formula.toml",
+        "gascity/formulas/build-from-plan-base.formula.toml",
+        "gascity/formulas/build-from-plan.formula.toml",
+        "gascity/formulas/build-from-requirements-base.formula.toml",
+        "gascity/formulas/build-from-requirements.formula.toml",
+        "gascity/formulas/implement.formula.toml",
+        "gascity/formulas/same-session-implement.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement-item"
+      ],
+      "final_source_step": {
+        "formula": "gascity/formulas/do-work-item.formula.toml",
+        "step_id": "implement-item",
+        "asset": "gascity/assets/workflows/do-work-item/implement-item.md",
+        "roles": [
+          "implementation-flow",
+          "path-reader",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "missing-explicit-commit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-work.formula.toml",
+      "context": "separate",
+      "delegators": [
+        {
+          "formula": "compound-engineering/formulas/compound-build.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "compound-engineering/formulas/compound-implementation.formula.toml",
+          "step_id": "drain-separate"
+        }
+      ],
+      "inherited_entrypoints": [
+        "compound-engineering/formulas/compound-build.formula.toml",
+        "compound-engineering/formulas/compound-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement"
+      ],
+      "final_source_step": {
+        "formula": "compound-engineering/formulas/compound-work.formula.toml",
+        "step_id": "implement",
+        "asset": "compound-engineering/assets/workflows/compound-work/implement.md",
+        "roles": [
+          "implementation-flow",
+          "path-reader",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-work-item.formula.toml",
+      "context": "shared",
+      "delegators": [
+        {
+          "formula": "compound-engineering/formulas/compound-build.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "compound-engineering/formulas/compound-implementation.formula.toml",
+          "step_id": "drain-same-session"
+        }
+      ],
+      "inherited_entrypoints": [
+        "compound-engineering/formulas/compound-build.formula.toml",
+        "compound-engineering/formulas/compound-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement-item"
+      ],
+      "final_source_step": {
+        "formula": "compound-engineering/formulas/compound-work-item.formula.toml",
+        "step_id": "implement-item",
+        "asset": "compound-engineering/assets/workflows/compound-work-item/implement-item.md",
+        "roles": [
+          "implementation-flow",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "missing-explicit-commit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "context": "separate",
+      "delegators": [
+        {
+          "formula": "superpowers/formulas/superpowers-build.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "superpowers/formulas/superpowers-implementation.formula.toml",
+          "step_id": "drain-separate"
+        }
+      ],
+      "inherited_entrypoints": [
+        "superpowers/formulas/superpowers-build.formula.toml",
+        "superpowers/formulas/superpowers-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "write-failing-test",
+        "implement-change",
+        "record-item-result"
+      ],
+      "final_source_step": {
+        "formula": "superpowers/formulas/superpowers-development.formula.toml",
+        "step_id": "record-item-result",
+        "asset": "superpowers/assets/workflows/superpowers-development/record-item-result.md",
+        "roles": [
+          "implementation-flow",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "context": "shared",
+      "delegators": [
+        {
+          "formula": "superpowers/formulas/superpowers-build.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "superpowers/formulas/superpowers-implementation.formula.toml",
+          "step_id": "drain-same-session"
+        }
+      ],
+      "inherited_entrypoints": [
+        "superpowers/formulas/superpowers-build.formula.toml",
+        "superpowers/formulas/superpowers-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "write-failing-test",
+        "implement-change",
+        "record-item-result"
+      ],
+      "final_source_step": {
+        "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+        "step_id": "record-item-result",
+        "asset": "superpowers/assets/workflows/superpowers-development/record-item-result.md",
+        "roles": [
+          "implementation-flow",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "context": "separate",
+      "delegators": [
+        {
+          "formula": "bmad/formulas/bmad-build.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "bmad/formulas/bmad-implementation.formula.toml",
+          "step_id": "drain-separate"
+        }
+      ],
+      "inherited_entrypoints": [
+        "bmad/formulas/bmad-build.formula.toml",
+        "bmad/formulas/bmad-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement-story",
+        "apply-story-findings"
+      ],
+      "final_source_step": {
+        "formula": "bmad/formulas/bmad-story-development.formula.toml",
+        "step_id": "apply-story-findings",
+        "asset": "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+        "roles": [
+          "implementation-flow",
+          "path-reader",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "context": "shared",
+      "delegators": [
+        {
+          "formula": "bmad/formulas/bmad-build.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "bmad/formulas/bmad-implementation.formula.toml",
+          "step_id": "drain-same-session"
+        }
+      ],
+      "inherited_entrypoints": [
+        "bmad/formulas/bmad-build.formula.toml",
+        "bmad/formulas/bmad-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement-story",
+        "apply-story-findings"
+      ],
+      "final_source_step": {
+        "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+        "step_id": "apply-story-findings",
+        "asset": "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+        "roles": [
+          "implementation-flow",
+          "path-reader",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "gstack/formulas/gstack-work.formula.toml",
+      "context": "separate",
+      "delegators": [
+        {
+          "formula": "gstack/formulas/gstack-build.formula.toml",
+          "step_id": "implement"
+        },
+        {
+          "formula": "gstack/formulas/gstack-implementation.formula.toml",
+          "step_id": "drain-separate"
+        }
+      ],
+      "inherited_entrypoints": [
+        "gstack/formulas/gstack-build.formula.toml",
+        "gstack/formulas/gstack-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement"
+      ],
+      "final_source_step": {
+        "formula": "gstack/formulas/gstack-work.formula.toml",
+        "step_id": "implement",
+        "asset": "gstack/assets/workflows/gstack-work/implement.md",
+        "roles": [
+          "implementation-flow",
+          "path-reader",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "explicit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    },
+    {
+      "formula": "gstack/formulas/gstack-work-item.formula.toml",
+      "context": "shared",
+      "delegators": [
+        {
+          "formula": "gstack/formulas/gstack-build.formula.toml",
+          "step_id": "implement-same-session"
+        },
+        {
+          "formula": "gstack/formulas/gstack-implementation.formula.toml",
+          "step_id": "drain-same-session"
+        }
+      ],
+      "inherited_entrypoints": [
+        "gstack/formulas/gstack-build.formula.toml",
+        "gstack/formulas/gstack-implementation.formula.toml"
+      ],
+      "source_writer_steps": [
+        "implement-item"
+      ],
+      "final_source_step": {
+        "formula": "gstack/formulas/gstack-work-item.formula.toml",
+        "step_id": "implement-item",
+        "asset": "gstack/assets/workflows/gstack-work-item/implement-item.md",
+        "roles": [
+          "implementation-flow",
+          "source-writer"
+        ]
+      },
+      "commit_contract": "missing-explicit-commit",
+      "checkpoint_requirement": "Record result after the final source-writing step and successful required checks/review, before closure or chain advancement."
+    }
+  ],
+  "owning_steps": [
+    {
+      "formula": "gascity/formulas/build-base.formula.toml",
+      "step_id": "implement",
+      "asset": "gascity/assets/workflows/build-base/implement.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-base.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "gascity/assets/workflows/build-base/implement-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-base.formula.toml",
+      "step_id": "summarize-implementation",
+      "asset": "gascity/assets/workflows/build-base/summarize-implementation.md",
+      "roles": [
+        "path-reader",
+        "canonical-summary"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-base.formula.toml",
+      "step_id": "publish",
+      "asset": "gascity/assets/workflows/build-base/publish.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.setup-build-basic-review",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.setup-build-basic-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.build-basic-review-loop",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.build-basic-review-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.acceptance-review",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.acceptance-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.test-evidence-review",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.test-evidence-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.simplicity-review",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.simplicity-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.synthesize-review",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.synthesize-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}.apply-review-findings",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.apply-review-findings.md",
+      "roles": [
+        "source-writer",
+        "path-reader",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic-review.formula.toml",
+      "step_id": "{target}",
+      "asset": "gascity/assets/workflows/build-basic-review/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic.formula.toml",
+      "step_id": "implement",
+      "asset": "gascity/assets/workflows/build-basic/implement.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "gascity/assets/workflows/build-basic/implement-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-basic.formula.toml",
+      "step_id": "publish",
+      "asset": "gascity/assets/workflows/build-basic/publish.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-convoy-base.formula.toml",
+      "step_id": "prepare-convoy",
+      "asset": "gascity/assets/workflows/build-from-convoy-base/prepare-convoy.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-convoy-base.formula.toml",
+      "step_id": "implement",
+      "asset": "gascity/assets/workflows/build-from-convoy-base/implement.md",
+      "roles": [
+        "implementation-delegator",
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-convoy-base.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "gascity/assets/workflows/build-from-convoy-base/implement-same-session.md",
+      "roles": [
+        "implementation-delegator",
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-convoy-base.formula.toml",
+      "step_id": "prepare-review",
+      "asset": "gascity/assets/workflows/build-from-convoy-base/prepare-review.md",
+      "roles": [
+        "continuation",
+        "canonical-summary"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-decompose-base.formula.toml",
+      "step_id": "prepare-decompose",
+      "asset": "gascity/assets/workflows/build-from-decompose-base/prepare-decompose.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-decompose-base.formula.toml",
+      "step_id": "decompose",
+      "asset": "gascity/assets/workflows/build-from-decompose-base/decompose.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-decompose-base.formula.toml",
+      "step_id": "prepare-convoy",
+      "asset": "gascity/assets/workflows/build-from-decompose-base/prepare-convoy.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-plan-base.formula.toml",
+      "step_id": "prepare-plan",
+      "asset": "gascity/assets/workflows/build-from-plan-base/prepare-plan.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-plan-base.formula.toml",
+      "step_id": "plan",
+      "asset": "gascity/assets/workflows/build-from-plan-base/plan.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-plan-base.formula.toml",
+      "step_id": "plan-review",
+      "asset": "gascity/assets/workflows/build-from-plan-base/plan-review.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-plan-base.formula.toml",
+      "step_id": "prepare-decompose",
+      "asset": "gascity/assets/workflows/build-from-plan-base/prepare-decompose.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-requirements-base.formula.toml",
+      "step_id": "prepare-requirements",
+      "asset": "gascity/assets/workflows/build-from-requirements-base/prepare-requirements.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-requirements-base.formula.toml",
+      "step_id": "requirements",
+      "asset": "gascity/assets/workflows/build-from-requirements-base/requirements.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-requirements-base.formula.toml",
+      "step_id": "prepare-plan",
+      "asset": "gascity/assets/workflows/build-from-requirements-base/prepare-plan.md",
+      "roles": [
+        "continuation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-review-base.formula.toml",
+      "step_id": "prepare-review",
+      "asset": "gascity/assets/workflows/build-from-review-base/prepare-review.md",
+      "roles": [
+        "continuation",
+        "review",
+        "canonical-summary"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-review-base.formula.toml",
+      "step_id": "review",
+      "asset": "gascity/assets/workflows/build-from-review-base/review.md",
+      "roles": [
+        "continuation",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-review-base.formula.toml",
+      "step_id": "repair-review",
+      "asset": "gascity/assets/workflows/build-from-review-base/repair-review.md",
+      "roles": [
+        "continuation",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-review-base.formula.toml",
+      "step_id": "finalize",
+      "asset": "gascity/assets/workflows/build-from-review-base/finalize.md",
+      "roles": [
+        "continuation",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-from-review-base.formula.toml",
+      "step_id": "publish",
+      "asset": "gascity/assets/workflows/build-from-review-base/publish.md",
+      "roles": [
+        "continuation",
+        "publish",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/code-review-base.formula.toml",
+      "step_id": "validate-context",
+      "asset": "gascity/assets/workflows/code-review-base/validate-context.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/code-review-base.formula.toml",
+      "step_id": "write-report",
+      "asset": "gascity/assets/workflows/code-review-base/write-report.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/do-work-item.formula.toml",
+      "step_id": "implement-item",
+      "asset": "gascity/assets/workflows/do-work-item/implement-item.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/do-work.formula.toml",
+      "step_id": "prepare-worktree",
+      "asset": "gascity/assets/workflows/do-work/prepare-worktree.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "workspace-prepare"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/do-work.formula.toml",
+      "step_id": "implement",
+      "asset": "gascity/assets/workflows/do-work/implement.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/do-work.formula.toml",
+      "step_id": "close-source-anchor",
+      "asset": "gascity/assets/workflows/do-work/close-source-anchor.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-close"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/fix-loop-base.formula.toml",
+      "step_id": "apply-fixes",
+      "asset": "gascity/assets/workflows/fix-loop-base/apply-fixes.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-issue-fix-base.formula.toml",
+      "step_id": "publish-pr",
+      "asset": "gascity/assets/workflows/github-issue-fix-base/publish-pr.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "snapshot",
+      "asset": "gascity/assets/workflows/github-pr-review/snapshot.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "reuse-current-head",
+      "asset": "gascity/assets/workflows/github-pr-review/reuse-current-head.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "run-review",
+      "asset": "gascity/assets/workflows/github-pr-review/run-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "render-comment",
+      "asset": "gascity/assets/workflows/github-pr-review/render-comment.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "human-gate-comment",
+      "asset": "gascity/assets/workflows/github-pr-review/human-gate-comment.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "post-comment",
+      "asset": "gascity/assets/workflows/github-pr-review/post-comment.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/github-pr-review.formula.toml",
+      "step_id": "finalize",
+      "asset": "gascity/assets/workflows/github-pr-review/finalize.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implement.formula.toml",
+      "step_id": "drain-separate",
+      "asset": "gascity/assets/workflows/implement/drain-separate.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implement.formula.toml",
+      "step_id": "drain-same-session",
+      "asset": "gascity/assets/workflows/implement/drain-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implement.formula.toml",
+      "step_id": "summarize",
+      "asset": "gascity/assets/workflows/implement/summarize.md",
+      "roles": [
+        "path-reader",
+        "canonical-summary"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implement.formula.toml",
+      "step_id": "publish",
+      "asset": "gascity/assets/workflows/implement/publish.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implementation-base.formula.toml",
+      "step_id": "prepare-worktree",
+      "asset": "gascity/assets/workflows/implementation-base/prepare-worktree.md",
+      "roles": [
+        "workspace-prepare"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implementation-base.formula.toml",
+      "step_id": "implement",
+      "asset": "gascity/assets/workflows/implementation-base/implement.md",
+      "roles": [
+        "path-reader"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implementation-base.formula.toml",
+      "step_id": "close-source-anchor",
+      "asset": "gascity/assets/workflows/implementation-base/close-source-anchor.md",
+      "roles": [
+        "source-close"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/implementation-item-base.formula.toml",
+      "step_id": "implement-item",
+      "asset": "gascity/assets/workflows/implementation-item-base/implement-item.md",
+      "roles": [
+        "path-reader"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/publish.formula.toml",
+      "step_id": "preflight",
+      "asset": "gascity/assets/workflows/publish/preflight.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/publish.formula.toml",
+      "step_id": "push",
+      "asset": "gascity/assets/workflows/publish/push.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/publish.formula.toml",
+      "step_id": "open-pr",
+      "asset": "gascity/assets/workflows/publish/open-pr.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/review.formula.toml",
+      "step_id": "validate-context",
+      "asset": "gascity/assets/workflows/review/validate-context.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/review.formula.toml",
+      "step_id": "write-report",
+      "asset": "gascity/assets/workflows/review/write-report.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/same-session-implement.formula.toml",
+      "step_id": "shared-drain",
+      "asset": "gascity/assets/workflows/same-session-implement/shared-drain.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-build.formula.toml",
+      "step_id": "implement",
+      "asset": "compound-engineering/assets/workflows/compound-build/implement.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-build.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "compound-engineering/assets/workflows/compound-build/implement-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.setup-compound-code-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.setup-compound-code-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.select-compound-reviewers",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.select-compound-reviewers.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.compound-code-review-loop",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.compound-code-review-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.correctness-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.correctness-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.testing-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.testing-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.maintainability-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.maintainability-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.standards-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.standards-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.agent-native-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.agent-native-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.learnings-research",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.learnings-research.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.security-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.security-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.security-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.performance-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.performance-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.performance-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.api-contract-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.api-contract-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.api-contract-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.data-migration-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.data-migration-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.data-migration-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.reliability-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.reliability-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.reliability-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.adversarial-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.adversarial-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.adversarial-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.previous-comments-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.previous-comments-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.previous-comments-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.julik-frontend-races-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.julik-frontend-races-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.julik-frontend-races-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.swift-ios-review-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.swift-ios-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.swift-ios-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.deployment-verification-gate",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.conditional-review-gate.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.deployment-verification",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.deployment-verification.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.gap-analysis-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.gap-analysis-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.synthesize-code-review",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.synthesize-code-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}.apply-review-findings",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.apply-review-findings.md",
+      "roles": [
+        "source-writer",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-code-review.formula.toml",
+      "step_id": "{target}",
+      "asset": "compound-engineering/assets/workflows/compound-code-review/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-implementation.formula.toml",
+      "step_id": "drain-separate",
+      "asset": "compound-engineering/assets/workflows/compound-implementation/drain-separate.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-implementation.formula.toml",
+      "step_id": "drain-same-session",
+      "asset": "compound-engineering/assets/workflows/compound-implementation/drain-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-review.formula.toml",
+      "step_id": "write-report",
+      "asset": "compound-engineering/assets/workflows/compound-review/write-report.md",
+      "roles": [
+        "review",
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-work-item.formula.toml",
+      "step_id": "implement-item",
+      "asset": "compound-engineering/assets/workflows/compound-work-item/implement-item.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-work.formula.toml",
+      "step_id": "implement",
+      "asset": "compound-engineering/assets/workflows/compound-work/implement.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-build.formula.toml",
+      "step_id": "implement",
+      "asset": "superpowers/assets/workflows/superpowers-build/implement.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-build.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "superpowers/assets/workflows/superpowers-build/implement-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-code-review.formula.toml",
+      "step_id": "{target}.setup-superpowers-code-review",
+      "asset": "superpowers/assets/workflows/superpowers-code-review/{target}.setup-superpowers-code-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-code-review.formula.toml",
+      "step_id": "{target}.superpowers-code-review-loop",
+      "asset": "superpowers/assets/workflows/superpowers-code-review/{target}.superpowers-code-review-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-code-review.formula.toml",
+      "step_id": "{target}.request-code-review",
+      "asset": "superpowers/assets/workflows/superpowers-code-review/{target}.request-code-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-code-review.formula.toml",
+      "step_id": "{target}.gap-analysis-review",
+      "asset": "superpowers/assets/workflows/superpowers-code-review/{target}.gap-analysis-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-code-review.formula.toml",
+      "step_id": "{target}.process-code-review",
+      "asset": "superpowers/assets/workflows/superpowers-code-review/{target}.process-code-review.md",
+      "roles": [
+        "source-writer",
+        "path-reader",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-code-review.formula.toml",
+      "step_id": "{target}",
+      "asset": "superpowers/assets/workflows/superpowers-code-review/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "write-failing-test",
+      "asset": "superpowers/assets/workflows/superpowers-development/write-failing-test.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "implement-change",
+      "asset": "superpowers/assets/workflows/superpowers-development/implement-change.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "record-item-result",
+      "asset": "superpowers/assets/workflows/superpowers-development/record-item-result.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "close-source-anchor",
+      "asset": "superpowers/assets/workflows/superpowers-development/close-source-anchor.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-close"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "implement",
+      "asset": "superpowers/assets/workflows/superpowers-development/implement.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "write-failing-test",
+      "asset": "superpowers/assets/workflows/superpowers-development/write-failing-test.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "implement-change",
+      "asset": "superpowers/assets/workflows/superpowers-development/implement-change.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "record-item-result",
+      "asset": "superpowers/assets/workflows/superpowers-development/record-item-result.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "close-source-anchor",
+      "asset": "superpowers/assets/workflows/superpowers-development/close-source-anchor.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-close"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-implementation.formula.toml",
+      "step_id": "drain-separate",
+      "asset": "superpowers/assets/workflows/superpowers-implementation/drain-separate.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-implementation.formula.toml",
+      "step_id": "drain-same-session",
+      "asset": "superpowers/assets/workflows/superpowers-implementation/drain-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-review.formula.toml",
+      "step_id": "write-report",
+      "asset": "superpowers/assets/workflows/superpowers-review/write-report.md",
+      "roles": [
+        "review",
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}.setup-superpowers-task-review",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.setup-superpowers-task-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}.superpowers-task-review-loop",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.superpowers-task-review-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}.spec-compliance-review",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.spec-compliance-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}.apply-spec-compliance-findings",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.apply-spec-compliance-findings.md",
+      "roles": [
+        "source-writer",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}.code-quality-review",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.code-quality-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}.apply-code-quality-findings",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.apply-code-quality-findings.md",
+      "roles": [
+        "source-writer",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-task-review.formula.toml",
+      "step_id": "{target}",
+      "asset": "superpowers/assets/workflows/superpowers-task-review/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-build.formula.toml",
+      "step_id": "implement",
+      "asset": "bmad/assets/workflows/bmad-build/implement.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-build.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "bmad/assets/workflows/bmad-build/implement-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.gather-bmad-review-context",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.gather-bmad-review-context.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.bmad-code-review-loop",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.bmad-code-review-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.blind-hunter-review",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.blind-hunter-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.edge-case-review",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.edge-case-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.acceptance-auditor-review",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.acceptance-auditor-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.gap-analysis-review",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.gap-analysis-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.synthesize-bmad-review",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.synthesize-bmad-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}.apply-bmad-review-findings",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.apply-bmad-review-findings.md",
+      "roles": [
+        "source-writer",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-code-review-flow.formula.toml",
+      "step_id": "{target}",
+      "asset": "bmad/assets/workflows/bmad-code-review-flow/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-implementation.formula.toml",
+      "step_id": "drain-separate",
+      "asset": "bmad/assets/workflows/bmad-implementation/drain-separate.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-implementation.formula.toml",
+      "step_id": "drain-same-session",
+      "asset": "bmad/assets/workflows/bmad-implementation/drain-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-review.formula.toml",
+      "step_id": "write-report",
+      "asset": "bmad/assets/workflows/bmad-review/write-report.md",
+      "roles": [
+        "review",
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "step_id": "implement-story",
+      "asset": "bmad/assets/workflows/bmad-story-development/implement-story.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "step_id": "apply-story-findings",
+      "asset": "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "step_id": "implement",
+      "asset": "bmad/assets/workflows/bmad-story-development/implement.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "step_id": "implement-story",
+      "asset": "bmad/assets/workflows/bmad-story-development/implement-story.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "step_id": "apply-story-findings",
+      "asset": "bmad/assets/workflows/bmad-story-development/apply-story-findings.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-build.formula.toml",
+      "step_id": "implement",
+      "asset": "gstack/assets/workflows/gstack-build/implement.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-build.formula.toml",
+      "step_id": "implement-same-session",
+      "asset": "gstack/assets/workflows/gstack-build/implement-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-build.formula.toml",
+      "step_id": "publish",
+      "asset": "gstack/assets/workflows/gstack-build/publish.md",
+      "roles": [
+        "publish"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.setup-gstack-code-review",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.setup-gstack-code-review.md",
+      "roles": [
+        "path-reader",
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.gstack-code-review-loop",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.gstack-code-review-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.staff-code-review",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.staff-code-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.qa-evidence-review",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.qa-evidence-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.security-review",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.security-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.gap-analysis-review",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.gap-analysis-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.synthesize-code-review",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.synthesize-code-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}.apply-review-findings",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.apply-review-findings.md",
+      "roles": [
+        "source-writer",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-code-review.formula.toml",
+      "step_id": "{target}",
+      "asset": "gstack/assets/workflows/gstack-code-review/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-implementation.formula.toml",
+      "step_id": "drain-separate",
+      "asset": "gstack/assets/workflows/gstack-implementation/drain-separate.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-implementation.formula.toml",
+      "step_id": "drain-same-session",
+      "asset": "gstack/assets/workflows/gstack-implementation/drain-same-session.md",
+      "roles": [
+        "implementation-delegator"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}.setup-gstack-qa",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.setup-gstack-qa.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}.gstack-qa-loop",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.gstack-qa-loop.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}.browser-qa",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.browser-qa.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}.regression-test-review",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.regression-test-review.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}.qa-fix-findings",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.qa-fix-findings.md",
+      "roles": [
+        "source-writer",
+        "review-fix"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}.synthesize-qa",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.synthesize-qa.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-qa-review.formula.toml",
+      "step_id": "{target}",
+      "asset": "gstack/assets/workflows/gstack-qa-review/{target}.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-release-readiness.formula.toml",
+      "step_id": "{target}.document-release",
+      "asset": "gstack/assets/workflows/gstack-release-readiness/{target}.document-release.md",
+      "roles": [
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-review.formula.toml",
+      "step_id": "write-report",
+      "asset": "gstack/assets/workflows/gstack-review/write-report.md",
+      "roles": [
+        "review",
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-work-item.formula.toml",
+      "step_id": "implement-item",
+      "asset": "gstack/assets/workflows/gstack-work-item/implement-item.md",
+      "roles": [
+        "implementation-flow",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-work.formula.toml",
+      "step_id": "implement",
+      "asset": "gstack/assets/workflows/gstack-work/implement.md",
+      "roles": [
+        "implementation-flow",
+        "path-reader",
+        "source-writer"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/build-base.formula.toml",
+      "step_id": "review",
+      "asset": "gascity/assets/workflows/build-base/review.md",
+      "roles": [
+        "review",
+        "review-fix",
+        "source-writer"
+      ],
+      "source_write_condition": "interactive review mode only"
+    },
+    {
+      "formula": "gascity/formulas/build-basic.formula.toml",
+      "step_id": "review",
+      "asset": "gascity/assets/workflows/build-basic/review.md",
+      "roles": [
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/fix-convoy.formula.toml",
+      "step_id": "synthesize-fix-plan",
+      "asset": "gascity/assets/workflows/fix-convoy/synthesize-fix-plan.md",
+      "roles": [
+        "fix-generation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/fix-convoy.formula.toml",
+      "step_id": "validate-fix-plan",
+      "asset": "gascity/assets/workflows/fix-convoy/validate-fix-plan.md",
+      "roles": [
+        "fix-generation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/fix-convoy.formula.toml",
+      "step_id": "create-fix-convoy",
+      "asset": "gascity/assets/workflows/fix-convoy/create-fix-convoy.md",
+      "roles": [
+        "fix-generation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/fix-loop-base.formula.toml",
+      "step_id": "plan-fixes",
+      "asset": "gascity/assets/workflows/fix-loop-base/plan-fixes.md",
+      "roles": [
+        "fix-generation"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/fix-loop-base.formula.toml",
+      "step_id": "re-review",
+      "asset": "gascity/assets/workflows/fix-loop-base/re-review.md",
+      "roles": [
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/gap-analysis.formula.toml",
+      "step_id": "validate-context",
+      "asset": "gascity/assets/workflows/gap-analysis/validate-context.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "gascity/formulas/gap-analysis.formula.toml",
+      "step_id": "write-report",
+      "asset": "gascity/assets/workflows/gap-analysis/write-report.md",
+      "roles": [
+        "review"
+      ]
+    },
+    {
+      "formula": "compound-engineering/formulas/compound-build.formula.toml",
+      "step_id": "review",
+      "asset": "compound-engineering/assets/workflows/compound-build/review.md",
+      "roles": [
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-build.formula.toml",
+      "step_id": "review",
+      "asset": "superpowers/assets/workflows/superpowers-build/review.md",
+      "roles": [
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "implement-item",
+      "asset": "superpowers/assets/workflows/superpowers-development/implement-item.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "verify-test-fails",
+      "asset": "superpowers/assets/workflows/superpowers-development/verify-test-fails.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "verify-test-passes",
+      "asset": "superpowers/assets/workflows/superpowers-development/verify-test-passes.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development-item.formula.toml",
+      "step_id": "task-review",
+      "asset": "superpowers/assets/workflows/superpowers-development/task-review.md",
+      "roles": [
+        "implementation-flow",
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "verify-test-fails",
+      "asset": "superpowers/assets/workflows/superpowers-development/verify-test-fails.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "verify-test-passes",
+      "asset": "superpowers/assets/workflows/superpowers-development/verify-test-passes.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "superpowers/formulas/superpowers-development.formula.toml",
+      "step_id": "task-review",
+      "asset": "superpowers/assets/workflows/superpowers-development/task-review.md",
+      "roles": [
+        "implementation-flow",
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-build.formula.toml",
+      "step_id": "review",
+      "asset": "bmad/assets/workflows/bmad-build/review.md",
+      "roles": [
+        "review-delegator"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "step_id": "implement-item",
+      "asset": "bmad/assets/workflows/bmad-story-development/implement-item.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "step_id": "setup-bmad-story-development",
+      "asset": "bmad/assets/workflows/bmad-story-development/setup-bmad-story-development.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "step_id": "story-self-check",
+      "asset": "bmad/assets/workflows/bmad-story-development/story-self-check.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development-item.formula.toml",
+      "step_id": "acceptance-audit",
+      "asset": "bmad/assets/workflows/bmad-story-development/acceptance-audit.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "step_id": "setup-bmad-story-development",
+      "asset": "bmad/assets/workflows/bmad-story-development/setup-bmad-story-development.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "step_id": "story-self-check",
+      "asset": "bmad/assets/workflows/bmad-story-development/story-self-check.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "bmad/formulas/bmad-story-development.formula.toml",
+      "step_id": "acceptance-audit",
+      "asset": "bmad/assets/workflows/bmad-story-development/acceptance-audit.md",
+      "roles": [
+        "implementation-flow"
+      ]
+    },
+    {
+      "formula": "gstack/formulas/gstack-build.formula.toml",
+      "step_id": "review",
+      "asset": "gstack/assets/workflows/gstack-build/review.md",
+      "roles": [
+        "review-delegator"
+      ]
+    }
+  ],
+  "new_surfaces_required": [
+    "record access and launch-mode guard",
+    "first-class integration owner and conflict recovery",
+    "canonical bind and exact-OID read-only review",
+    "source-bound publish intent and continuation validation"
+  ],
+  "classification_policy": "Every discovered formula/workflow asset must have an explicit inventory entry and content hash. Legacy entries require coordinated migration; reference entries are planning/artifact-only surfaces. An absent or changed entry fails discovery. No current entry is classified new."
+}

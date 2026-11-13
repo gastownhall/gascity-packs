@@ -221,6 +221,15 @@ Schema IDs are immutable compatibility contracts. Breaking schema changes create
 a new schema ID such as `gc.build.requirements.v2`; they do not mutate the
 meaning of a published `v1` schema.
 
+Workspace lifecycle metadata contracts are defined separately in
+`schemas/workspace/records.v1.json` and `schemas/workspace/README.md`. Their
+read-only validator enforces versioned shape, run/generation identity, exact
+snapshot replay and result evidence bindings. These contracts are a foundation
+for later formula migration; existing formulas do not yet produce or consume
+them. Runtime claim, nondispatch isolation, locking, source-state verification
+and acceptance remain explicit implementation gates. The closed affected-source
+manifest and scenario ownership/oracles live beside the schema.
+
 Base artifacts use lightweight YAML front matter. Required schema values are:
 
 - `gc.build.requirements.v1`
