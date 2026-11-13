@@ -271,7 +271,9 @@ BRANCH=$(branch_name)
 DEFAULT_REF=$(git -C "$RIG_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
 if [ -n "$DEFAULT_REF" ]; then
     DEFAULT_BRANCH=${DEFAULT_REF#refs/remotes/origin/}
-    git -C "$RIG_ROOT" fetch origin "$DEFAULT_BRANCH" >/dev/null 2>&1 || true
+    if ! git -C "$RIG_ROOT" fetch origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+        echo "worktree-setup: warning: fetch of origin/$DEFAULT_BRANCH failed; slot cut from local $DEFAULT_REF" >&2
+    fi
 fi
 
 if git -C "$RIG_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
