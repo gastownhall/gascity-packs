@@ -2,7 +2,8 @@
 
 Pids, sessions and process trees are therefore true, so tests can check
 what a kill or a holder loss does to them. The screen is a
-capped tail of the program's output; typed text and keys are logged.
+capped tail of the program's output and of the text ``send`` types (a
+PTY echoes it); typed text and keys are logged.
 Records follow hc v0.1.19 (``crates/herdr-core/src``: ``terminals.rs``,
 ``runtime.rs``, ``kept.rs``, ``status.rs``): an exit resets the status and
 finishes the record, which keeps its last pid; a kept terminal that loses its
@@ -350,6 +351,14 @@ class FakeTerminal:
         except (BrokenPipeError, ValueError):
             return False
         return True
+
+    def echo(self, data: bytes) -> None:
+        """Show ``data`` on the screen, as a PTY's line discipline echoes typed
+        text whether or not the program reads it."""
+        with self.lock:
+            self.tail += data
+            del self.tail[: max(0, len(self.tail) - TAIL_BYTES)]
+            self.changed.notify_all()
 
     def interrupt_signal(self) -> None:
         killpg(self.proc.pid, signal.SIGINT)

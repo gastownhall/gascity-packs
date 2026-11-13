@@ -126,7 +126,7 @@ def nothing_runs(ctx: OpContext) -> bool:
     a holder of its socket nor its core (one that does not answer may still
     run what it started). Asked only once the core did not answer; False
     when it cannot be told."""
-    if ctx.fault:
+    if ctx.backend_unavailable:
         return False
     try:
         if listener_elsewhere(ctx) is not None:

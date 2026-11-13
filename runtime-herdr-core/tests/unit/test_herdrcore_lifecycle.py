@@ -160,7 +160,8 @@ def test_kept_terminal_after_holder_loss_is_a_dead_box(city: City) -> None:
     wait_for(lambda: city.terminals()[0]["pid"] is not None)  # the replacement shell
     assert observe(city, "mc-a")["state"] == "dead"
     assert city.run("is-running", "mc-a").text.strip() == "false"
-    assert city.run("nudge", "mc-a", stdin=b"hello").code == 0  # gone: nothing typed
+    nudged = city.run("nudge", "mc-a", stdin=b"hello")
+    assert nudged.code == 80 and json.loads(nudged.stdout)["outcome"] == "gone"  # nothing typed
     assert city.fake.input_log(address) == []  # type: ignore[union-attr]
 
 

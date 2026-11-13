@@ -27,7 +27,7 @@ for _entry in (PACK_ROOT / "assets", PACK_ROOT / "tests", PACK_ROOT / "tests" / 
         sys.path.insert(0, str(_entry))
 
 from fakehc import FakeHc  # noqa: E402
-from gc_runtime_herdr_core.hc.client import CallTimeouts, CoreEndpoint, HcClient  # noqa: E402
+from gc_runtime_herdr_core.hc.client import BackendFault, CallTimeouts, CoreEndpoint, HcClient  # noqa: E402
 from gc_runtime_herdr_core.hc.version import Version, VersionPolicy  # noqa: E402
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Deadline  # noqa: E402
 
@@ -75,14 +75,14 @@ def make_client(fake_hc: FakeHc) -> ClientFactory:
         probe: bool = False,
         cancel: Optional[CancelToken] = None,
         endpoint: Optional[CoreEndpoint] = None,
-        inject_unavailable: bool = False,
+        fault: Optional[BackendFault] = None,
     ) -> HcClient:
         return HcClient(
             endpoint or CoreEndpoint(fake_hc.socket_path, policy=TEST_POLICY),
             deadline=Deadline.after(deadline_s),
             cancel=cancel or CancelToken(),
             timeouts=CallTimeouts.for_op(read=read, probe=probe),
-            inject_unavailable=inject_unavailable,
+            fault=fault,
         )
 
     return factory

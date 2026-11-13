@@ -26,3 +26,8 @@ class ExitCode(enum.IntEnum):
 
     TEMPFAIL = 75
     """start only: the backend is at capacity; gc retries."""
+
+    INPUT_OUTCOME = 80
+    """nudge, send-keys, interrupt and clear-scrollback only, from a script
+    declaring ``input-outcome``: the input was not delivered, and stdout
+    carries exactly one outcome line naming why (:mod:`.outcome`)."""

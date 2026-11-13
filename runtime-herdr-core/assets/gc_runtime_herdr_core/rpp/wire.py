@@ -29,6 +29,9 @@ Capability = Literal[
     "conformance-faults",
     "server-lifecycle",
     "fs.host",
+    "carrier.ops",
+    "idle-boundary",
+    "input-outcome",
 ]
 """Tokens of gc's capability table this pack may declare (exec-session-provider.md
 "Protocol Handshake"). ``proc.exec``, ``input-fence``, ``proc.provision`` and

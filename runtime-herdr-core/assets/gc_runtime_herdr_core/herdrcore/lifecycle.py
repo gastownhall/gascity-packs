@@ -114,6 +114,7 @@ from ..rpp.exitcodes import ExitCode
 from ..rpp.flock import LockTimeout
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError, OpResult
+from ..rpp.outcome import InputOutcome
 from ..rpp.statedir import StateDirError
 from ..rpp.wire import KillOutcome, StartConfig, WireError, parse_kill_object_request, parse_start_config
 from . import activity, shim, spawnfile
@@ -1107,7 +1108,7 @@ def _shows_ready(
 def first_turn(ctx: OpContext, client: HcClient, name: str, record: Terminal, cfg: StartConfig) -> Optional[str]:
     """Type the start config's nudge once the agent is ready; a warning when
     it was not delivered, or was typed without readiness."""
-    from .inputs import deliver  # the nudge path: a send hc got whole is delivered
+    from .inputs import Unknown, deliver  # the nudge path: a send hc got whole is delivered
 
     try:
         ready = _ready(ctx, client, record, cfg)
@@ -1120,9 +1121,10 @@ def first_turn(ctx: OpContext, client: HcClient, name: str, record: Terminal, cf
     if isinstance(ready, str):
         return _unconfirmed(ctx, name, record, f"the first turn was withheld: {ready}")
     target, unready = (ready.terminal, ready.why) if isinstance(ready, _Unready) else (ready, "")
-    result = deliver(ctx, client, name, target, cfg.nudge, retry_unavailable=True)
-    if result.outcome != "delivered":
-        return _unconfirmed(ctx, name, record, f"the first turn was not delivered: {result.detail or result.outcome}")
+    result = deliver(ctx, client, target, cfg.nudge, retry_unavailable=True)
+    if not isinstance(result, InputOutcome) or not result.delivered:
+        why = result.detail if isinstance(result, Unknown) else (result.detail or result.word)
+        return _unconfirmed(ctx, name, record, f"the first turn was not delivered: {why}")
     return f"the first turn was typed without readiness: {unready}" if unready else None
 
 

@@ -23,6 +23,15 @@ per line; hc ``schema/README.md`` "Connecting").
   dedupe them.
 * Every failure is an :class:`~.errors.HcError` that says whether the request
   may have reached the core.
+* ``conformance-faults`` (:data:`BackendFault`, ``GC_RPP_FAULT``) are injected
+  here, at the backend call, so every op takes its real path from the
+  failure: ``unavailable`` fails every call before anything is written;
+  ``blocked`` has the core refuse a ``send`` as hc refuses a program waiting
+  on its own question; ``lose_reply`` and ``hold_send`` let an input call
+  (and ``terminal.get``, ``clear-scrollback``'s own call) reach the core
+  and be done, then drop its reply, as a lost connection or a send held past
+  the op's deadline does; ``dead`` reads every record as finished, as the
+  core does once the box's program has ended.
 """
 
 from __future__ import annotations
@@ -31,8 +40,8 @@ import itertools
 import socket
 import threading
 import time
-from dataclasses import dataclass
-from typing import Callable, Dict, Final, Mapping, Optional, Sequence, Tuple, TypeVar
+from dataclasses import dataclass, replace
+from typing import Callable, Dict, Final, FrozenSet, Literal, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from ..rpp.cancel import DEADLINE_MARGIN_S, POLL_INTERVAL_S, CancelToken, Deadline
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
@@ -78,6 +87,17 @@ T = TypeVar("T")
 IDEMPOTENT_METHODS: Final = frozenset({"hello", "terminal.get", "terminal.list", "terminal.read"})
 """The only methods retried, once, when a connection drops before the reply
 (any call is, when the connection drops during its hello)."""
+
+BackendFault = Literal["unavailable", "blocked", "lose_reply", "hold_send", "dead"]
+"""The ``GC_RPP_FAULT`` values ``conformance-faults`` injects (gascity
+``exec-session-provider.md``, "Protocol Handshake" and "Typed input outcomes")."""
+
+INPUT_METHODS: Final[FrozenSet[str]] = frozenset({"terminal.send", "terminal.keys", "terminal.interrupt"})
+"""The calls that put input into a terminal."""
+
+_REPLY_LOST_METHODS: Final[FrozenSet[str]] = INPUT_METHODS | {"terminal.get"}
+"""The calls ``lose_reply`` and ``hold_send`` drop the reply of: the input
+calls, and ``terminal.get``, the call ``clear-scrollback`` delivers with."""
 
 INTERRUPT_WAIT_S: Final = 3.0
 """hc's own wait for an interrupted program to settle (``interrupt {timeout:3}``)."""
@@ -158,16 +178,15 @@ class HcClient:
         deadline: Deadline,
         cancel: CancelToken,
         timeouts: CallTimeouts,
-        inject_unavailable: bool = False,
+        fault: Optional[BackendFault] = None,
     ) -> None:
-        """``inject_unavailable`` is the ``conformance-faults`` knob
-        (``GC_RPP_FAULT=unavailable``): every call fails at its call site, as
-        if the core were down, before anything is written."""
+        """``fault`` is the ``conformance-faults`` knob (``GC_RPP_FAULT``),
+        injected at each call (see the module's docstring)."""
         self._endpoint = endpoint
         self._deadline = deadline
         self._cancel = cancel
         self._timeouts = timeouts
-        self._inject_unavailable = inject_unavailable
+        self._fault = fault
         self._last_gate: Optional[GateResult] = None
 
     @property
@@ -203,7 +222,9 @@ class HcClient:
         return self._typed("terminal.run", params, _Budget(self._timeouts.run), parse_terminal)
 
     def get(self, terminal: str) -> Terminal:
-        return self._typed("terminal.get", {"terminal": terminal}, _Budget(self._timeouts.query), parse_terminal)
+        return self._as_found(
+            self._typed("terminal.get", {"terminal": terminal}, _Budget(self._timeouts.query), parse_terminal)
+        )
 
     def list_terminals(
         self, *, labels: Optional[Mapping[str, str]] = None, include_finished: bool = False
@@ -214,7 +235,12 @@ class HcClient:
             params["all"] = True
         if labels:
             params["labels"] = dict(labels)
-        return self._typed("terminal.list", params, _Budget(self._timeouts.query), parse_list)
+        listed = self._typed("terminal.list", params, _Budget(self._timeouts.query), parse_list)
+        if self._fault != "dead":
+            return listed
+        found = tuple(self._as_found(t) for t in listed.terminals)
+        shown = found if include_finished else tuple(t for t in found if t.is_live)
+        return replace(listed, terminals=shown, hidden_finished=listed.hidden_finished + len(found) - len(shown))
 
     def label(self, terminal: str, labels: Mapping[str, str]) -> Terminal:
         """Set labels; an empty value removes one."""
@@ -253,6 +279,13 @@ class HcClient:
 
     # --- machinery ------------------------------------------------------------
 
+    def _as_found(self, terminal: Terminal) -> Terminal:
+        """``terminal`` as the core reports it: under ``dead``, a live record
+        is finished, as when its program has exited."""
+        if self._fault != "dead" or not terminal.is_live:
+            return terminal
+        return replace(terminal, state="finished", reason="exited", exit_code=0, finished_ms=terminal.created_ms)
+
     def _typed(self, method: str, params: Dict[str, object], budget: _Budget, parser: Callable[[object], T]) -> T:
         raw = self._call(method, params, budget)
         try:
@@ -275,8 +308,16 @@ class HcClient:
     def _gated_call(self, method: str, params: Dict[str, object], budget: _Budget) -> object:
         """Connect, gate the core on its hello, then send ``method`` on the same
         connection (a ``hello`` call is the gate alone)."""
-        if self._inject_unavailable:
+        if self._fault == "unavailable":
             raise HcUnreachable(method, "the backend is unavailable (GC_RPP_FAULT=unavailable)")
+        if self._fault == "blocked" and method == "terminal.send" and not params.get("force"):
+            raise HcRpcError(
+                method,
+                kind="blocked",
+                code=-32000,
+                message="the program is waiting on its own question; nothing was typed (GC_RPP_FAULT=blocked)",
+                hint="",
+            )
         self._timeout(method, budget)  # a call with no time left opens no connection
         hello_timeout = self._timeout("hello", _Budget(self._timeouts.hello))
         hello_ends = time.monotonic() + hello_timeout
@@ -291,9 +332,21 @@ class HcClient:
             if method == "hello":
                 return hello
             timeout = self._timeout(method, budget)
-            return self._exchange(conn, method, params, time.monotonic() + timeout, timeout)
+            reply = self._exchange(conn, method, params, time.monotonic() + timeout, timeout)
+            self._drop_reply(method)
+            return reply
         finally:
             conn.close()
+
+    def _drop_reply(self, method: str) -> None:
+        """Under ``lose_reply`` and ``hold_send``, the core did the call, and
+        its reply never arrives."""
+        if method not in _REPLY_LOST_METHODS:
+            return
+        if self._fault == "lose_reply":
+            raise HcConnectionLost(method, "the reply was lost (GC_RPP_FAULT=lose_reply)", written=True)
+        if self._fault == "hold_send":
+            raise HcTimeout(method, "held past the op's deadline (GC_RPP_FAULT=hold_send)", written=True)
 
     def _gate(self, conn: socket.socket, ends: float, timeout: float) -> object:
         """The core's hello on ``conn``, once the gate has passed it."""
@@ -390,9 +443,13 @@ class HcClient:
     def _result(self, method: str, request_id: int, line: bytes) -> object:
         try:
             envelope = JsonObject.of(loads(line))
-            if envelope.raw("jsonrpc") != "2.0" or envelope.opt_int("id") != request_id:
-                raise HcProtocolError(method, "the reply does not answer this request", written=True)
             error = envelope.opt_obj("error")
+            # An error with a null id is hc refusing a line it could not parse:
+            # it dispatched nothing, so it is a refusal like any other error.
+            unparsed = error is not None and envelope.has("id") and envelope.raw("id") is None
+            answers = unparsed or envelope.opt_int("id") == request_id
+            if envelope.raw("jsonrpc") != "2.0" or not answers:
+                raise HcProtocolError(method, "the reply does not answer this request", written=True)
             if error is not None:
                 data = error.opt_obj("data")
                 raise HcRpcError(

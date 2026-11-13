@@ -358,7 +358,7 @@ def ensure_core(ctx: OpContext) -> str:
     try:
         ctx.client().hello()
     except HcUnreachable:
-        if ctx.fault:
+        if ctx.backend_unavailable:
             raise OpError("the backend is unavailable (GC_RPP_FAULT=unavailable)") from None
         start_core(ctx, hc_bin)
     check_foreign(ctx, hc_bin)
@@ -407,7 +407,7 @@ def kick_due(ctx: OpContext) -> bool:
 def kick(ctx: OpContext) -> bool:
     """Start the city's core in the background for the next pass. Returns
     whether a start was launched."""
-    if ctx.fault or not kick_due(ctx):
+    if ctx.backend_unavailable or not kick_due(ctx):
         return False
     try:
         ctx.hc_binary()

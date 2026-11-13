@@ -13,6 +13,7 @@ def test_exit_codes_are_exactly_the_rpp_v0_table() -> None:
         "NO_SCREEN": 66,
         "FRESH_COLLISION": 73,
         "TEMPFAIL": 75,
+        "INPUT_OUTCOME": 80,
     }
 
 

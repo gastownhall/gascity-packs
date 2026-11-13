@@ -408,7 +408,10 @@ class FakeHc:
     def _handle_line(self, line: bytes) -> Tuple[Optional[bytes], Optional[Callable[[], None]]]:
         try:
             request = json.loads(line)
-        except ValueError:
+            # hc parses with serde_json, which refuses a lone surrogate escape
+            # Python's json accepts; strict UTF-8 re-encoding finds one.
+            json.dumps(request, ensure_ascii=False).encode("utf-8")
+        except (ValueError, UnicodeEncodeError):
             return self._reply(None, error=(-32700, "parse error", "invalid_params")), None
         if not isinstance(request, dict):
             return self._reply(None, error=(-32600, "invalid request", "invalid_params")), None
@@ -672,8 +675,10 @@ class FakeHc:
                     raise RpcFailure("status_mismatch", f"{terminal.address} is {word}; nothing was typed")
                 turn = terminal.turn
                 reported = terminal.reported
-                if not terminal.type_bytes(text.encode("utf-8") + b"\n"):
+                typed = text.encode("utf-8") + b"\n"
+                if not terminal.type_bytes(typed):
                     raise RpcFailure("finished", f"{terminal.address} has finished")
+                terminal.echo(typed)
                 terminal.inputs.append(text)
                 if reported and terminal.work_on_send:
                     terminal.set_status("working", kind=None, app=terminal.status["app"] if terminal.status else "", progress=None)

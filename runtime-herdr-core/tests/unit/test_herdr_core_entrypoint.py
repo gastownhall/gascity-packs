@@ -24,13 +24,15 @@ def invoke(
     *args: str,
     cwd: Optional[Path] = None,
     env: Optional[Dict[str, str]] = None,
+    stdin: Optional[bytes] = None,
 ) -> "subprocess.CompletedProcess[bytes]":
     """Run the entry point under this interpreter with the shebang's flags."""
     return subprocess.run(
         [sys.executable, "-I", "-S", str(ENTRY), *args],
         cwd=str(cwd) if cwd else None,
         env=env if env is not None else {"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
-        stdin=subprocess.DEVNULL,
+        input=stdin,
+        stdin=None if stdin is not None else subprocess.DEVNULL,
         capture_output=True,
         timeout=30,
         check=False,
@@ -71,6 +73,9 @@ HANDSHAKE = {
         "city-scoped",
         "conformance-faults",
         "server-lifecycle",
+        "carrier.ops",
+        "idle-boundary",
+        "input-outcome",
     ],
     "locality": "local",
 }
@@ -98,6 +103,17 @@ def test_the_handshake_never_declares_exec_or_provision(tmp_path: Path) -> None:
     # declares only what it implements.
     caps = set(json.loads(invoke("protocol", cwd=tmp_path).stdout)["capabilities"])
     assert not caps & {"proc.exec", "proc.provision", "input-fence", "tty.attach", "proc.stream"}
+
+
+def test_carrier_ops_never_routes_tmux_text(tmp_path: Path) -> None:
+    # carrier.ops selects the pack's own driving ops, so gc never pipes tmux
+    # commands to `exec`; and `exec` is unknown (exit 2) without reading
+    # stdin, so even a gc that had not read the handshake runs nothing.
+    caps = set(json.loads(invoke("protocol", cwd=tmp_path).stdout)["capabilities"])
+    assert {"carrier.ops", "idle-boundary", "input-outcome"} <= caps
+    assert "proc.exec" not in caps
+    done = invoke("exec", "mc-a", cwd=tmp_path, stdin=b"tmux send-keys -t main 'echo pwned' Enter\n")
+    assert done.returncode == 2 and done.stdout == b""
 
 
 def test_protocol_reads_no_state_and_ignores_the_callers_python_environment(tmp_path: Path) -> None:
