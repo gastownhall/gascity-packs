@@ -16,6 +16,16 @@ fail() {
     exit 1
 }
 
+# jq is an undeclared ambient dependency on CI: the ubuntu-2404 image ships it,
+# so it is neither installed nor named in .github/workflows/ci.yml, and this
+# suite asserts against the real binary. Without this check a host lacking jq
+# fails inside the first stub as a behavioural mismatch rather than reporting a
+# missing tool (gk-aqw47).
+command -v jq >/dev/null 2>&1 || {
+    echo "FAIL: jq required (this suite exercises the ledger path with real jq)" >&2
+    exit 1
+}
+
 cat >"$BIN/gc" <<'SH'
 #!/bin/sh
 set -eu
