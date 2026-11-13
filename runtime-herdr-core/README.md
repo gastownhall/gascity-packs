@@ -201,7 +201,13 @@ checked against the app yet, so the sessions may not appear there.
   host, and leaves those fields out of the start config. `start` does
   exactly what its config carries (an omitted field is not staged or
   run), so an older gc, or one whose cached handshake predates the
-  declaration, still sends them and `start` does that work as below.
+  declaration, still sends them and `start` does that work as below; so
+  does a current gc when it cannot read whether a live box holds the name
+  (`observe` fails or answers unknown), so the pack's own staging stays
+  load-bearing. gc also materializes skills and MCP for agents on this
+  runtime (at the scope root, or in a worktree through a `pre_start`
+  entry it runs on the host), where without `fs.host` it refuses an
+  agent with effective MCP.
   `session_setup` gc runs comes after `start` returns, so after the first
   turn (`nudge`); gc runs it without `GC_TMUX_SOCKET`, so keep commands
   that drive tmux out of `session_setup` for this runtime. gc also reads
@@ -327,8 +333,9 @@ checked against the app yet, so the sessions may not appear there.
   `GC_INSTANCE_TOKEN` whatever the box's state, every process still the one
   captured (same start time) sent TERM then KILL. Every process carrying
   the token dies, one the agent meant to outlive it too. That is wider
-  than gc's own orphan sweep, which ends only orphan roots of sessions gc
-  no longer runs (and does not run for this pack): a shared per-user
+  than gc's own orphan sweep, which for this pack ends only leftovers
+  adopted by init or the user's subreaper, of sessions that are closed or
+  stopped with no live box under their name: a shared per-user
   daemon first started from inside a box carries its token and dies with
   it, such as a Bazel or Gradle server, an ssh `ControlMaster` or a
   `gpg-agent`; the next use starts it again. One started during the kill
@@ -343,11 +350,14 @@ checked against the app yet, so the sessions may not appear there.
   user's own shells and editors, or a whole tmux-runtime city when a gc
   command run in the box founded it. A herdr-core box never runs inside
   tmux; a tmux server the box itself runs under (hc's core started from a
-  pane) fences none of the box's own tree. As in gc, tmux is known by its
-  exact names. Fencing everything under a server is this pack's own
-  choice: gc fences the tmux process alone and reads each pane as a root
-  of its own, but the token scan would end every pane of a server founded
-  from a box. The fence covers only what is still under a server: a
+  pane) fences none of the box's own tree. The pack's fence differs from
+  gc's in two ways. gc's covers a tmux server or client carrying a
+  `GC_SESSION_ID` and everything under it, and on Linux also recognizes a
+  renamed tmux by its title; the pack's covers any tmux server or client,
+  with or without a session id, but knows tmux only by the exact names
+  above. So a renamed tmux founded from a box is spared by gc's cleanup
+  yet still dies with the box's stop, `kill-object` or `server-stop`. The
+  fence covers only what is still under a server: a
   process that detaches from a pane of a server founded from a box (an
   `ssh -fN`, a `nohup` job whose shell exited, an agent such as `ssh-agent`
   started there) is re-parented out of it, still carries the token and

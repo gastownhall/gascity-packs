@@ -19,7 +19,8 @@ agent):
 3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
    Only what the config carries: this pack declares ``fs.host``, so gc
    does this host work itself and leaves those fields out, and nothing is
-   done here; a gc that predates the declaration sends them.
+   done here; a gc that predates the declaration sends them, and so does a
+   current gc when it cannot read whether a live box holds the name.
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
    ``terminal.run`` the launcher and label the pid. The run is sent once: hc

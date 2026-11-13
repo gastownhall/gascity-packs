@@ -344,7 +344,8 @@ def test_session_live_is_never_run_and_start_says_so(city: City) -> None:
 # The pack declares fs.host, so gc stages the work dir and runs pre_start and
 # session_setup on the host itself, and leaves those fields out of the start
 # config. A gc that predates the declaration sends every field and the pack
-# does the host work. The pack does exactly what the config carries, so
+# does the host work, as does a current gc that cannot read whether a live
+# box holds the name. The pack does exactly what the config carries, so
 # either way each piece of host work is done once.
 
 HOST_WORK = ("pack_overlay_dirs", "overlay_dir", "copy_files", "pre_start", "session_setup", "session_setup_script")
