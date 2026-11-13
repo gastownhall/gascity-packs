@@ -23,6 +23,7 @@ from fakehc import FakeHc
 from fakehc.cli import write_launcher
 from releasekit import TARGET, make_pin, publish, sha
 
+from gc_runtime_herdr_core.herdrcore import core
 from gc_runtime_herdr_core.herdrcore import install as installer
 from gc_runtime_herdr_core.herdrcore.commands import run_command
 from gc_runtime_herdr_core.herdrcore.core import core_env
@@ -114,6 +115,16 @@ def test_restart_core_replaces_a_foreign_started_core_of_the_city(city: City) ->
     # The new core is the pack's: a session starts on it.
     city.procs.core_environ = None
     assert city.start("mc-a").code == 0
+
+
+def test_restart_core_after_server_stop_unparks_the_city(city: City) -> None:
+    """server-stop parks the city; a core restart-core starts is a start, so
+    the mark goes with it (it holds only while nothing of the core runs)."""
+    assert city.run("server-stop").code == 0
+    assert core.parked(city.context())
+    code, _, err = run(city, "restart-core")
+    assert code == 0, err
+    assert not core.parked(city.context()), "restart-core runs a core: the city is not parked"
 
 
 # --- install and upgrade ------------------------------------------------------------------

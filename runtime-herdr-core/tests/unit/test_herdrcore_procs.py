@@ -35,6 +35,7 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     matches,
     parse_environ,
     scan_environ,
+    scan_environ_any,
     subtree,
 )
 
@@ -270,7 +271,7 @@ def test_a_tmux_server_above_the_killed_program_fences_none_of_its_tree() -> Non
         7: proc(7, ("tmux", "new", "-d"), comm="tmux: client", ppid=5),
         8: proc(8, ("sleep", "600"), ppid=7),
     }
-    assert fenced_pids(snap, own=5) == {2, 3, 4, 7, 8}
+    assert fenced_pids(snap, own={5}) == {2, 3, 4, 7, 8}
     assert fenced_pids(snap) == {2, 3, 4, 5, 6, 7, 8}
 
 
@@ -309,6 +310,17 @@ def test_scan_environ_finds_the_incarnations_processes(tmp_path: Path) -> None:
     source = LinuxProcs(str(tmp_path))
     found = scan_environ(source, source.snapshot(), "GC_INSTANCE_TOKEN", "tok-1")
     assert [p.pid for p in found] == [31]
+
+
+def test_an_empty_value_matches_no_process(tmp_path: Path) -> None:
+    # A process without the key reads as "": an empty value must never find it.
+    add_proc(tmp_path, 31, ppid=1, argv=["carrier"], env={"GC_INSTANCE_TOKEN": "tok-1"})
+    add_proc(tmp_path, 33, ppid=1, argv=["none"])
+    source = LinuxProcs(str(tmp_path))
+    snapshot = source.snapshot()
+    assert scan_environ_any(source, snapshot, "GC_INSTANCE_TOKEN", frozenset({""})) == []
+    assert scan_environ(source, snapshot, "GC_INSTANCE_TOKEN", "") == []
+    assert [p.pid for p in scan_environ_any(source, snapshot, "GC_INSTANCE_TOKEN", frozenset({"", "tok-1"}))] == [31]
 
 
 # --- the attach scan ---------------------------------------------------------------------

@@ -10,7 +10,8 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
-`city-scoped` and `conformance-faults` (locality `local`), and passes
+`city-scoped`, `conformance-faults` and `server-lifecycle` (locality
+`local`; `fs.host` is deferred, see [Host work](#how-sessions-run)), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
@@ -46,7 +47,7 @@ runtime-herdr-core/
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
         lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
-        inputs.py screen.py readiness.py
+        inputs.py screen.py readiness.py server.py corescan.py
         pin.py install.py admin.py commands.py doctor.py appvis.py infra_argv.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
@@ -99,7 +100,8 @@ source = "<this pack>"
   fresh one under the allowlist: the fix for a core started outside the
   pack. Stopping a core ends its programs, so it refuses while the city
   runs or any terminal runs there (`gc stop` first). It refuses a core that is not the city's
-  (another user's, or one with another hc session or state root).
+  (another user's, or one with another hc session or state root). Its
+  start clears `server-stop`'s stopped mark, as a session start does.
 - **The binary.** The pinned install, unless the city's pack config
   (`<R>/pack/<city id>/config.json`) sets `hc_bin` and
   `"allow_unpinned": true`, an explicit choice to drive another build.
@@ -115,7 +117,7 @@ warns). They only read: a check never starts a core or writes state.
 |---|---|---|
 | `hc-python` | no `python3`, or one older than 3.9 | |
 | `hc-binary` | not installed; changed since install; from another release; `hc_bin` without `allow_unpinned` | installed without `gc herdr-core install`; writable; `hc_bin` with `allow_unpinned` |
-| `hc-core` | down while the city runs (once a read found it down); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
+| `hc-core` | down while the city runs (once a read found it down, and not stopped by `server-stop`: a city `gc stop` parked stays down, OK, until a session start); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
 | `hc-scope-hygiene` | the city's supervisor or controller, Dolt server or watchdog, or bd proxy carries `HC_SCOPE`, runs under a herdr-core holder or core, or in an `hc-hold-*`/`hc-serve-*` cgroup | its environment cannot be read |
 | `hc-state-perms` | hc's state directories are not this user's 0700 directories, or `terminals.json` is readable by others through them (hc writes it with the umask's mode, which 0700 directories keep private) | |
 
@@ -155,7 +157,8 @@ checked against the app yet, so the sessions may not appear there.
   block. On macOS, where a process's environment is read cut at
   whitespace, a state root with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
-  most one at a time and none for five minutes after a failed start.
+  most one at a time and none for five minutes after a failed start, and
+  none while `server-stop` has parked the city (below).
 - **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
   typed notes into agents, 16 MB history, nothing from `~/.config/herdr-core`.
 - **Names and identity.** A session is the newest terminal labelled with its
@@ -186,11 +189,34 @@ checked against the app yet, so the sessions may not appear there.
   city, in the city's pack state) gives in-agent `hc` the city core's exact
   tuple and refuses while the core is down instead of starting a second
   one.
+- **Host work (`fs.host`, not declared yet).** Boxes run on gc's host as
+  gc's user with gc's view of the filesystem, which is what `fs.host`
+  says, but the pack does not declare it yet: so gc sends the full start
+  config and `start` stages the work directory, runs `pre_start` (fatal)
+  and then `session_setup` and the setup script itself, as below. Under
+  `fs.host` gc does that host work on the host and leaves those fields out
+  of the start config; `start` already does exactly what its config
+  carries (an omitted field is not staged or run), and gc would then run
+  `session_setup` after `start` returns, so after the first turn (`nudge`)
+  rather than before it. The declaration is deferred until gc fences
+  tmux-parented processes in its exec provider's process-table scan (a
+  gascity follow-up to its exec process-table scanner): `fs.host` turns
+  that scan on for this pack, and before a session starts again gc ends
+  every untracked root carrying the session's `GC_SESSION_ID`, with its
+  process group. It reads each pane of a tmux server founded inside a box
+  as such a root (a tmux server copies its founder's environment; one
+  founded by `tmux new -d` with no server running is the user's default
+  server), so every pane of it would end at the session's next start. `observe` reports
+  `agent_pid`, a host pid: the agent's when it is asked about process
+  names and finds one, else the box's program. The agent gets gc's `HOME`
+  (unless the session environment sets it), so the transcripts gc reads
+  under its own home are the ones the agent writes; the core keeps the
+  password-database home.
 - **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
   (fatal), creates the terminal in `work_dir` (which must exist by then;
   the home without one), runs `session_setup` and the setup script
-  (warnings), then types `nudge` once the agent is ready (its prompt, read
+  (warnings), each only when the config carries it, then types `nudge` once the agent is ready (its prompt, read
   as gc reads a pane: the bottom-most prompt line, NBSP as a space, a box
   border skipped, and a numbered menu's cursor row no prompt; else its
   delay, at most 60 s as in gc; else its first status report; else settled
@@ -241,8 +267,8 @@ checked against the app yet, so the sessions may not appear there.
   `.agents/hooks.json`, `.github/hooks/gascity.json`) and a Kiro
   `AGENTS.md` already in the work directory are kept, with a warning. Only
   `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
-  and `install_agent_hooks`' extra slots are not (gaps until gc stages on
-  the host for runtime packs). Staging and `copy-to` write nothing outside
+  and `install_agent_hooks`' extra slots are not (gaps until the pack
+  declares `fs.host` and gc stages on the host itself). Staging and `copy-to` write nothing outside
   the work directory: nothing is written through a symlink below it (one
   where a file or directory would go fails the staging or the copy; gc
   writes through it), and a `copy_files` destination that leaves the work
@@ -338,8 +364,80 @@ checked against the app yet, so the sessions may not appear there.
   tell, including when such a process's environment cannot be read.
   `attach` checks the core answers first and runs `hc attach` with the
   core's allowlist environment, so it never starts a core on gc's.
+- **Server teardown** (`server-lifecycle`). gc runs `server-stop` after
+  it stops the city's sessions, at `gc stop` and at the orchestrator's
+  shutdown, as a backstop: a session its own stops could not see ends with
+  the core. With the core answering, every record of the city is ended as
+  `stop` ends it (tree, token scan, infrastructure fenced); a terminal the
+  city did not start (a person's, or one an agent opened through the
+  in-agent `hc`) survives, and while one runs the core keeps running for
+  it; otherwise the core is stopped and the op waits until it is gone.
+  With the core not answering its socket, hc may still keep the city's
+  records: it keeps them across a core restart, finished, and one left
+  behind would refuse gc's next start of its name (`fresh_only`, exit 73)
+  while every read of the stopped city answers it absent. So while the
+  pack keeps an incarnation's metadata (it does until the record is
+  removed), `server-stop` starts the core, holding the kick lock, and stops
+  the city with it as above. A core that cannot be started, or a core of
+  the city listening on another socket (`core.lock`: run
+  `gc herdr-core restart-core`), is reported and leaves the city unparked,
+  so reads kick the core back. Whatever the core, its programs may still
+  run under their holders (`herdr-core hold --socket <session>.holder.<id>.sock`),
+  so the process table is scanned: each incarnation is found by the pid
+  and start time its metadata keeps (with the boot they count from: on
+  Linux a start time counts clock ticks from boot, so one kept from
+  another boot never names a process), as a city holder's program carrying
+  its `GC_INSTANCE_TOKEN`, and by that token; its tree is ended, the token
+  is scanned for again as `stop` does, and a holder left with no program
+  is ended too. That sweep fences exactly as `stop`'s kill
+  does, through the same fence and the same rescan: city infrastructure and
+  any tmux server or client (with everything under it) is never signalled,
+  so a tmux server founded from inside a box, its panes, and another
+  city's tmux server carrying the token survive, while a tmux server the
+  box's program runs under (hc's core started from a pane) fences none of
+  that program's tree. The one exception to the fence is the city's own
+  idle holders, matched by their exact `hold --socket` argv with the
+  city's socket prefix: they are ended directly (a holder is never a tmux
+  or infrastructure process). Exit 0 means the
+  city's core is gone (or kept only for a foreign terminal) and no program
+  of the city's sessions runs, so a second call exits 0; exit 1 names what
+  may survive: a process that outlives its kill or cannot be read, a
+  record whose metadata cannot be read, a process table that cannot be
+  read, a holder that runs a process that cannot be read (or a program
+  while an incarnation's metadata names neither its pid nor its instance
+  token), an incarnation's program the fence keeps (a box whose program is
+  a tmux client: only the core can end it), a core that runs but does not
+  answer, one that answers but fails, one that cannot be started while hc
+  may keep the city's records, a core of the city listening on another
+  socket, or a start of the core in flight that does not finish in time.
+- **A stopped city stays stopped.** When `server-stop` stops the core
+  itself, it first marks the city parked (`parked.json` in the city's pack
+  state); so does a `server-stop` that finds the core already down and
+  no incarnation's metadata kept. While the mark is there, no read starts the core again, and with
+  no holder or core process of the city left every read answers an empty
+  city: `inventory` complete and empty, `observe` absent, `list-running`
+  empty, `is-running`, `process-alive` and `is-attached` `false`, `peek`
+  exit 66. That is what gc's stop confirmation and `gc status` read after
+  a stop. It is the truth: nothing of the city runs, and only `start`
+  brings the core back (every record of the city was ended and removed
+  first, so that start's `fresh_only` finds no record of the name). A start clears the
+  mark first, before it tries the core: one whose core then fails to
+  start leaves the city unparked, and reads kick again as for any core
+  that is down. The mark holds only while nothing of the core runs. gc
+  never sends a start for a session it reads unknown, so a parked city
+  with a holder still running would be stranded: `server-stop` clears the
+  mark at its end when a holder or core process still runs (a core kept
+  for what runs is not parked), and a read that finds one parked anyway
+  (a `server-stop` killed at its deadline) answers unknown and kicks the
+  core back to adopt it. `server-stop` holds the kick lock throughout, so
+  a kick in flight finishes first and none starts the core while it
+  sweeps. A core that ends without `server-stop` (a crash, a reboot) is
+  not parked, and a read kicks a start as before.
+  With the core down and nothing of it running, `is-running` and
+  `process-alive` answer `false` and `stop` ends what the metadata still
+  names, parked or not, without starting a core.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
-  reading stdin), `server-stop`, `program-status` and session events.
+  reading stdin), `program-status` and session events.
 
 ## Foundations
 

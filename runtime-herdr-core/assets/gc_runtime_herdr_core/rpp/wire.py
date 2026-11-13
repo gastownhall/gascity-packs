@@ -27,6 +27,8 @@ Capability = Literal[
     "report-activity",
     "city-scoped",
     "conformance-faults",
+    "server-lifecycle",
+    "fs.host",
 ]
 """Tokens of gc's capability table this pack may declare (exec-session-provider.md
 "Protocol Handshake"). ``proc.exec``, ``input-fence``, ``proc.provision`` and

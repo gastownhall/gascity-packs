@@ -3,7 +3,9 @@
 On Linux the snapshot comes from ``/proc`` (an injectable root, so tests use
 a fake tree); elsewhere from ``ps -ww``. A process's start-time token tells a
 recycled pid from the process captured earlier, so nothing is signalled
-unless it is still the same process.
+unless it is still the same process. On Linux the token counts clock ticks
+from boot, so one kept across ops holds only with the boot it was read in
+(:meth:`ProcSource.boot`): after a reboot it may name another process.
 
 A process that exits during the read is left out. One of this user's that
 cannot be read is *opaque*: it has no name or command, and its parent is
@@ -50,7 +52,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, replace
-from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Callable, Collection, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .infra_argv import is_infrastructure_argv
 
@@ -143,6 +145,13 @@ class ProcSource:
         """When ``proc`` started, in wall-clock milliseconds; None when that
         cannot be told."""
         return None
+
+    def boot(self) -> Optional[str]:
+        """The boot the start-time tokens count from: a token kept with
+        another boot's names another process. Empty where tokens are
+        wall-clock times, which hold across boots; None when it cannot be
+        told."""
+        return ""
 
     def kill(self, pid: int, sig: int) -> None:
         """Signal ``pid``; a process that is gone is not an error."""
@@ -319,6 +328,16 @@ class LinuxProcs(ProcSource):
                 return int(words[1]) * 1000 + int(proc.start) * 1000 // ticks
         return None
 
+    def boot(self) -> Optional[str]:
+        """The kernel's boot id (``sys/kernel/random/boot_id``): ``starttime``
+        counts clock ticks from boot."""
+        try:
+            with open(os.path.join(self._root, "sys", "kernel", "random", "boot_id"), "rb") as handle:
+                text = handle.read().decode("ascii", "replace").strip()
+        except OSError:
+            return None
+        return text or None
+
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         try:
             raw = self._read(pid, "environ")
@@ -479,9 +498,9 @@ def children_index(snapshot: Snapshot) -> Dict[int, List[int]]:
 
 
 def subtree(
-    snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None, *, prune: Optional[int] = None
+    snapshot: Snapshot, root: int, index: Optional[Mapping[int, List[int]]] = None, *, prune: Collection[int] = ()
 ) -> List[Proc]:
-    """``root`` and every descendant, in breadth-first order; a descendant
+    """``root`` and every descendant, in breadth-first order; a descendant in
     ``prune`` is left out, and so is everything under it."""
     if root not in snapshot:
         return []
@@ -495,7 +514,7 @@ def subtree(
             continue
         seen.add(pid)
         out.append(snapshot[pid])
-        queue.extend(kid for kid in kids.get(pid, ()) if kid != prune)
+        queue.extend(kid for kid in kids.get(pid, ()) if kid not in prune)
     return out
 
 
@@ -506,11 +525,11 @@ def is_tmux(proc: Proc) -> bool:
     return any(os.path.basename(head.strip()) in TMUX_NAMES for head in heads if head.strip())
 
 
-def fenced_pids(snapshot: Snapshot, *, own: Optional[int] = None) -> FrozenSet[int]:
+def fenced_pids(snapshot: Snapshot, *, own: Collection[int] = ()) -> FrozenSet[int]:
     """Every infrastructure process (city infrastructure, tmux) and its whole
-    subtree. A tmux server above ``own`` (the program a kill ends: its
-    core was started from a tmux pane) fences none of ``own``'s tree; one
-    inside it still fences its own subtree."""
+    subtree. A tmux server above one of ``own`` (the programs a kill ends:
+    their core was started from a tmux pane) fences none of that program's
+    tree; one inside it still fences its own subtree."""
     index = children_index(snapshot)
     fenced: Set[int] = set()
     for proc in snapshot.values():
@@ -678,7 +697,16 @@ def scan_environ(source: ProcSource, snapshot: Snapshot, key: str, value: str) -
     A process whose environment cannot be read is skipped: a non-dumpable
     process of the user (ssh-agent, for one) has a root-owned ``environ``,
     and failing on it would fail every scan."""
+    return scan_environ_any(source, snapshot, key, frozenset({value}))
+
+
+def scan_environ_any(source: ProcSource, snapshot: Snapshot, key: str, values: FrozenSet[str]) -> List[Proc]:
+    """This user's processes whose environment holds ``key`` set to one of
+    ``values`` (never an empty one), read as :func:`scan_environ` reads."""
+    wanted = values - {""}
+    if not wanted:
+        return []
     uid = os.getuid()
     mine = [proc for proc in snapshot.values() if proc.uid == uid and proc.pid != os.getpid()]
     envs = source.environs(proc.pid for proc in mine)
-    return [proc for proc in mine if envs.get(proc.pid, {}).get(key) == value]
+    return [proc for proc in mine if envs.get(proc.pid, {}).get(key, "") in wanted]

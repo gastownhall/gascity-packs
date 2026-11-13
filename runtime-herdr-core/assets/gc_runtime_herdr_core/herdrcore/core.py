@@ -19,13 +19,33 @@ A read that finds the core down answers unknown and **kicks** a detached
 start, at most one at a time per city and none for five minutes after a
 failed one; ``kick.json`` records the last attempt and its outcome, never
 liveness (always probed live).
+
+A core ``server-stop`` stopped is **parked**: ``parked.json`` records that
+the pack ended every record of the city and then the core, on purpose. While
+it is there no read kicks a start (a stopped city stays stopped), and a read
+that finds nothing of the core running answers an empty city. A
+``server-stop`` that finds the core already down parks the city too, so
+gc's confirming read after its stop does not start it again; while the pack
+keeps an incarnation's metadata it first starts the core to remove the
+records hc keeps across a restart (:mod:`.server`). A start
+(:func:`ensure_core`) clears the mark, first, before it tries the core and
+before any record is created: one whose core start then fails (a core lock
+naming another socket) leaves the city unparked, and reads kick again as
+for any core that is down. The mark holds only while nothing of the core
+runs: ``server-stop`` clears it at its end when a holder or a core still
+runs, and a read that finds a parked city with a holder or core still
+running (a ``server-stop`` killed at its deadline) answers unknown and
+kicks, since gc never sends a start for a session it reads unknown, so
+the city is never stranded. ``server-stop`` holds the kick lock
+(:data:`KICK_LOCK`) throughout, so no kick starts the core while it
+sweeps. A core that ends any other way (a crash, a reboot) is kicked as
+before.
 """
 
 from __future__ import annotations
 
 import os
 import pwd
-import socket
 import subprocess
 import time
 from dataclasses import dataclass
@@ -41,14 +61,18 @@ from .attach import ATTACH_TERMINAL_KEYS
 from .command import run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
+from .corescan import listener_elsewhere, nothing_runs
 from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0
 """hc's own wait for a starting core (``client.rs`` START_WAIT)."""
 
 KICK_FILE: Final = "kick.json"
+PARK_FILE: Final = "parked.json"
 KICK_BACKOFF_MS: Final = 5 * 60 * 1000
 KICK_OP: Final = "x-kick-core"
+KICK_LOCK: Final = "kick"
+"""Held by a kick while it starts the core, and by ``server-stop`` throughout."""
 
 BASE_PATH: Final = "/usr/local/bin:/usr/bin:/bin"
 
@@ -239,20 +263,9 @@ def check_discovery_paths(env: Mapping[str, str], *, lossy: bool) -> None:
 
 def check_core_lock(ctx: OpContext) -> None:
     """Refuse a core of this session that listens on another socket (herdr-core #200)."""
-    raw = read_private_file(ctx.paths.core_lock)
-    if not raw:
+    listening = listener_elsewhere(ctx)
+    if listening is None:
         return
-    listening = os.fsdecode(raw.strip())
-    if listening == ctx.paths.socket:
-        return
-    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        probe.settimeout(0.5)
-        probe.connect(listening)
-    except OSError:
-        return  # a stale lock: nobody listens there
-    finally:
-        probe.close()
     raise OpError(
         f"the city's core listens at {listening}, not at {ctx.paths.socket}: "
         "run `gc herdr-core restart-core`"
@@ -288,6 +301,35 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
             ctx.request.cancel.pause(0.05)
 
 
+# --- parking ---------------------------------------------------------------------------
+
+
+def parked(ctx: OpContext) -> bool:
+    """Whether ``server-stop`` stopped the city's core and no start has come
+    since. An unreadable mark reads as not parked: reads kick, as before.
+    It creates no state (doctor reads it too), as :func:`read_kick` does."""
+    try:
+        return read_private_file(os.path.join(ctx.pack_state, PARK_FILE)) is not None
+    except StateDirError:
+        return False
+
+
+def park(ctx: OpContext) -> None:
+    """Mark the city's core as stopped on purpose (raises StateDirError or OSError)."""
+    doc = {"at_ms": ctx.host.now_ms()}
+    write_private_file(ctx.state_file(PARK_FILE), (dumps(doc) + "\n").encode("ascii"))
+
+
+def unpark(ctx: OpContext) -> None:
+    """Clear the mark: the city's core is started again."""
+    try:
+        os.unlink(ctx.state_file(PARK_FILE))
+    except FileNotFoundError:
+        return
+    except (OSError, StateDirError) as err:
+        raise OpError(f"cannot clear the city's stopped mark: {err}") from None
+
+
 def check_foreign(ctx: OpContext, hc_bin: str) -> None:
     """Refuse the running core unless the pack started it with its allowlist."""
     status = ctx.client().server_status()
@@ -304,7 +346,9 @@ def check_foreign(ctx: OpContext, hc_bin: str) -> None:
 
 def ensure_core(ctx: OpContext) -> str:
     """The city's core, started if down and checked as the pack's own.
-    Returns the hc binary."""
+    Returns the hc binary. It clears the stopped mark first, whatever then
+    becomes of the start: a start is the way out of a parked city."""
+    unpark(ctx)  # before any record: a parked city holds none
     try:
         hc_bin = ctx.hc_binary()
     except ConfigError as err:
@@ -348,6 +392,14 @@ def write_kick(ctx: OpContext, record: KickRecord) -> None:
 
 
 def kick_due(ctx: OpContext) -> bool:
+    """Whether a kick may start the core: never while it is parked and
+    nothing of it runs, nor within the backoff after a failed one. A parked
+    city whose holder or core still runs is kicked: gc reads unknown while
+    it runs and never sends the start that unparks, so the core comes back
+    to adopt what runs (``server-stop`` holds the kick lock, so none starts
+    while it sweeps)."""
+    if parked(ctx) and nothing_runs(ctx):
+        return False
     record = read_kick(ctx)
     return record is None or record.ok or ctx.host.now_ms() - record.at_ms >= KICK_BACKOFF_MS
 
@@ -359,7 +411,7 @@ def kick(ctx: OpContext) -> bool:
         return False
     try:
         ctx.hc_binary()
-        with ctx.lock("kick", shared=False, wait_s=0.0):
+        with ctx.lock(KICK_LOCK, shared=False, wait_s=0.0):
             pass  # a kick in flight holds it
     except (ConfigError, LockTimeout, OSError):
         return False
@@ -380,7 +432,7 @@ def kick(ctx: OpContext) -> bool:
 def run_kick(ctx: OpContext) -> None:
     """The detached kick: start the core unless another kick is at it."""
     try:
-        with ctx.lock("kick", shared=False, wait_s=0.0):
+        with ctx.lock(KICK_LOCK, shared=False, wait_s=0.0):
             if not kick_due(ctx):
                 return
             try:

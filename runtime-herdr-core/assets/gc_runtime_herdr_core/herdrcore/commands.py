@@ -15,7 +15,8 @@
 * ``restart-core`` stops the city's own core and starts a fresh one under
   the allowlist. Stopping a core ends every program on it, so it refuses
   while the city runs or any terminal runs there (``gc stop`` the city
-  first). It refuses a
+  first). Its start clears ``server-stop``'s stopped mark, as a session
+  start's does (:mod:`.core`). It refuses a
   core that is not the city's (another user's, or one with another hc
   session or state root): the pack never stops a core it cannot tell is
   its own.
@@ -48,7 +49,7 @@ from .admin import (
 from .command import run_bounded
 from .config import ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
-from .core import CORE_START_WAIT_S, check_foreign, core_env, foreign_reason, start_core
+from .core import CORE_START_WAIT_S, check_foreign, core_env, foreign_reason, start_core, unpark
 from .install import InstallError, fetch_for, install, verify_installed
 from .pin import HcPin, PinError, host_target, load_pin
 from .procs import ProcError
@@ -209,6 +210,7 @@ def cmd_restart_core(ctx: OpContext, args: Sequence[str], out: Out) -> None:
         _wait_gone(client, ctx.request.cancel)
         out(f"stopped the city's core (pid {status.pid})")
     try:
+        unpark(ctx)  # a start clears server-stop's mark, as ensure_core's does
         start_core(ctx, hc_bin)
         check_foreign(ctx, hc_bin)
     except OpError as err:

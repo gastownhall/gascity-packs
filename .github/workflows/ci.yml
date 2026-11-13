@@ -181,7 +181,7 @@ jobs:
       # state root (the runner's home is ephemeral; CI=true lets it run).
       - name: RPP conformance against fake-hc
         env:
-          GASCITY_PIN: 862ee37e4570338d5135f3fbc761bd6221de38d4
+          GASCITY_PIN: bad83762c64a670ec2c3626f15e498705e464ec7
         run: |
           go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_PIN}"
           export GC_BIN="$(go env GOPATH)/bin/gc"
@@ -196,7 +196,7 @@ jobs:
       # has one), into the cache `go install` above already filled.
       - name: Infrastructure argv matches the pinned gc
         env:
-          GASCITY_PIN: 862ee37e4570338d5135f3fbc761bd6221de38d4
+          GASCITY_PIN: bad83762c64a670ec2c3626f15e498705e464ec7
         run: |
           src="$(cd "$(mktemp -d)" && go mod download -json "github.com/gastownhall/gascity@${GASCITY_PIN}" | python -c 'import json, sys; print(json.load(sys.stdin)["Dir"])')"
           python tests/infra_argv_drift.py "$src/internal/runtime/proctable/infrastructure_argv.go"
