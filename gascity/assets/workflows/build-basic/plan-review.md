@@ -10,7 +10,11 @@ Include a lightweight implementation readiness pass before decomposition:
 - risk: risky files, migrations, public interfaces, and rollback concerns are
   explicit enough for an implementer
 
-If you write a plan-readiness note, record it on the workflow root as
+Write the plan-review artifact as Markdown with YAML front matter valid for
+`gc.build.plan-review.v1` (`gascity/schemas/build/plan-review.v1.yaml`),
+including a single `verdict` token from its closed vocabulary (`approved` or
+`proceed` release decomposition; every other listed verdict blocks it), and
+record it on the workflow root as
 `gc.build.plan_review_report_path=<path>`. Do not write or overwrite
 `gc.build.review_report_path`; that key is reserved for the later
 build-basic implementation review artifact.
