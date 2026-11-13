@@ -342,6 +342,11 @@ name the owner again.
 
 ### Threaded replies
 
+Text publishes report Slack acceptance separately from readback confirmation.
+Receipts with a message timestamp remain successful; readback uncertainty is
+visible in metadata and CLI stderr. See the [delivery-evidence contract](docs/delivery-evidence.md)
+for receipt fields and retry behavior.
+
 When a human replies inside a Slack thread, the text the session
 receives starts with a `[slack thread_ts=<root ts>]` line naming the
 thread root. After it comes the earlier thread context: the root

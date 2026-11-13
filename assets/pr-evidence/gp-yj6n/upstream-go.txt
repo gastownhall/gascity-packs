@@ -1,0 +1,23 @@
+Adapted cherry-pick from fork implementation 8af195fd onto upstream base 520e95cb.
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib SLACK_READBACK_INCIDENT=<private recorded fixture> go -C slack-full/adapter test -json ./... -count=1
+go version go1.26.5 darwin/arm64
+1255 passed cases (712 top-level); 0 failures; 0 skipped; exit 0.
+Relevant results below; unrelated output and application logs omitted.
+
+--- PASS: TestPublishWithoutTimestampRemainsFailure (0.00s)
+--- PASS: TestReadBackInvestorDigest (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/absent (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/mismatch (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/auth (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/unavailable (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure/malformed (0.00s)
+--- PASS: TestAcceptedPublishSurvivesReadbackFailure (0.00s)
+--- PASS: TestHandlePublishReportsAcceptanceAndExactSlackReadback/exact_message_is_delivered (0.00s)
+--- PASS: TestHandlePublishReportsAcceptanceAndExactSlackReadback/missing_message_reports_readback_unconfirmed (0.00s)
+--- PASS: TestHandlePublishReportsAcceptanceAndExactSlackReadback/broken_read_path_is_distinct_from_absent_acknowledgement (0.00s)
+--- PASS: TestHandlePublishReportsAcceptanceAndExactSlackReadback/unavailable_read_path_is_retryable (0.00s)
+--- PASS: TestHandlePublishReportsAcceptanceAndExactSlackReadback (0.00s)
+--- PASS: TestHandlePublishReplaysPostedButUnconfirmedReceipt (0.00s)
+--- PASS: TestHandlePublishKeepsTheKeyWhenSlackReadbackDoesNotFindTheMessage (0.00s)
+PASS
+ok  	github.com/sjarmak/gc-slack-adapter	26.130s

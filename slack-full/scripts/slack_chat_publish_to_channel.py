@@ -99,14 +99,7 @@ def main(argv: list[str]) -> int:
         "result": result,
     }, indent=2))
 
-    delivered, failure_kind = common.interpret_publish_receipt(result)
-    if not delivered:
-        print(
-            f"slack publish failed: delivered=false failure_kind={failure_kind or 'unknown'}",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+    return common.publish_receipt_exit_code(result)
 
 
 if __name__ == "__main__":
