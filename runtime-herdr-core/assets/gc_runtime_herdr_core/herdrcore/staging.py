@@ -1,8 +1,8 @@
 """Staging a start config's files into the session's work directory, exactly
-as the config carries them. The runtime does not declare ``fs.host`` yet,
-so gc sends these fields and they are staged here. Under ``fs.host`` gc
-would stage the work directory on the host itself and leave them out of
-the config: then nothing is staged here.
+as the config carries them. The runtime declares ``fs.host``, so gc stages
+the work directory on the host itself and leaves these fields out of the
+config: then nothing is staged here. A gc that predates the declaration (or
+whose cached handshake does) still sends them, and they are staged here.
 
 Order and layout follow gc's own staging (gascity ``internal/runtime/staging.go``
 and ``internal/overlay``): every ``pack_overlay_dirs`` entry, then
@@ -30,9 +30,9 @@ This build does not merge: a file of either kind that existed before the
 staging pass is left as it is, with a warning, so a rig's own settings are
 never overwritten (a later layer of the same pass still wins, as in gc).
 
-Not done here (gaps until the pack declares ``fs.host`` and gc stages on
-the host): the merge itself, a custom provider's family fallback, and the
-extra provider slots of ``install_agent_hooks``; only
+Not done here (gc does them when it stages on the host under ``fs.host``):
+the merge itself, a custom provider's family fallback, and the extra
+provider slots of ``install_agent_hooks``; only
 ``per-provider/<GC_PROVIDER>/`` is staged.
 """
 

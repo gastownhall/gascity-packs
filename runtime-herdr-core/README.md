@@ -11,8 +11,8 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
 `city-scoped`, `conformance-faults`, `server-lifecycle`, `carrier.ops`,
-`idle-boundary` and `input-outcome` (locality `local`; `fs.host` is deferred,
-see [Host work](#how-sessions-run)), and passes
+`idle-boundary`, `input-outcome` and `fs.host` (locality `local`; see
+[Host work](#how-sessions-run)), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc (see
 [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
@@ -190,24 +190,48 @@ checked against the app yet, so the sessions may not appear there.
   city, in the city's pack state) gives in-agent `hc` the city core's exact
   tuple and refuses while the core is down instead of starting a second
   one.
-- **Host work (`fs.host`, not declared yet).** Boxes run on gc's host as
-  gc's user with gc's view of the filesystem, which is what `fs.host`
-  says, but the pack does not declare it yet: so gc sends the full start
-  config and `start` stages the work directory, runs `pre_start` (fatal)
-  and then `session_setup` and the setup script itself, as below. Under
-  `fs.host` gc does that host work on the host and leaves those fields out
-  of the start config; `start` already does exactly what its config
-  carries (an omitted field is not staged or run), and gc would then run
-  `session_setup` after `start` returns, so after the first turn (`nudge`)
-  rather than before it. The declaration is deferred until gc fences
-  tmux-parented processes in its exec provider's process-table scan (a
-  gascity follow-up to its exec process-table scanner): `fs.host` turns
-  that scan on for this pack, and before a session starts again gc ends
-  every untracked root carrying the session's `GC_SESSION_ID`, with its
-  process group. It reads each pane of a tmux server founded inside a box
-  as such a root (a tmux server copies its founder's environment; one
-  founded by `tmux new -d` with no server running is the user's default
-  server), so every pane of it would end at the session's next start. `observe` reports
+- **Host work (`fs.host`).** Boxes run on gc's host as gc's user with
+  gc's view of the filesystem, and the pack declares `fs.host` (with
+  locality `local`, which gc requires for it). That needs a gc with
+  gastownhall/gascity#9129. Into a name that holds no live box, gc then
+  stages the work directory (`pack_overlay_dirs` with its
+  `per-provider/<provider>/` slots, `overlay_dir`, `copy_files`, merging
+  its hook and settings files), runs `pre_start` (fatal) before `start`
+  and `session_setup` and the setup script (warnings) after it, on the
+  host, and leaves those fields out of the start config. `start` does
+  exactly what its config carries (an omitted field is not staged or
+  run), so an older gc, or one whose cached handshake predates the
+  declaration, still sends them and `start` does that work as below.
+  `session_setup` gc runs comes after `start` returns, so after the first
+  turn (`nudge`); gc runs it without `GC_TMUX_SOCKET`, so keep commands
+  that drive tmux out of `session_setup` for this runtime. gc also reads
+  the agent's transcripts on its own host for turn tracking (the agent
+  gets gc's `HOME`, see below), and runs its process-table cleanup for the
+  pack's sessions: before a session starts it ends its stopped
+  incarnation's leftovers, the orphan sweep ends the leftovers of a
+  closed session or of one stopped with no live box under its name, and
+  drain-ack escalation looks for a wedged session's processes. A leftover
+  is a process carrying the session's `GC_SESSION_ID` and `GC_CITY_PATH`
+  that no box `inventory` lists carries. hc's core is started under an
+  allowlist environment with no session's identity, so it is never one.
+  Since gastownhall/gascity#9129, that cleanup never treats a tmux server
+  or client carrying a `GC_SESSION_ID`, or anything in its panes, as a
+  session's process for this pack (it declares no `proc.exec`, so gc
+  reads its agent as running outside tmux): a tmux server founded inside
+  a box (`tmux new -d`, or the user's default server when none was
+  running, which copies the box's environment) keeps every pane. What
+  gc's docs leave over: a process that leaves such a pane and is adopted
+  by init (or the user's subreaper) is no longer under tmux and counts as
+  a leftover, so once a box has founded the user's default tmux server,
+  something started there later can be ended as the session's leftover
+  once it leaves its pane; a tmux session an agent starts inside a box is
+  never cleaned up by gc; tmux is recognized by its process name (`tmux`,
+  or the title a renamed tmux binary of up to 14 characters takes on
+  Linux; on macOS only `tmux`), so a tmux under another name is not
+  fenced; in a city that also runs ACP agents the fence covers their
+  processes too; and drain-ack escalation finds nothing to end for this
+  pack's sessions, so a wedged session's slot stays occupied until its
+  box exits. `observe` reports
   `agent_pid`, a host pid: the agent's when it is asked about process
   names and finds one, else the box's program. The agent gets gc's `HOME`
   (unless the session environment sets it), so the transcripts gc reads
@@ -268,8 +292,8 @@ checked against the app yet, so the sessions may not appear there.
   `.agents/hooks.json`, `.github/hooks/gascity.json`) and a Kiro
   `AGENTS.md` already in the work directory are kept, with a warning. Only
   `per-provider/<GC_PROVIDER>/` is staged: a custom provider's family slot
-  and `install_agent_hooks`' extra slots are not (gaps until the pack
-  declares `fs.host` and gc stages on the host itself). Staging and `copy-to` write nothing outside
+  and `install_agent_hooks`' extra slots are not (gc stages those when it
+  does the host work under `fs.host`). Staging and `copy-to` write nothing outside
   the work directory: nothing is written through a symlink below it (one
   where a file or directory would go fails the staging or the copy; gc
   writes through it), and a `copy_files` destination that leaves the work

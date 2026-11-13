@@ -17,9 +17,9 @@ agent):
    refused at all); then it warns, removes that record and goes ahead beside
    them.
 3. Unlocked: stage the start config's files and run ``pre_start`` (fatal).
-   Only what the config carries: this pack does not declare ``fs.host``
-   yet, so gc sends every field; a gc that does this host work itself
-   (under ``fs.host``) leaves those fields out, and nothing is done here.
+   Only what the config carries: this pack declares ``fs.host``, so gc
+   does this host work itself and leaves those fields out, and nothing is
+   done here; a gc that predates the declaration sends them.
 4. Under the lock again, re-checked: write the incarnation's metadata
    (identity first, observe.v1 rule 5), the shims and a spawn file, then
    ``terminal.run`` the launcher and label the pid. The run is sent once: hc
@@ -34,9 +34,9 @@ agent):
    gc's stop. A created terminal hc no longer holds is still looked for by
    its token before its metadata goes.
 5. Unlocked: ``session_setup`` and the setup script, when the config
-   carries them (warnings only), then the first turn. (Under ``fs.host``,
-   not declared yet, gc would run ``session_setup`` itself once ``start``
-   returns, so after the first turn; run here, it comes before it.)
+   carries them (warnings only), then the first turn. (Under ``fs.host`` gc
+   runs ``session_setup`` itself once ``start`` returns, so after the first
+   turn; run here, for a config that carries it, it comes before it.)
    A cancel or failure from here on leaves the box, for gc stops the box a
    failed start leaves. ``session_live`` (tmux theming and
    keybindings) is never run:
