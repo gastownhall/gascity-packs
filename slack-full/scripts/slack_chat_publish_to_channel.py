@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
-"""Publish a message into a Slack channel without going through gc binding lookup.
+"""Publish a message into a Slack channel named by id.
 
 Differs from ``publish`` in that the conversation_id is supplied
-explicitly and gc's binding requirement is bypassed — the message goes
-straight to the local adapter ``/publish``. Used by mayor / chief-of-staff
-to reply into channels they have no binding for, after receiving a
-``Slack address-by-handle`` system reminder triggered by `@mayor:` /
-`@cos:` keyword routing from any channel.
+explicitly. Used by mayor / chief-of-staff to reply into channels they
+have no binding for, after receiving a ``Slack address-by-handle``
+system reminder triggered by `@mayor:` / `@cos:` keyword routing from
+any channel.
 
-The session id still flows through so the adapter applies the matching
-identity registry override (visible username + avatar).
+Routing (``--via``, default ``auto``): the publish goes through gc's
+``/extmsg/outbound`` first, the same path ``reply-current`` uses, so a
+post into a bind-room reaches the other sessions bound to that room
+(peer fanout) and lands in the gc transcript. Only when gc refuses the
+publish because this session has no binding or group participation for
+the channel -- the address-by-handle case this verb exists for -- or gc
+is not listening at all, does it fall back to the local adapter
+``/publish``, which posts to Slack but is invisible to peers. Any other
+gc failure is reported, not retried through the adapter: gc may already
+have posted, and a second path would post a second copy. ``--via
+adapter`` keeps the old adapter-only behavior; ``--via gc`` never falls
+back.
+
+The session id flows through on both paths so the adapter applies the
+matching identity registry override (visible username + avatar).
 """
 
 from __future__ import annotations
@@ -40,6 +52,56 @@ def _load_body(args: argparse.Namespace) -> str:
     return body
 
 
+# gc's HandleOutbound refuses a publish it cannot attribute with one of these
+# strings (internal/extmsg/outbound.go). Both mean gc posted nothing, so the
+# adapter-direct fallback cannot double-post.
+_GC_UNBOUND_MARKERS = (
+    "no active binding for conversation",
+    "does not own binding for conversation",
+)
+# urllib reports a gc that is not listening as a refused connect; nothing was
+# sent, so falling back is safe. A timeout is deliberately absent: gc may have
+# published before the response stalled.
+_GC_UNREACHABLE_MARKERS = (
+    "Connection refused",
+)
+
+
+def _gc_fallback_reason(exc: Exception) -> str:
+    """Return why an adapter-direct fallback is safe after ``exc``, or ""."""
+    text = str(exc)
+    if any(marker in text for marker in _GC_UNBOUND_MARKERS):
+        return "this session has no gc binding or room participation for the channel"
+    if any(marker in text for marker in _GC_UNREACHABLE_MARKERS):
+        return "the gc API is not reachable"
+    return ""
+
+
+def _publish_via_gc(args: argparse.Namespace, session_id: str, body: str) -> dict:
+    return common.publish_via_gc_outbound(
+        session_id=session_id,
+        scope_id=common.gc_city_name(),
+        provider="slack",
+        account_id=os.environ.get("SLACK_WORKSPACE_ID", "").strip(),
+        conversation_id=args.conversation_id,
+        kind=args.kind,
+        text=body,
+        reply_to_message_id=args.thread_ts,
+        idempotency_key=args.idempotency_key,
+    )
+
+
+def _publish_via_adapter(args: argparse.Namespace, session_id: str, body: str) -> dict:
+    return common.publish_to_channel_via_adapter(
+        session_id=session_id,
+        conversation_id=args.conversation_id,
+        text=body,
+        kind=args.kind,
+        thread_ts=args.thread_ts,
+        idempotency_key=args.idempotency_key,
+    )
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Publish into a Slack channel by id, bypassing gc binding lookup",
@@ -58,6 +120,13 @@ def main(argv: list[str]) -> int:
                              "$GC_SESSION_ID.")
     parser.add_argument("--idempotency-key", default="",
                         help="Caller-supplied idempotency key (optional).")
+    parser.add_argument(
+        "--via", choices=("auto", "gc", "adapter"), default="auto",
+        help=("auto (default): publish through gc /extmsg/outbound so peers "
+              "bound to the room see the post, and fall back to the local "
+              "adapter only when gc refuses for lack of a binding or is not "
+              "listening. gc: never fall back. adapter: post adapter-direct "
+              "(peers bound to the room will not see it)."))
     parser.add_argument("--body", default="")
     parser.add_argument("--body-file", default="")
     parser.add_argument(
@@ -80,22 +149,33 @@ def main(argv: list[str]) -> int:
     if not os.environ.get("SLACK_WORKSPACE_ID", "").strip():
         raise SystemExit("SLACK_WORKSPACE_ID is not set; cannot construct conversation envelope")
 
-    try:
-        result = common.publish_to_channel_via_adapter(
-            session_id=session_id,
-            conversation_id=args.conversation_id,
-            text=body,
-            kind=args.kind,
-            thread_ts=args.thread_ts,
-            idempotency_key=args.idempotency_key,
-        )
-    except common.AdapterError as exc:
-        raise SystemExit(str(exc)) from exc
+    via = "adapter" if args.via == "adapter" else "gc"
+    result = None
+    if via == "gc":
+        try:
+            result = _publish_via_gc(args, session_id, body)
+        except common.GCAPIError as exc:
+            reason = _gc_fallback_reason(exc) if args.via == "auto" else ""
+            if not reason:
+                raise SystemExit(
+                    f"gc publish failed: {exc}\n"
+                    "The post may or may not exist; check the channel before "
+                    "re-running (a re-run can post a second copy).") from exc
+            print(f"warning: {reason}; posting adapter-direct. Sessions bound "
+                  f"to {args.conversation_id} will not see this post.",
+                  file=sys.stderr)
+            via = "adapter"
+    if via == "adapter":
+        try:
+            result = _publish_via_adapter(args, session_id, body)
+        except common.AdapterError as exc:
+            raise SystemExit(str(exc)) from exc
 
     print(json.dumps({
         "session_id": session_id,
         "conversation_id": args.conversation_id,
         "thread_ts": args.thread_ts,
+        "via": via,
         "result": result,
     }, indent=2))
 
