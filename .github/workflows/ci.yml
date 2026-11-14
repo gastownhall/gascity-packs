@@ -12,7 +12,7 @@ permissions:
 jobs:
   check:
     name: Check
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'gastownhall/gascity-packs' && 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -134,7 +134,7 @@ jobs:
   # downloads or runs a real herdr-core. Merges gate on the aggregator below.
   runtime-herdr-core:
     name: runtime-herdr-core (Python ${{ matrix.target }})
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'gastownhall/gascity-packs' && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -217,7 +217,7 @@ jobs:
     name: runtime-herdr-core
     if: always()
     needs: [runtime-herdr-core]
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'gastownhall/gascity-packs' && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Every runtime-herdr-core leg passed
