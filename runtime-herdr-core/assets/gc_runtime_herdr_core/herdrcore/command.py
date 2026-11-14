@@ -26,6 +26,8 @@ class Completed:
     """None when the command was killed at its timeout."""
     output: str
     """The tail of its combined stdout and stderr."""
+    pid: int
+    """The pid it ran as (a process it started may name it)."""
 
     @property
     def ok(self) -> bool:
@@ -76,4 +78,4 @@ def run_bounded(
         size = output.seek(0, os.SEEK_END)
         output.seek(max(0, size - OUTPUT_TAIL_BYTES))
         tail = output.read().decode("utf-8", "replace")
-    return Completed(returncode=code, output=tail.strip())
+    return Completed(returncode=code, output=tail.strip(), pid=proc.pid)

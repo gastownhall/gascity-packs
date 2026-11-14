@@ -115,7 +115,9 @@ source = "<this pack>"
   fresh one under the allowlist: the fix for a core started outside the
   pack. Stopping a core ends its programs, so it refuses while the city
   runs or any terminal runs there (`gc stop` first). It refuses a core that is not the city's
-  (another user's, or one with another hc session or state root). Its
+  (another user's, or one whose core id is not the one hc keeps in the
+  city's state directory; where that id cannot be read, one with another
+  hc session or state root). Its
   start clears `server-stop`'s stopped mark, as a session start does.
 - **The binary.** The pinned install, unless the city's pack config
   (`<R>/pack/<city id>/config.json`) sets `hc_bin` and
@@ -163,22 +165,30 @@ checked against the app yet, so the sessions may not appear there.
   user, a fixed `PATH` (the hc binary's directory, then the system's), the
   locale, the discovery tuple, the pack-owned hc config, and the user
   manager's runtime directory and bus when they exist. No gc token or
-  provider credential reaches the core. Once `server start` returns, the
-  pack records the core it started (its pid, its process start time and
-  hc's core id, in a private file of the pack's state) and accepts a live
-  core that matches all of it, whatever that core's process environment
-  reads: on macOS hc runs the core as a launchd job with launchd's
-  environment, and under systemd older than 244 a unit's environment file
-  cannot be found from its process. A core the pack did not start, a pid
-  reused by another process or another core's state is judged by its
-  environment instead: `start` refuses one whose environment differs
-  (someone else started it) and names the fix; a core listening on another
-  socket for this session is refused too. A core hc placed under the
-  systemd user manager is judged by its unit's environment file (hc writes
-  the starter's environment to `$RUNTIME_DIRECTORY/environment`), not by
-  the manager's own environment block; a launchd job's environment never
-  shows its starter's, so on macOS a core the pack did not start is
-  refused (`restart-core` replaces it with one the pack starts). Where a
+  provider credential reaches the core. A running core is judged by the
+  environment it was started with: `start` refuses one whose environment
+  differs (someone else started it) and names the fix, and refuses a core
+  listening on another socket for this session too. A core hc placed under
+  the systemd user manager is judged by its unit's environment file (hc
+  writes the starter's environment to `$RUNTIME_DIRECTORY/environment`),
+  not by the manager's own environment block. Before systemd 244 a unit
+  has no `RUNTIME_DIRECTORY`, so the pack finds the unit
+  (`hc-serve-<8 hex>.service`) through the core's control group. A holder
+  that restarts a crashed core hands the manager's block on in the new
+  core's file, so the names in that block (read from the manager) are not
+  counted against it. On macOS hc runs the core as a launchd job with
+  launchd's environment, which never shows its starter's; its command line
+  names the process that asked launchd for it. So the pack records the
+  core its own `herdr-core server start` (or `server restart`) asked for:
+  its pid, its process start time and hc's core id, in a private file of
+  the pack's state. A live core that matches all of it is the pack's. A
+  core a holder of the city restarted after a crash is judged by that
+  holder's environment, which `ps -E` shows. Every other launchd core is
+  refused: one someone else's hc started, including one that came up
+  while the pack's own start ran, and one whose pid was reused.
+  `restart-core` replaces a refused core with one the pack starts; it
+  knows the city's core by the core id hc keeps in the city's state
+  directory, so it needs no process environment. Where a
   process's environment is read cut at whitespace (`ps -E`), a state root
   with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at

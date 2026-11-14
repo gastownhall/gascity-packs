@@ -73,8 +73,14 @@ def test_status_reports_a_core_started_outside_the_pack(city: City) -> None:
 # --- restart-core ----------------------------------------------------------------------
 
 
+def other_state(city: City) -> None:
+    """The core answering is of another state: its core id is not the one in the city's core.json."""
+    (Path(city.paths.state_dir) / "core.json").write_text(json.dumps({"id": "0" * 32, "name": "x"}))
+
+
 def test_restart_core_refuses_a_core_that_is_not_the_citys(city: City) -> None:
     assert city.procs.core_environ is not None
+    other_state(city)
     city.procs.core_environ["HC_SESSION"] = "someone-elses"
     code, _, err = run(city, "restart-core")
     assert code == 1 and "not this city's core" in err[0] and "HC_SESSION" in err[0]
@@ -83,6 +89,7 @@ def test_restart_core_refuses_a_core_that_is_not_the_citys(city: City) -> None:
 
 def test_restart_core_refuses_a_core_of_another_state_root(city: City) -> None:
     assert city.procs.core_environ is not None
+    other_state(city)
     city.procs.core_environ["XDG_STATE_HOME"] = "/elsewhere"
     code, _, err = run(city, "restart-core")
     assert code == 1 and "XDG_STATE_HOME" in err[0]

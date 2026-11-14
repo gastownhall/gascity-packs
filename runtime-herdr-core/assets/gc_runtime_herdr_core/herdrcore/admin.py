@@ -21,10 +21,10 @@ from ..hc.errors import HcError, HcUnreachable
 from ..hc.types import StatusResult, Terminal
 from ..hc.version import Version, VersionPolicy
 from ..rpp.cancel import CancelToken, Deadline
+from ..rpp.jsonval import JsonObject, JsonShapeError, loads
 from ..rpp.ops import OpRequest
 from ..rpp.redact import Redactor
 from ..rpp.statedir import DOCTOR_CITY_ENV, StateDirError
-from . import coreid
 from .config import TEST_HOME_ENV, pin_policy, read_private_file, test_mode
 from .context import Host, OpContext, live_host
 from .naming import LABEL_CITY, city_label
@@ -138,26 +138,50 @@ class Ownership:
     """Why it is not (empty when it is)."""
 
 
-def ownership(ctx: OpContext, status: StatusResult) -> Ownership:
-    """Whether the core behind ``status`` is this city's own: run by this user,
-    with the city's ``HC_SESSION`` and ``XDG_STATE_HOME``. A core of the city
-    started with the wrong environment otherwise is still the city's (that is
-    what ``restart-core`` fixes); one that is not cannot be told apart from a
-    person's or another city's core, and is never stopped by the pack. The
-    core the pack started (:mod:`.coreid`) is the city's whatever its
-    process environment reads (a launchd job's on macOS)."""
-    if coreid.started_by_pack(ctx, status):
-        return Ownership(True, "")
+CORE_IDENTITY_FILE: Final = "core.json"
+"""hc's permanent identity of the core of a state directory (hc ``server.rs``
+``load_identity``): ``{"id": ..., "name": ...}``, kept across restarts."""
+
+
+def state_core_id(ctx: OpContext) -> Optional[str]:
+    """The core id hc keeps in the city's state directory; None when there is
+    none or it cannot be read."""
     try:
-        snapshot = ctx.host.procs.snapshot()
-        env = ctx.host.procs.environ(status.pid)
+        raw = read_private_file(os.path.join(ctx.paths.state_dir, CORE_IDENTITY_FILE), limit=1 << 16)
+        if raw is None:
+            return None
+        core_id = JsonObject.of(loads(raw)).str_or("id", "")
+    except (JsonShapeError, StateDirError, ValueError):
+        return None
+    return core_id or None
+
+
+def ownership(ctx: OpContext, status: StatusResult) -> Ownership:
+    """Whether the core behind ``status`` is this city's own: run by this
+    user, and with the core id hc keeps in the city's state directory (it
+    answers on the city's private socket), or, where that id cannot be read,
+    with the city's ``HC_SESSION`` and ``XDG_STATE_HOME`` in its
+    environment. A core of the city started with the wrong environment
+    otherwise is still the city's (that is what ``restart-core`` fixes); one
+    that is not cannot be told apart from a person's or another city's core,
+    and is never stopped by the pack. The id needs no process environment,
+    which a core hc placed under launchd (macOS) does not show."""
+    try:
+        proc = ctx.host.procs.process(status.pid)
     except ProcError as err:
         return Ownership(False, f"its process cannot be read ({err})")
-    proc = snapshot.get(status.pid)
-    if proc is None or env is None:
+    if proc is None:
         return Ownership(False, f"its process (pid {status.pid}) cannot be found")
     if proc.uid != os.getuid():
         return Ownership(False, f"it runs as uid {proc.uid}")
+    if state_core_id(ctx) == status.core.id:
+        return Ownership(True, "")
+    try:
+        env = ctx.host.procs.environ(status.pid)
+    except ProcError as err:
+        return Ownership(False, f"its process cannot be read ({err})")
+    if env is None:
+        return Ownership(False, f"its process (pid {status.pid}) cannot be found")
     for key, want in (("HC_SESSION", ctx.paths.session), ("XDG_STATE_HOME", ctx.paths.state_root)):
         if env.get(key) != want:
             return Ownership(False, f"its {key} is not this city's")

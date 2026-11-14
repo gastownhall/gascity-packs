@@ -113,7 +113,15 @@ class DoctorCity:
         ctx = admin_context(self.env, admin_host(self.env, sys.executable), name="t", deadline_s=5, cancel=CancelToken())
         return core_env(ctx, str(self.hc_bin))
 
-    def start_core(self, *, version: str = "0.1.19", environ: Optional[Dict[str, str]] = None, exe: Optional[str] = None, cgroup: Optional[str] = None) -> FakeHc:
+    def start_core(
+        self,
+        *,
+        version: str = "0.1.19",
+        environ: Optional[Dict[str, str]] = None,
+        exe: Optional[str] = None,
+        cgroup: Optional[str] = None,
+        argv: Optional[List[str]] = None,
+    ) -> FakeHc:
         """Serve the city's socket with a core of ``version`` that runs, by
         default, the pack's install of that version."""
         ensure_dirs(self.paths)
@@ -123,7 +131,7 @@ class DoctorCity:
             self.proc,
             CORE_PID,
             ppid=1,
-            argv=[str(self.hc_bin), "serve"],
+            argv=argv or [str(self.hc_bin), "serve"],
             env=self.expected_core_env() if environ is None else environ,
             exe=exe or str(self.install_root / version / "herdr-core"),
             cgroup=cgroup,
@@ -373,8 +381,8 @@ def test_hc_core_errors_on_a_foreign_core(dc: DoctorCity) -> None:
 
 
 def test_hc_core_passes_for_the_core_the_pack_started_whatever_its_environment_reads(dc: DoctorCity) -> None:
-    # hc's core on macOS runs with launchd's environment; the pack knows it
-    # by the identity it recorded when it started it.
+    # hc's core on macOS runs as a launchd job with launchd's environment;
+    # the pack knows it by the identity it recorded when its hc started it.
     from fakehc.procfs import add_boot
 
     from gc_runtime_herdr_core.herdrcore import coreid
@@ -382,7 +390,8 @@ def test_hc_core_passes_for_the_core_the_pack_started_whatever_its_environment_r
     dc.install_pinned()
     dc.run_city()
     launchd = {"HOME": "/Users/u", "PATH": "/usr/bin:/bin", "SHELL": "/bin/zsh", "XPC_SERVICE_NAME": "0"}
-    fake = dc.start_core(environ=launchd)
+    ready = f"/tmp/hc-launchd-4242-{time.time_ns()}-{'a' * 32}/ready"
+    fake = dc.start_core(environ=launchd, argv=[str(dc.hc_bin), "--hc-launchd", ready])
     add_boot(dc.proc, "boot-1")
     code, lines = dc.run("hc-core")
     assert code == 2 and "restart-core" in lines[0], lines

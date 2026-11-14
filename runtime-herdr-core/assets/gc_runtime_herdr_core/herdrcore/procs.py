@@ -50,6 +50,7 @@ the session's stop.
 
 from __future__ import annotations
 
+import calendar
 import os
 import signal
 import subprocess
@@ -71,6 +72,12 @@ titled ``tmux: server``). Exact, path-stripped: a ``tmux-*`` wrapper may be
 an agent."""
 
 _PS_TIMEOUT_S: Final = 2.0
+
+PS_ENV: Final[Mapping[str, str]] = {"PATH": "/usr/bin:/bin", "TZ": "UTC0", "LC_ALL": "C"}
+"""The whole environment ``ps`` runs with. ``lstart`` is printed in the
+reading process's time zone and locale, so every reader prints it in UTC
+and English: a start token then reads the same in every process, whatever
+its zone or locale, and across a change of the host's zone."""
 
 
 class ProcError(Exception):
@@ -363,7 +370,7 @@ class LinuxProcs(ProcSource):
 
 
 class PsProcs(ProcSource):
-    """``ps`` on hosts without ``/proc`` (macOS)."""
+    """``ps`` on hosts without ``/proc`` (macOS), run under :data:`PS_ENV`."""
 
     lossy_environ = True
 
@@ -371,6 +378,7 @@ class PsProcs(ProcSource):
         try:
             done = subprocess.run(
                 ["ps", *args],
+                env=dict(PS_ENV),
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 timeout=_PS_TIMEOUT_S,
@@ -416,9 +424,9 @@ class PsProcs(ProcSource):
         return out
 
     def started_ms(self, proc: Proc) -> Optional[int]:
-        """``lstart`` ("Mon Nov 9 08:00:00 2026", local time), to the second."""
+        """``lstart`` ("Mon Nov 9 08:00:00 2026", UTC: :data:`PS_ENV`), to the second."""
         try:
-            return int(time.mktime(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y"))) * 1000
+            return calendar.timegm(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y")) * 1000
         except (ValueError, OverflowError):
             return None
 

@@ -9,10 +9,12 @@ as the executable would, and returns its exit code, stdout and stderr.
 from __future__ import annotations
 
 import io
+import json
 import os
 import sys
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Mapping, Optional, Set, Tuple
@@ -59,14 +61,22 @@ AMBIENT_TMUX = _ambient_tmux()
 
 class CoreEnvProcs(ProcSource):
     """The live process table, except that the in-process core's pid (this
-    process) reads as having ``core_environ``, and a tmux the test run
-    itself runs under reads as an ordinary process: tmux is fenced with its
-    whole subtree, which would fence every process a test starts."""
+    process) reads as having ``core_environ``, and, when set, ``core_argv``
+    and ``core_cgroup``, and a tmux the test run itself runs under reads as
+    an ordinary process: tmux is fenced with its whole subtree, which would
+    fence every process a test starts."""
 
     def __init__(self, inner: ProcSource) -> None:
         self.inner = inner
         self.core_environ: Optional[Dict[str, str]] = None
+        self.core_argv: Optional[Tuple[str, ...]] = None
+        self.core_cgroup: Optional[str] = None
         self.killed: List[int] = []
+
+    def _core(self, proc: Optional[Proc]) -> Optional[Proc]:
+        if proc is None or proc.pid != os.getpid() or self.core_argv is None:
+            return proc
+        return replace(proc, argv=self.core_argv)
 
     def snapshot(self) -> Dict[int, Proc]:
         out = self.inner.snapshot()
@@ -74,10 +84,18 @@ class CoreEnvProcs(ProcSource):
             proc = out.get(pid)
             if proc is not None and proc.start == start:
                 out[pid] = replace(proc, comm="test-runner", argv=("test-runner",))
+        core = self._core(out.get(os.getpid()))
+        if core is not None:
+            out[core.pid] = core
         return out
 
     def process(self, pid: int) -> Optional[Proc]:
-        return self.inner.process(pid)
+        return self._core(self.inner.process(pid))
+
+    def cgroup(self, pid: int) -> Optional[str]:
+        if pid == os.getpid() and self.core_cgroup is not None:
+            return self.core_cgroup
+        return self.inner.cgroup(pid)
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         if pid == os.getpid():
@@ -116,6 +134,8 @@ class City:
     procs: CoreEnvProcs
     fake: Optional[FakeHc] = None
     now_ms: List[int] = field(default_factory=list)
+    manager_block: List[FrozenSet[str]] = field(default_factory=list)
+    """The systemd user manager's block names the host reads (none: it cannot be read)."""
 
     @property
     def spawn_root(self) -> Path:
@@ -142,7 +162,8 @@ class City:
     def start_core(self, **kwargs: object) -> FakeHc:
         """Serve the city's socket with an in-process fake-hc the pack accepts as its own."""
         ensure_dirs(self.paths)
-        fake = FakeHc(self.paths.socket, **kwargs)  # type: ignore[arg-type]
+        core_id = write_core_json(self.paths)
+        fake = FakeHc(self.paths.socket, core_id=core_id, **kwargs)  # type: ignore[arg-type]
         fake.start()
         self.fake = fake
         self.procs.core_environ = core_env(self.context(), self.env["GC_HC_TEST_BIN"])
@@ -224,8 +245,28 @@ def make_city(tmp: Path, home: Path, *, city_path: str = "/cities/test", procs: 
     }
     paths = resolve_paths(env, machine=MACHINE, home=lambda: str(home))
     wrapped = CoreEnvProcs(procs or LinuxProcs())
-    host = Host(procs=wrapped, pack_dir=str(PACK_ROOT), python=sys.executable, machine=MACHINE, home=lambda: str(home))
-    return City(root=tmp, home=home, env=env, paths=paths, host=host, procs=wrapped)
+    block: List[FrozenSet[str]] = []
+    host = Host(
+        procs=wrapped,
+        pack_dir=str(PACK_ROOT),
+        python=sys.executable,
+        machine=MACHINE,
+        home=lambda: str(home),
+        manager_keys=lambda run_user: block[-1] if block else None,
+    )
+    return City(root=tmp, home=home, env=env, paths=paths, host=host, procs=wrapped, manager_block=block)
+
+
+def write_core_json(paths: HcPaths) -> str:
+    """The city's permanent core id in its state directory, as hc keeps it
+    (``server.rs`` ``load_identity``); made when there is none."""
+    path = Path(paths.state_dir) / "core.json"
+    if path.exists():
+        return str(json.loads(path.read_text())["id"])
+    core_id = uuid.uuid4().hex
+    path.write_text(json.dumps({"id": core_id, "name": "fakehost"}))
+    path.chmod(0o600)
+    return core_id
 
 
 def in_thread(fn: "object") -> threading.Thread:

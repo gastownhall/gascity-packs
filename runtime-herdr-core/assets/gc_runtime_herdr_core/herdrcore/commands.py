@@ -273,7 +273,7 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
         if time.monotonic() >= end:
             raise CommandError(f"the city's core does not run herdr-core {pin.version} after the restart")
         ctx.request.cancel.pause(0.1)
-    record_started_core(ctx, since_ms)  # a new core process, when the handover started one
+    record_started_core(ctx, starter_pid=done.pid, since_ms=since_ms)  # hc server restart starts the new core
     out(f"handed the city's core over from herdr-core {hello.version} to {pin.version}; its sessions kept running")
 
 
