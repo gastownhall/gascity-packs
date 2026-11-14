@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 import pytest
 
 PACK_ROOT = Path(__file__).resolve().parents[2]
-for _entry in (PACK_ROOT / "assets", PACK_ROOT / "tests", PACK_ROOT / "tests" / "unit"):
+for _entry in (PACK_ROOT / "assets", PACK_ROOT / "tests", PACK_ROOT / "tests" / "unit", PACK_ROOT / "tests" / "live"):
     if str(_entry) not in sys.path:
         sys.path.insert(0, str(_entry))
 
