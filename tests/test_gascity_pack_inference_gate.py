@@ -474,16 +474,15 @@ def test_dispatch_inference_workflow_is_manual_or_external_only() -> None:
     assert "ANTHROPIC_API_KEY:" not in workflow
 
 
-def test_ci_workflows_use_blacksmith_runner_labels() -> None:
-    expected = {
-        ".github/workflows/ci.yml": "runs-on: blacksmith-32vcpu-ubuntu-2404",
-        ".github/workflows/codeql.yml": "runs-on: blacksmith-32vcpu-ubuntu-2404",
-        ".github/workflows/pack-release-compatibility.yml": "runs-on: blacksmith-32vcpu-ubuntu-2404",
-    }
-
-    for relative_path, marker in expected.items():
-        workflow = (gascity_pack_inference_gate.REPO_ROOT / relative_path).read_text(encoding="utf-8")
-        assert marker in workflow
+def test_pack_ci_uses_blacksmith_upstream_and_github_runners_in_forks() -> None:
+    for name in ("ci", "codeql", "pack-release-compatibility"):
+        workflow = (
+            gascity_pack_inference_gate.REPO_ROOT / f".github/workflows/{name}.yml"
+        ).read_text(encoding="utf-8")
+        assert (
+            "github.repository == 'gastownhall/gascity-packs' "
+            "&& 'blacksmith-32vcpu-ubuntu-2404' || 'ubuntu-24.04'"
+        ) in workflow
 
 
 def test_readme_includes_blacksmith_sponsor_badge() -> None:
