@@ -112,7 +112,9 @@ def note_screens(ctx: OpContext, screens: Mapping[str, str]) -> Dict[str, Seen]:
     """What the screens of many incarnations read now (object to screen), in
     one load and at most one store of the cache; returns the whole updated
     cache. When the cache cannot be locked, the entries are computed from an
-    unlocked read and not stored."""
+    unlocked read and not stored. With no screen to note it only reads, unlocked."""
+    if not screens:
+        return _load(ctx)
     now = ctx.host.now_ms()
     try:
         with ctx.lock("activity", shared=False, wait_s=_LOCK_WAIT_S):

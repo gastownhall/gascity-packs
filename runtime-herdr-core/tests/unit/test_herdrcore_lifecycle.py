@@ -10,7 +10,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 from cityharness import City, make_city
@@ -443,6 +443,30 @@ def test_inventory_loads_and_stores_the_activity_cache_once_per_pass(
     calls.update(load=0, store=0)
     city.run("inventory")
     assert calls == {"load": 1, "store": 0}, "nothing changed: nothing stored"
+
+
+def test_a_pass_with_no_screen_to_note_takes_no_activity_lock(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every box reported its own status (or none runs): the pass only reads
+    the cache, and never waits on the lock that input notes and other
+    inventories take."""
+    from gc_runtime_herdr_core.herdrcore import activity
+    from gc_runtime_herdr_core.herdrcore.context import OpContext
+
+    ctx = city.context()
+    locked: List[str] = []
+    real_lock = OpContext.lock
+
+    def counted_lock(self: OpContext, name: str, **kwargs: Any) -> Any:
+        locked.append(name)
+        return real_lock(self, name, **kwargs)
+
+    monkeypatch.setattr(OpContext, "lock", counted_lock)
+    assert activity.note_screens(ctx, {}) == {}
+    assert locked == []
+    activity.note_screens(ctx, {"obj-1": "screen"})
+    assert locked == ["activity"]
+    assert set(activity.note_screens(ctx, {})) == {"obj-1"}
+    assert locked == ["activity"]
 
 
 def test_a_lost_run_reply_is_found_by_its_object_never_sent_again(city: City) -> None:
