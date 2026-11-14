@@ -83,6 +83,11 @@ jobs:
           GC_TEST_BIN="$(go env GOPATH)/bin/gc" \
             python3 -m pytest tests/test_gastown_lint_findings.py -q
 
+      - name: Install Gastown shell test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
       - name: Run Gastown shell tests
         run: |
           for test_script in gastown/tests/test_*.sh; do

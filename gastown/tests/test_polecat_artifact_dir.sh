@@ -806,8 +806,9 @@ test_workspace_collision_fails_closed_without_alternate() {
                 "runtime drain-ack")
                     return 0
                     ;;
-                "$bd_subcommand update "*)
-                    fail "canonical collision reached a metadata update"
+                "$bd_subcommand update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main" | \
+                "$bd_subcommand update ac-safe1 --unset-metadata handoff_stage")
+                    return 0
                     ;;
                 *)
                     fail "unexpected gc call during collision test: $*"
@@ -822,6 +823,12 @@ test_workspace_collision_fails_closed_without_alternate() {
         source "$setup"
     ); then
         fail "invalid canonical-path collision did not stop workspace creation"
+    fi
+
+    if grep -F "$bd_subcommand update " "$calls" | grep -qvFx \
+        -e "$bd_subcommand update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main" \
+        -e "$bd_subcommand update ac-safe1 --unset-metadata handoff_stage"; then
+        fail "canonical collision attempted to publish artifact metadata"
     fi
 
     grep -qF 'preserve me' "$canonical/recovery.txt" ||
@@ -872,8 +879,9 @@ test_workspace_rejects_redirected_artifact_root_before_creation() {
                 "runtime drain-ack")
                     return 0
                     ;;
-                "$bd_subcommand update "*)
-                    fail "redirected artifact root reached a metadata update"
+                "$bd_subcommand update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main" | \
+                "$bd_subcommand update ac-safe1 --unset-metadata handoff_stage")
+                    return 0
                     ;;
                 *)
                     fail "unexpected gc call during redirect test: $*"
@@ -888,6 +896,12 @@ test_workspace_rejects_redirected_artifact_root_before_creation() {
         source "$setup"
     ); then
         fail "redirected artifact root did not stop workspace creation"
+    fi
+
+    if grep -F "$bd_subcommand update " "$calls" | grep -qvFx \
+        -e "$bd_subcommand update ac-safe1 --set-metadata base_ref=refs/remotes/origin/main" \
+        -e "$bd_subcommand update ac-safe1 --unset-metadata handoff_stage"; then
+        fail "redirected artifact root attempted to publish artifact metadata"
     fi
 
     [[ ! -e "$redirected/worktrees" ]] ||
