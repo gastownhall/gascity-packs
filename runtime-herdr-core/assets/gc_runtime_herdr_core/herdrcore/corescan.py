@@ -11,7 +11,9 @@ process table holding no holder of the city's socket does: then no program
 of the city's core runs.
 
 The core itself is ``<hc> serve``, started with the pack's discovery tuple
-(:mod:`.core`), so its environment names the city's socket. A core of the
+(:mod:`.core`), so its environment names the city's socket, or, where its
+process environment does not show that (a launchd job on macOS), it is the
+process the pack recorded when it started it (:mod:`.coreid`). A core of the
 city's session may listen on another socket (``core.lock`` names it,
 herdr-core #200); its holders are then beside that one, so while it
 answers, what runs cannot be told from the city's socket.
@@ -28,6 +30,7 @@ from typing import Final, List, Optional, Sequence
 
 from ..hc.paths import HcPaths
 from ..rpp.statedir import StateDirError
+from . import coreid
 from .config import read_private_file
 from .context import OpContext
 from .procs import Proc, ProcError, Snapshot
@@ -79,8 +82,9 @@ def holders(snapshot: Snapshot, paths: HcPaths) -> List[Proc]:
 
 def core_processes(ctx: OpContext, snapshot: Snapshot) -> List[Proc]:
     """The city's core processes that run now: ``serve`` with the city's
-    socket in their environment. One whose environment cannot be read is
-    left out."""
+    socket in their environment, and the core the pack recorded. One whose
+    environment cannot be read and that the pack did not record is left
+    out."""
     uid = os.getuid()
     candidates = [
         proc
@@ -92,7 +96,11 @@ def core_processes(ctx: OpContext, snapshot: Snapshot) -> List[Proc]:
         and _verb_at(proc.argv, SERVE_VERB) is not None
     ]
     envs = ctx.host.procs.environs(proc.pid for proc in candidates)
-    return [proc for proc in candidates if envs.get(proc.pid, {}).get("HC_SOCKET") == ctx.paths.socket]
+    return [
+        proc
+        for proc in candidates
+        if envs.get(proc.pid, {}).get("HC_SOCKET") == ctx.paths.socket or coreid.is_recorded(ctx, proc)
+    ]
 
 
 LOCK_PROBE_S: Final = 0.5

@@ -377,7 +377,10 @@ def test_start_accepts_its_own_core_when_fake_hc_places_it_like_systemd(short_tm
         started = core_environ(paths.socket)
         assert "RUNTIME_DIRECTORY" in started and "INVOCATION_ID" in started and "SHELL" in started
         assert started["XDG_RUNTIME_DIR"] == str(run_user)
-        # A unit started by someone else (its environment file names a secret) is refused.
+        # A unit started by someone else (its environment file names a secret,
+        # and the pack recorded no such core) is refused.
+        for identity in Path(paths.state_root).rglob("core-identity.json"):
+            identity.unlink()
         unit_file = Path(started["RUNTIME_DIRECTORY"]) / "environment"
         unit_file.write_text(unit_file.read_text() + 'OPENAI_API_KEY="sk-x"\n')
         refused = invoke(env, "start", "mc-b", stdin=b'{"command":"cat"}')

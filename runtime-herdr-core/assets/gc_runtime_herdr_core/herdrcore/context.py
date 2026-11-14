@@ -10,8 +10,8 @@ table. The test-only overrides (``GC_HC_TEST_*``) are honoured only under
 
 The pack's state for a city lives in ``R/pack/<city id>/``: ``meta/`` (one
 file per incarnation), ``locks/``, ``shim/bin/`` (the in-agent ``hc``),
-``activity.json``, ``userscope.json`` and ``kick.json``, all private to the
-user.
+``activity.json``, ``userscope.json``, ``kick.json``, ``parked.json`` and
+``core-identity.json``, all private to the user.
 """
 
 from __future__ import annotations

@@ -62,7 +62,7 @@ runtime-herdr-core/
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
         lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
-        inputs.py screen.py readiness.py server.py corescan.py
+        inputs.py screen.py readiness.py server.py corescan.py coreid.py
         pin.py install.py admin.py commands.py doctor.py appvis.py infra_argv.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
@@ -163,14 +163,24 @@ checked against the app yet, so the sessions may not appear there.
   user, a fixed `PATH` (the hc binary's directory, then the system's), the
   locale, the discovery tuple, the pack-owned hc config, and the user
   manager's runtime directory and bus when they exist. No gc token or
-  provider credential reaches the core. `start` refuses a core whose
-  environment differs (someone else started it) and names the fix; a core
-  listening on another socket for this session is refused too. A core hc
-  placed under the systemd user manager is judged by its unit's environment
-  file (hc writes the starter's environment to
-  `$RUNTIME_DIRECTORY/environment`), not by the manager's own environment
-  block. On macOS, where a process's environment is read cut at
-  whitespace, a state root with whitespace is refused. A read that
+  provider credential reaches the core. Once `server start` returns, the
+  pack records the core it started (its pid, its process start time and
+  hc's core id, in a private file of the pack's state) and accepts a live
+  core that matches all of it, whatever that core's process environment
+  reads: on macOS hc runs the core as a launchd job with launchd's
+  environment, and under systemd older than 244 a unit's environment file
+  cannot be found from its process. A core the pack did not start, a pid
+  reused by another process or another core's state is judged by its
+  environment instead: `start` refuses one whose environment differs
+  (someone else started it) and names the fix; a core listening on another
+  socket for this session is refused too. A core hc placed under the
+  systemd user manager is judged by its unit's environment file (hc writes
+  the starter's environment to `$RUNTIME_DIRECTORY/environment`), not by
+  the manager's own environment block; a launchd job's environment never
+  shows its starter's, so on macOS a core the pack did not start is
+  refused (`restart-core` replaces it with one the pack starts). Where a
+  process's environment is read cut at whitespace (`ps -E`), a state root
+  with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
   most one at a time and none for five minutes after a failed start, and
   none while `server-stop` has parked the city (below).
@@ -357,8 +367,9 @@ checked against the app yet, so the sessions may not appear there.
 - **Activity.** A program that never reported OSC 7501 status is active
   when its screen changes: `inventory` and `get-last-activity` read the
   screen of each such running agent (hc keeps no output time). `inventory`
-  reads within its deadline, and a box whose screen it did not read on that
-  pass reads as active now, never at an old time.
+  reads within its deadline and stops when canceled, and reports no last
+  activity (`null`) for a box whose screen it did not read on that pass (a
+  failed read, the deadline), never an old time.
 - **Stop and kill-object** end the whole process tree: descendants captured
   before hc's kill, the incarnation's re-parented processes (a daemon a
   live agent started, every child of one already gone) found by its

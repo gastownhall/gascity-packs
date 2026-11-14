@@ -76,6 +76,9 @@ class CoreEnvProcs(ProcSource):
                 out[pid] = replace(proc, comm="test-runner", argv=("test-runner",))
         return out
 
+    def process(self, pid: int) -> Optional[Proc]:
+        return self.inner.process(pid)
+
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         if pid == os.getpid():
             return None if self.core_environ is None else dict(self.core_environ)

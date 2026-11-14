@@ -13,7 +13,11 @@ provider credential reaches the core or its programs.
 A core whose environment differs from that is **foreign** (a person's ``hc``,
 an in-agent CLI during a restart window, the Herdr app's autostart):
 ``start`` refuses to put sessions on it and names the fix. Reads stay
-permissive: they report what the core holds.
+permissive: they report what the core holds. Where a core's process
+environment does not show how it was started (a launchd job on macOS, a
+unit under systemd older than 244), the pack knows the core it started by
+the identity it recorded when it started it (:mod:`.coreid`); only a core
+the pack did not start is judged by its environment.
 
 A read that finds the core down answers unknown and **kicks** a detached
 start, at most one at a time per city and none for five minutes after a
@@ -53,10 +57,12 @@ from typing import Callable, Dict, Final, FrozenSet, Mapping, Optional
 
 from ..hc.errors import HcError, HcUnreachable
 from ..hc.paths import ensure_dirs
+from ..hc.types import StatusResult
 from ..rpp.flock import LockTimeout
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError
 from ..rpp.statedir import StateDirError
+from . import coreid
 from .attach import ATTACH_TERMINAL_KEYS
 from .command import run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
@@ -273,12 +279,15 @@ def check_core_lock(ctx: OpContext) -> None:
 
 
 def start_core(ctx: OpContext, hc_bin: str) -> None:
-    """``hc server start`` under the allowlist, then wait for the core's hello."""
+    """``hc server start`` under the allowlist, wait for the core's hello,
+    then record the core that answers as the one the pack started
+    (:func:`.coreid.record`)."""
     ensure_dirs(ctx.paths)
     write_hc_config(ctx.paths)
     budget = ctx.request.deadline.budget(CORE_START_WAIT_S)
     if budget <= 0:
         raise OpError("no time left to start the city's core")
+    since_ms = coreid.wall_ms()
     done = run_bounded(
         [hc_bin, "server", "start"],
         env=core_env(ctx, hc_bin),
@@ -294,11 +303,23 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
     while True:
         try:
             ctx.client().hello()
-            return
+            break
         except HcUnreachable:
             if time.monotonic() >= end:
                 raise OpError("the city's core did not answer after hc server start") from None
             ctx.request.cancel.pause(0.05)
+    record_started_core(ctx, since_ms)
+
+
+def record_started_core(ctx: OpContext, since_ms: int) -> None:
+    """Record the core that answers now as the one the pack started, when it
+    started at or after ``since_ms``. A core whose status cannot be read is
+    not recorded: it is then judged by its environment."""
+    try:
+        status = ctx.client().server_status()
+    except HcError:
+        return
+    coreid.record(ctx, status, since_ms=since_ms)
 
 
 # --- parking ---------------------------------------------------------------------------
@@ -330,16 +351,26 @@ def unpark(ctx: OpContext) -> None:
         raise OpError(f"cannot clear the city's stopped mark: {err}") from None
 
 
-def check_foreign(ctx: OpContext, hc_bin: str) -> None:
-    """Refuse the running core unless the pack started it with its allowlist."""
-    status = ctx.client().server_status()
+def foreign_core_reason(ctx: OpContext, status: StatusResult, hc_bin: str) -> Optional[str]:
+    """Why the core behind ``status`` is not the pack's, or None. The core
+    the pack started (its recorded identity) is the pack's whatever its
+    process environment reads; any other core is judged by that environment
+    (:func:`foreign_reason`), and one whose environment cannot be read is
+    not the pack's."""
+    if coreid.started_by_pack(ctx, status):
+        return None
     try:
         actual = ctx.host.procs.environ(status.pid)
     except ProcError as err:
-        raise OpError(f"cannot read the city core's environment ({err}); {FOREIGN_FIX}") from None
+        return f"its environment cannot be read: {err}"
     if actual is None:
-        raise OpError(f"cannot read the city core's environment (pid {status.pid}); {FOREIGN_FIX}")
-    reason = foreign_reason(actual, core_env(ctx, hc_bin))
+        return f"its environment cannot be read (pid {status.pid})"
+    return foreign_reason(actual, core_env(ctx, hc_bin))
+
+
+def check_foreign(ctx: OpContext, hc_bin: str) -> None:
+    """Refuse the running core unless the pack started it."""
+    reason = foreign_core_reason(ctx, ctx.client().server_status(), hc_bin)
     if reason is not None:
         raise OpError(f"{FOREIGN_FIX} ({reason})")
 

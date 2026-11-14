@@ -372,6 +372,31 @@ def test_hc_core_errors_on_a_foreign_core(dc: DoctorCity) -> None:
     assert "OPENAI_API_KEY" in lines[0] and "sk-secret-value" not in "\n".join(lines)
 
 
+def test_hc_core_passes_for_the_core_the_pack_started_whatever_its_environment_reads(dc: DoctorCity) -> None:
+    # hc's core on macOS runs with launchd's environment; the pack knows it
+    # by the identity it recorded when it started it.
+    from fakehc.procfs import add_boot
+
+    from gc_runtime_herdr_core.herdrcore import coreid
+
+    dc.install_pinned()
+    dc.run_city()
+    launchd = {"HOME": "/Users/u", "PATH": "/usr/bin:/bin", "SHELL": "/bin/zsh", "XPC_SERVICE_NAME": "0"}
+    fake = dc.start_core(environ=launchd)
+    add_boot(dc.proc, "boot-1")
+    code, lines = dc.run("hc-core")
+    assert code == 2 and "restart-core" in lines[0], lines
+    ctx = admin_context(dc.env, admin_host(dc.env, sys.executable), name="t", deadline_s=5, cancel=CancelToken())
+    core_id = ctx.client().server_status().core.id
+    coreid.write(ctx, coreid.CoreIdentity(pid=CORE_PID, start="1000", boot="boot-1", core_id=core_id))
+    code, lines = dc.run("hc-core")
+    assert (code, lines[0]) == (0, "the city's core runs herdr-core 0.1.19"), lines
+    coreid.write(ctx, coreid.CoreIdentity(pid=CORE_PID, start="999", boot="boot-1", core_id=core_id))
+    code, lines = dc.run("hc-core")
+    assert code == 2 and "restart-core" in lines[0], lines
+    assert fake.call_count("server.stop") == 0
+
+
 def test_hc_core_errors_on_a_core_running_another_binary(dc: DoctorCity) -> None:
     dc.install_pinned()
     dc.start_core(exe="/home/someone/.local/bin/herdr-core")

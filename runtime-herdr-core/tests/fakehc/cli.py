@@ -89,10 +89,32 @@ passed on to the core it starts (a real hc's version is its binary's)."""
 NEXT_VERSION_FILE = "fake-next-version"
 """Where ``server restart`` leaves this build's version for the running core."""
 
-SYSTEMD_ENV = "FAKEHC_SYSTEMD"
-"""Set by :func:`write_launcher`: place the core as hc does under a user
-manager, in the core's ``XDG_RUNTIME_DIR`` (a test's stand-in for
-``/run/user/<uid>``)."""
+PLACEMENT_ENV = "FAKEHC_PLACEMENT"
+"""Set by :func:`write_launcher`: where ``server start`` places the core.
+``systemd`` places it as hc does under a user manager, in the core's
+``XDG_RUNTIME_DIR`` (a test's stand-in for ``/run/user/<uid>``);
+``systemd-legacy`` as under systemd older than 244, which names no
+``RUNTIME_DIRECTORY``; ``launchd`` as hc does on macOS, where the core
+process runs with launchd's environment and takes the starter's only
+in-process."""
+
+PLACEMENTS = ("systemd", "systemd-legacy", "launchd")
+
+LAUNCHD_BLOCK = {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "SHELL": "/bin/zsh",
+    "TMPDIR": "/var/folders/zz/T/",
+    "SSH_AUTH_SOCK": "/private/tmp/com.apple.launchd.x/Listeners",
+    "XPC_SERVICE_NAME": "0",
+    "XPC_FLAGS": "0x0",
+    "__CF_USER_TEXT_ENCODING": "0x1F5:0x0:0x0",
+}
+"""What a launchd job runs with besides the user's HOME, USER and LOGNAME
+(launchd's defaults; values synthetic)."""
+
+ENV_FILE_FLAG = "--env-file"
+"""``serve``'s stand-in for hc restoring its starter's environment in-process
+on macOS: the starter's environment, read from a private file and removed."""
 
 SERVICE = (
     "INVOCATION_ID", "RUNTIME_DIRECTORY", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "MANAGERPID", "MANAGERPIDFDID",
@@ -115,13 +137,20 @@ def _quoted(value: str) -> str:
     return "".join("\\" + ch if ch in '\\"$`' else ch for ch in value)
 
 
-def systemd_child_env(env: Dict[str, str], root: str) -> Dict[str, str]:  # root: the runtime dir
+def _starter(env: Dict[str, str]) -> Dict[str, str]:
+    """The starter's environment as the core takes it: none of fake-hc's own settings."""
+    return {k: v for k, v in env.items() if k not in ("HC_SCOPE", PLACEMENT_ENV, VERSION_ENV)}
+
+
+def systemd_child_env(env: Dict[str, str], root: str, *, legacy: bool = False) -> Dict[str, str]:  # root: the runtime dir
     """A systemd-placed core's environ, built as hc's ``platform::systemd::spawn``
     does: the starter's environment (no service variables) plus the runtime
     dir and HC_RUNTIME goes to ``<RuntimeDirectory>/environment`` (0600 in a
     0700 dir); the unit then runs with the manager's block, that file, and
-    systemd's own service variables."""
-    starter = {k: v for k, v in env.items() if k not in SERVICE and k not in ("HC_SCOPE", SYSTEMD_ENV, VERSION_ENV)}
+    systemd's own service variables. ``legacy``: systemd older than 244,
+    which sets no RUNTIME_DIRECTORY (nor SYSTEMD_EXEC_PID, 248, nor the
+    MEMORY_PRESSURE_* pair, 254)."""
+    starter = {k: v for k, v in _starter(env).items() if k not in SERVICE}
     starter["XDG_RUNTIME_DIR"] = root
     starter["HC_RUNTIME"] = "1"
     unit_dir = os.path.join(root, f"hc-serve-{uuid.uuid4().hex[:8]}")
@@ -131,6 +160,9 @@ def systemd_child_env(env: Dict[str, str], root: str) -> Dict[str, str]:  # root
         handle.write("".join(f'{k}="{_quoted(v)}"\n' for k, v in sorted(starter.items())))
     child = dict(MANAGER_BLOCK)
     child.update(starter)
+    if legacy:
+        child.update({"INVOCATION_ID": uuid.uuid4().hex, "JOURNAL_STREAM": "8:12345", "MANAGERPID": "1234"})
+        return child
     child.update(
         {
             "INVOCATION_ID": uuid.uuid4().hex,
@@ -144,20 +176,39 @@ def systemd_child_env(env: Dict[str, str], root: str) -> Dict[str, str]:  # root
     return child
 
 
+def launchd_child_env(env: Dict[str, str]) -> Dict[str, str]:
+    """A launchd-placed core's environ: launchd's, never the starter's."""
+    child = dict(LAUNCHD_BLOCK)
+    for key in ("HOME", "USER", "LOGNAME"):
+        if key in env:
+            child[key] = env[key]
+    return child
+
+
 def server_start(env: Dict[str, str]) -> int:
     paths = _paths(env)
     if _answers(paths["socket"]):
         return _print_status(paths["socket"])
     os.makedirs(paths["state"], mode=0o700, exist_ok=True)
     runtime_dir = env.get("XDG_RUNTIME_DIR", "")
-    if env.get(SYSTEMD_ENV) == "1" and runtime_dir:
-        child_env = systemd_child_env(env, runtime_dir)
+    placement = env.get(PLACEMENT_ENV, "")
+    extra: List[str] = []
+    if placement in ("systemd", "systemd-legacy") and runtime_dir:
+        child_env = systemd_child_env(env, runtime_dir, legacy=placement == "systemd-legacy")
+    elif placement == "launchd":
+        child_env = launchd_child_env(env)
+        starter = dict(_starter(env), HC_RUNTIME="1")
+        env_file = os.path.join(paths["state"], f"launchd-env.{uuid.uuid4().hex[:8]}.json")
+        fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(starter, handle)
+        extra = [ENV_FILE_FLAG, env_file]
     else:
-        child_env = {k: v for k, v in env.items() if k not in ("HC_SCOPE", SYSTEMD_ENV, VERSION_ENV)}
+        child_env = _starter(env)
         child_env["HC_RUNTIME"] = "1"
     with open(os.path.join(paths["state"], "core.log"), "ab") as log:
         subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), "serve", env.get(VERSION_ENV, "") or "0.1.19"],
+            [sys.executable, os.path.abspath(__file__), "serve", env.get(VERSION_ENV, "") or "0.1.19", *extra],
             env=child_env,
             cwd="/",
             stdin=subprocess.DEVNULL,
@@ -287,6 +338,10 @@ def main(argv: List[str], env: Dict[str, str]) -> int:
         if argv[:2] == ["server", "restart"]:
             return server_restart(env)
         if argv[:1] == ["serve"]:
+            if argv[2:3] == [ENV_FILE_FLAG] and len(argv) == 4:
+                with open(argv[3], encoding="utf-8") as handle:
+                    env = dict(json.load(handle))
+                os.unlink(argv[3])
             return serve(env, *argv[1:2])
         if len(argv) == 2 and argv[0] == "attach":
             return attach(env, argv[1])
@@ -296,22 +351,28 @@ def main(argv: List[str], env: Dict[str, str]) -> int:
         return 2
 
 
-def write_launcher(path: str, *, python: Optional[str] = None, systemd: bool = False, version: str = "0.1.19") -> str:
+def write_launcher(
+    path: str, *, python: Optional[str] = None, systemd: bool = False, placement: str = "", version: str = "0.1.19"
+) -> str:
     """A ``herdr-core``-named executable at ``path`` that runs this CLI under
     ``python`` (default: this interpreter, which has the schema tooling).
 
     It is a Python script, not a shell wrapper: a shell would add ``PWD`` to
     the environment, and a real hc binary is exec'd with exactly the
-    environment its caller gave it. With ``systemd`` the core it starts is
-    placed as hc places one under a user manager (:func:`systemd_child_env`),
-    in the starter's ``XDG_RUNTIME_DIR``."""
+    environment its caller gave it. ``placement`` (one of
+    :data:`PLACEMENTS`) places the core it starts as hc does there
+    (:data:`PLACEMENT_ENV`); ``systemd`` is ``placement="systemd"``."""
+    if systemd:
+        placement = placement or "systemd"
+    if placement and placement not in PLACEMENTS:
+        raise ValueError(f"unknown placement {placement!r}")
     interpreter = python or sys.executable
     if any(ch.isspace() for ch in interpreter):
         raise ValueError("the interpreter path must not contain whitespace (it goes in a shebang)")
     script = (
         f"#!{interpreter}\n"
         "import os, runpy, sys\n"
-        + (f"os.environ[{SYSTEMD_ENV!r}] = '1'\n" if systemd else "")
+        + (f"os.environ[{PLACEMENT_ENV!r}] = {placement!r}\n" if placement else "")
         + f"os.environ[{VERSION_ENV!r}] = {version!r}\n"
         +
         f"sys.argv[0] = {os.path.abspath(__file__)!r}\n"

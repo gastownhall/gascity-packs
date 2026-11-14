@@ -24,6 +24,7 @@ from ..rpp.cancel import CancelToken, Deadline
 from ..rpp.ops import OpRequest
 from ..rpp.redact import Redactor
 from ..rpp.statedir import DOCTOR_CITY_ENV, StateDirError
+from . import coreid
 from .config import TEST_HOME_ENV, pin_policy, read_private_file, test_mode
 from .context import Host, OpContext, live_host
 from .naming import LABEL_CITY, city_label
@@ -142,7 +143,11 @@ def ownership(ctx: OpContext, status: StatusResult) -> Ownership:
     with the city's ``HC_SESSION`` and ``XDG_STATE_HOME``. A core of the city
     started with the wrong environment otherwise is still the city's (that is
     what ``restart-core`` fixes); one that is not cannot be told apart from a
-    person's or another city's core, and is never stopped by the pack."""
+    person's or another city's core, and is never stopped by the pack. The
+    core the pack started (:mod:`.coreid`) is the city's whatever its
+    process environment reads (a launchd job's on macOS)."""
+    if coreid.started_by_pack(ctx, status):
+        return Ownership(True, "")
     try:
         snapshot = ctx.host.procs.snapshot()
         env = ctx.host.procs.environ(status.pid)
