@@ -360,6 +360,13 @@ class FakeHc:
         """The core process restarts: connections drop, programs and records
         survive, and its start time changes."""
         with self._lock:
+            # Drop old connections before exposing the new generation. A
+            # client that has seen the new hello must survive the handoff.
+            for conn in self._conns:
+                try:
+                    conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
             if version is not None:
                 self._version = version
             self._started_at = time.monotonic()
@@ -368,7 +375,6 @@ class FakeHc:
         for terminal in terminals:
             with terminal.lock:
                 terminal.screen = "inexact"
-        self._drop_connections()
 
     # --- transport ---------------------------------------------------------------
 

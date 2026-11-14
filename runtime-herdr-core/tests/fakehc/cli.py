@@ -194,14 +194,19 @@ def server_restart(env: Dict[str, str]) -> int:
     paths = _paths(env)
     if not _answers(paths["socket"]):
         return server_start(env)
+    version = env.get(VERSION_ENV) or "0.1.19"
     with open(os.path.join(paths["state"], NEXT_VERSION_FILE), "w", encoding="utf-8") as handle:
-        handle.write(env.get(VERSION_ENV, "") or "0.1.19")
+        handle.write(version)
     reply = raw_call(paths["socket"], "server.restart", {}, timeout=30.0)
     if "result" not in reply:
         return 1
     deadline = time.monotonic() + START_WAIT_S
     while time.monotonic() < deadline:
-        if _answers(paths["socket"]):
+        try:
+            hello = raw_call(paths["socket"], "hello", {}, timeout=1.0)
+        except (OSError, ValueError):
+            hello = {}
+        if hello.get("result", {}).get("version") == version:
             return _print_status(paths["socket"])
         time.sleep(0.02)
     return 1
