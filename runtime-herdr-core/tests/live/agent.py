@@ -15,7 +15,11 @@ status. On request it starts, the way a coding agent's shell does:
   With ``GC_HC_LIVE_INFRA_UNIT`` and a reachable user manager, the watchdog
   is started in a transient scope of that name under ``gascity-infra.slice``,
   with the ``systemd-run`` argv gc wraps infrastructure in;
-* ``orphan``: ``setsid sleep 9999``, and a fenced proxy stand-in.
+* ``orphan``: ``setsid sleep 9999``, and a fenced proxy stand-in;
+* ``witness``: ``setsid sleep 9999`` with ``HC_SCOPE`` removed from its
+  environment and re-parented out of the agent's tree, so hc's holder-loss
+  sweep (a carrier and its descendants) cannot reach it and only a
+  cgroup-wide kill of the agent's cgroup can.
 
 Everything it reports goes to ``<dir>/<agent>.json``, written atomically once
 all of it runs. Touching ``<dir>/<agent>.run-hc`` makes it run ``hc ls`` from
@@ -111,6 +115,33 @@ def spawn_orphans(standins: str, python: str) -> Dict[str, object]:
     }
 
 
+_WITNESS = (
+    "import subprocess, sys\n"
+    "p = subprocess.Popen([sys.argv[1], '9999'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,"
+    " stderr=subprocess.DEVNULL, start_new_session=True)\n"
+    "print(p.pid)\n"
+)
+
+
+def spawn_witness(standins: str, python: str) -> int:
+    """A sleep with no ``HC_SCOPE`` that is not the agent's descendant either
+    (hc's sweep takes a carrier's descendants too): an intermediate process
+    starts it and exits, so it is re-parented away from the agent's tree."""
+    sleep = shutil.which("sleep") or "/bin/sleep"
+    env = {k: v for k, v in os.environ.items() if k != "HC_SCOPE"}
+    done = subprocess.run(
+        [python, "-c", _WITNESS, sleep],
+        cwd=standins,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    return int(done.stdout.strip())
+
+
 def _probe_hc(work: str, name: str) -> None:
     trigger = os.path.join(work, f"{name}.run-hc")
     while not os.path.exists(trigger):
@@ -140,6 +171,8 @@ def main() -> int:
         report["infra"] = spawn_infra(work, name, standins, python, errors)
     if "orphan" in wanted:
         report["orphan"] = spawn_orphans(standins, python)
+    if "witness" in wanted:
+        report["witness"] = spawn_witness(standins, python)
     echo: Optional[str] = os.environ.get("GC_HC_LIVE_ECHO")
     if echo:
         print(echo, flush=True)

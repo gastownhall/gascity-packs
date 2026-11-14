@@ -26,7 +26,7 @@ from typing import Dict, List
 import pytest
 
 from livekit import crash
-from livekit.cases import ROLES, Run, in_holder_cgroup, matrix
+from livekit.cases import ROLES, Run, in_holder_cgroup, matrix, witness_expectation
 from livekit.guard import LANE_ENV
 from livekit.hcrpc import HcRpc
 from livekit.pack import Pack
@@ -50,6 +50,7 @@ def _start_sessions(scratch: Scratch, run: Run) -> Pack:
         return pack
     # No launcher: plain hc programs on the city's core (brought up by one
     # pack session), so each keeps HC_SCOPE and the holder's cgroup.
+    extra["GC_HC_LIVE_SPAWN"] = "infra,witness"
     answer = pack.start_agent("live-c0")
     assert answer.code == 0, f"start live-c0: {answer.stderr}"
     rpc = HcRpc(scratch.paths().socket)
@@ -72,9 +73,26 @@ def _check_placement(scratch: Scratch, run: Run, report: AgentReport) -> None:
         assert is_holder_unit(unit) == expected, f"{role} runs in {cgroup} (in the holder's unit expected: {expected})"
         if run.case.infra_scope and role in ("watchdog", "dolt"):
             assert in_slice(cgroup, INFRA_SLICE), f"{role} is not under {INFRA_SLICE}: {cgroup}"
+    if report.witness is not None:
+        assert "HC_SCOPE" not in crash.environ_of(scratch, report.witness), "the witness carries HC_SCOPE"
+        if run.lane == "systemd":
+            unit = crash.unit_or_none(scratch, report.witness) or ""
+            assert is_holder_unit(unit), f"the witness is not in the holder's unit: {unit}"
     if run.lane == "systemd" and run.case.rescope:
         agent = crash.cgroup_of(scratch, report.pid)
         assert in_slice(agent, AGENT_SLICE), f"the agent was not re-scoped: {agent}"
+
+
+def _check_witness(scratch: Scratch, run: Run, report: AgentReport) -> None:
+    assert report.witness is not None
+    witness = report.witness
+    if witness_expectation(run.kill) == "dies":
+        died = crash.wait_until(lambda: not scratch.ownership.alive(witness), DEADLINE_S)
+        assert died, f"{run.kill} did not reach the holder's cgroup: the witness outside the sweep survived"
+    else:
+        crash.wait_until(lambda: False, crash.SETTLE_S)  # let any sweep finish
+        assert scratch.ownership.alive(witness), f"the witness outside the sweep died under {run.kill}"
+    scratch.note("witness", f"{witness_expectation(run.kill)} under {run.kill}, as expected")
 
 
 @pytest.mark.parametrize("run", RUNS, ids=[r.id for r in RUNS])
@@ -82,7 +100,8 @@ def test_holder_crash(scratch: Scratch, run: Run) -> None:
     if run.deferred is not None:
         pytest.skip(run.deferred)
     pack = _start_sessions(scratch, run)
-    report = scratch.agent_report("live-a1", timeout_s=30, want=("infra",))
+    want = ("infra",) if run.case.strip else ("infra", "witness")
+    report = scratch.agent_report("live-a1", timeout_s=30, want=want)
     status = crash.core_status(scratch)
     if run.lane == "systemd":
         units = crash.holder_units(scratch, status)
@@ -100,6 +119,7 @@ def test_holder_crash(scratch: Scratch, run: Run) -> None:
             f"{crash.alive(scratch, report.infra)}"
         )
         scratch.note("negative control", f"infrastructure swept by {run.kill}, as expected")
+        _check_witness(scratch, run, report)
         return
 
     for name in ("live-a1", "live-a2"):

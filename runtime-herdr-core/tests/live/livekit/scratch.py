@@ -53,6 +53,8 @@ class AgentReport:
     orphan: Dict[str, int]
     store_socket: str
     errors: List[str]
+    witness: Optional[int] = None
+    """A sleep the agent started without ``HC_SCOPE`` (``witness`` asked for)."""
 
 
 @dataclass(frozen=True)
@@ -107,7 +109,14 @@ class Scratch:
 
     @property
     def spawn_root(self) -> str:
-        return os.path.join(self.base, "spawn")
+        """Where the pack writes the scratch city's spawn files. The plain lane
+        points the pack at a scratch directory (``GC_HC_TEST_SPAWN_ROOT``: it
+        has no ``/run/user`` of its own); the systemd lane leaves the pack's
+        production location, the tmpfs ``/run/user/<uid>/gc-herdr-core/<city
+        id>/``, which is per city id and so the run's alone."""
+        if self.lane == "plain":
+            return os.path.join(self.base, "spawn")
+        return os.path.join(self.runtime_dir, "gc-herdr-core", self.paths().city_id)
 
     @property
     def work(self) -> str:
@@ -140,12 +149,12 @@ class Scratch:
             "LANG": "C.UTF-8",
             "GC_HC_TEST": "1",
             "GC_HC_TEST_BIN": self.hc_bin,
-            "GC_HC_TEST_SPAWN_ROOT": self.spawn_root,
             "GC_EXEC_STATE_DIR": self.state_root,
             "GC_EXEC_CITY_PATH": self.city_path,
         }
         if self.lane == "plain":
             env["GC_HC_TEST_RUNTIME_DIR"] = self.runtime_dir
+            env["GC_HC_TEST_SPAWN_ROOT"] = os.path.join(self.base, "spawn")
         else:
             env["XDG_RUNTIME_DIR"] = self.runtime_dir
             env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={self.runtime_dir}/bus"
@@ -234,13 +243,16 @@ class Scratch:
             orphan={} if orphan is None else {r: orphan.req_int(r) for r in ("sleep", "fenced")},
             store_socket="" if infra is None else infra.req_str("store_socket"),
             errors=list(doc.str_tuple("errors")),
+            witness=doc.opt_int("witness"),
         )
         if report.errors:
             raise AssertionError(f"agent {name}: {'; '.join(report.errors)}")
+        started = {"infra": bool(report.infra), "orphan": bool(report.orphan), "witness": report.witness is not None}
         for key in want:
-            if not (report.infra if key == "infra" else report.orphan):
+            if not started[key]:
                 raise AssertionError(f"agent {name} did not start its {key}")
-        for pid in [*report.infra.values(), *report.orphan.values()]:
+        extra = [] if report.witness is None else [report.witness]
+        for pid in [*report.infra.values(), *report.orphan.values(), *extra]:
             self.ownership.record(pid)
         return report
 
@@ -331,6 +343,8 @@ class Scratch:
                 step(problems)
             except Exception as err:  # noqa: BLE001 - teardown must reach the removal
                 problems.append(f"teardown step failed: {err!r}")
+        if self.lane == "systemd" and os.path.isdir(self.spawn_root):
+            shutil.rmtree(self.spawn_root)  # the scratch city's own spawn directory
         _remove(self.base)
         return problems
 
@@ -403,10 +417,11 @@ def open_scratch(clearance: Clearance, lane: Lane, hc_bin: str, *, python: Optio
         base=base,
         ownership=Ownership(run_id, os.path.join(base, "state"), LinuxProcs()),
     )
-    for path in (scratch.state_root, scratch.spawn_root, scratch.work, scratch.city_path, scratch.standin_dir):
+    for path in (scratch.state_root, scratch.work, scratch.city_path, scratch.standin_dir):
         _private_dir(path)
     if lane == "plain":
         _private_dir(scratch.runtime_dir)
+        _private_dir(scratch.spawn_root)
     for name in STANDIN_NAMES:
         target = os.path.join(scratch.standin_dir, name)
         shutil.copyfile(str(STANDIN), target)

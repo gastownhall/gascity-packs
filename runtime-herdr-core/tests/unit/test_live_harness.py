@@ -27,7 +27,7 @@ from fakehc.procfs import add_proc
 from gc_runtime_herdr_core.herdrcore.infra_argv import is_infrastructure_argv
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs
 from livekit import cases, guard, units
-from livekit.fetch import FetchError, fetch_pinned
+from livekit.fetch import FetchError, fetch_pinned, unverified
 from livekit.hcrpc import HcRpc
 from livekit.owned import NotOwned, Ownership
 from livekit.pack import Pack
@@ -143,6 +143,11 @@ def test_k1_runs_every_case_on_both_lanes_and_k2_only_c_and_d_on_systemd() -> No
     assert not [key for key in runs if key[1] == "K2" and key[2] == "plain"]
 
 
+def test_the_witness_dies_only_under_the_cgroup_kill() -> None:
+    assert cases.witness_expectation("K1") == "survives"
+    assert cases.witness_expectation("K2") == "dies"
+
+
 def test_only_the_negative_control_is_swept() -> None:
     for run in cases.matrix():
         if run.deferred is not None:
@@ -236,6 +241,57 @@ def test_runtime_processes_and_marked_processes_are_listed_apart(fake_proc: Path
     assert [p.pid for p in own.marked()] == [200]
 
 
+def test_a_core_carrying_the_run_mark_is_one_an_agent_started(tmp_path: Path) -> None:
+    root = tmp_path / "proc"
+    state = "/tmp/hclive-x/state"
+    add_proc(root, 1, ppid=0, argv=["init"])
+    # The pack's core and holder: the scratch root, an allowlisted env without the mark.
+    add_proc(root, 100, ppid=1, argv=["herdr-core", "serve"], env={"XDG_STATE_HOME": state, "HC_RUNTIME": "1"})
+    add_proc(root, 101, ppid=1, argv=["herdr-core", "hold"], env={"XDG_STATE_HOME": state, "HC_RUNTIME": "1"})
+    # An agent and its stand-in: marked, but not hc runtime.
+    add_proc(root, 200, ppid=1, argv=["python3", "agent.py"], env={"GC_HC_LIVE_RUN": "run1", "XDG_STATE_HOME": "/tmp/hclive-x/agent-state"})
+    # hc's CLI autostarted a core from the agent's env on the city's own state root...
+    add_proc(root, 300, ppid=1, argv=["herdr-core", "serve"], env={"XDG_STATE_HOME": state, "GC_HC_LIVE_RUN": "run1"})
+    # ...or on the agent's own state directory.
+    add_proc(root, 400, ppid=1, argv=["hc", "serve"], env={"XDG_STATE_HOME": "/tmp/hclive-x/agent-state", "GC_HC_LIVE_RUN": "run1", "HC_RUNTIME": "1"})
+    # Another run's agent-started core is not this run's.
+    add_proc(root, 500, ppid=1, argv=["hc", "serve"], env={"GC_HC_LIVE_RUN": "other", "HC_RUNTIME": "1"})
+    own = Ownership("run1", state, LinuxProcs(str(root)))
+    assert [p.pid for p in own.runtime_from_agents()] == [300, 400]
+
+
+def test_core_status_refuses_a_holder_outside_the_scratch_root(
+    scratch: Scratch, started: List["subprocess.Popen[bytes]"], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from livekit import crash
+    from livekit.hcrpc import CoreStatus
+
+    assert Pack(scratch).start("live-h", "exec sleep 300").code == 0
+    real = HcRpc(scratch.paths().socket).status()
+    assert crash.core_status(scratch).holders == real.holders
+    stranger = _sleep({})
+    started.append(stranger)
+    monkeypatch.setattr(HcRpc, "status", lambda self: CoreStatus(pid=real.pid, version=real.version, holders=(stranger.pid,)))
+    with pytest.raises(AssertionError, match="not hc runtime"):
+        crash.core_status(scratch)
+    assert not scratch.ownership.owns(stranger.pid), "a stranger listed as a holder was adopted"
+
+
+def test_a_fresh_core_lists_no_holder_and_owned_core_does_not_need_one(scratch: Scratch) -> None:
+    from livekit import crash
+
+    paths = scratch.paths()
+    os.makedirs(os.path.dirname(paths.socket), mode=0o700, exist_ok=True)
+    env = dict(os.environ)
+    env.update(scratch.hc_cli_env(paths.session, paths.socket))
+    done = subprocess.run([scratch.hc_bin, "server", "start"], env=env, capture_output=True, text=True, timeout=60, check=False)
+    assert done.returncode == 0, done.stderr
+    assert crash.wait_until(HcRpc(paths.socket).answers, 15)
+    assert crash.owned_core(scratch).holders == ()
+    with pytest.raises(AssertionError, match="no holder"):
+        crash.core_status(scratch)
+
+
 @pytest.fixture
 def started() -> Iterator[List["subprocess.Popen[bytes]"]]:
     procs: List["subprocess.Popen[bytes]"] = []
@@ -287,6 +343,25 @@ def _wait_for(predicate: "object", timeout: float = 10.0) -> None:
     raise AssertionError("condition never held")
 
 
+# --- the job summary ----------------------------------------------------------------------
+
+
+def _report(when: str, outcome: str, longrepr: object = None) -> pytest.TestReport:
+    return pytest.TestReport("tests/live/test_x.py::test_y", ("x", 1, "y"), {}, outcome, longrepr, when)  # type: ignore[arg-type]
+
+
+def test_the_summary_lists_calls_failed_setups_and_failed_teardowns() -> None:
+    from livekit.plugin import summary_row
+
+    assert summary_row(_report("call", "passed")) == ("test_y", "passed", "")
+    assert summary_row(_report("setup", "passed")) is None
+    assert summary_row(_report("teardown", "passed")) is None
+    failed_setup = summary_row(_report("setup", "failed", "boom\nsetup broke"))
+    assert failed_setup == ("test_y", "error (setup)", "setup broke")
+    left = summary_row(_report("teardown", "failed", "x\nteardown left the run's processes or units behind"))
+    assert left == ("test_y", "error (teardown)", "teardown left the run's processes or units behind")
+
+
 # --- the pinned fetch ------------------------------------------------------------------------
 
 
@@ -298,6 +373,39 @@ def test_fetch_pinned_installs_the_verified_binary(tmp_path: Path) -> None:
     binary = fetch_pinned(pin, str(tmp_path / "hc"), target=releasekit.TARGET, releases_dir=str(releases))
     assert Path(binary).read_bytes() == b"#!/bin/sh\nexit 0\n"
     assert os.access(binary, os.X_OK)
+
+
+def test_only_the_fetched_pinned_binary_is_verified(tmp_path: Path) -> None:
+    data = releasekit.archive(b"#!/bin/sh\nexit 0\n")
+    releases = tmp_path / "releases"
+    releasekit.publish(releases, "0.1.19", data)
+    pin = releasekit.make_pin("0.1.19", releasekit.sha(data))
+    binary = fetch_pinned(pin, str(tmp_path / "hc"), target=releasekit.TARGET, releases_dir=str(releases))
+    assert unverified(binary, pin, target=releasekit.TARGET) is None
+
+    stray = tmp_path / "elsewhere" / "herdr-core"
+    stray.parent.mkdir()
+    stray.write_bytes(b"#!/bin/sh\nexit 0\n")
+    stray.chmod(0o755)
+    assert unverified(str(stray), pin, target=releasekit.TARGET) is not None
+
+    os.chmod(binary, 0o755)
+    Path(binary).write_bytes(b"#!/bin/sh\nexit 1\n")  # tampered after the install
+    assert unverified(binary, pin, target=releasekit.TARGET) is not None
+
+
+def test_the_live_suites_refuse_an_unverified_hc_binary(tmp_path: Path, fake_bin: Path) -> None:
+    env = _host_env(tmp_path)
+    # A declared throwaway HOME (a temp dir) clears the guard; fake-hc is the
+    # binary, and the run must stop at it before any scratch root exists.
+    env.update({guard.LIVE_ENV: "1", guard.THROWAWAY_ENV: env["HOME"], guard.LANE_ENV: "plain", guard.HC_BIN_ENV: str(fake_bin)})
+    env.pop("GITHUB_STEP_SUMMARY", None)
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", str(LIVE_DIR / "test_live_placement.py"), "-q", "-p", "no:cacheprovider"],
+        cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert "not the pinned, verified hc" in done.stdout + done.stderr
 
 
 def test_fetch_pinned_refuses_an_asset_whose_sha256_differs_from_the_pin(tmp_path: Path) -> None:
@@ -352,6 +460,18 @@ def test_the_pack_env_carries_the_lane_and_never_the_callers_state(scratch: Scra
     assert env["GC_EXEC_CITY_PATH"] == scratch.city_path
 
 
+def test_the_systemd_lane_leaves_spawn_files_at_their_production_location(fake_bin: Path) -> None:
+    made = open_scratch(guard.clearance(CI), "systemd", str(fake_bin), python=sys.executable)
+    try:
+        env = made.pack_env()
+        assert "GC_HC_TEST_SPAWN_ROOT" not in env and "GC_HC_TEST_RUNTIME_DIR" not in env
+        city_id = made.paths().city_id
+        assert made.spawn_root == f"/run/user/{os.getuid()}/gc-herdr-core/{city_id}"
+        assert not made.spawn_root.startswith(made.base)
+    finally:
+        assert made.close() == []
+
+
 def test_teardown_stops_every_core_and_removes_the_root(fake_bin: Path) -> None:
     made = open_scratch(guard.clearance(CI), "plain", str(fake_bin), python=sys.executable)
     pack = Pack(made)
@@ -404,6 +524,7 @@ def test_hc_rpc_reads_holders_and_keeps_a_terminal(scratch: Scratch) -> None:
     rpc.keep(address, True)
     assert rpc.terminal(address).keep is True
     assert rpc.status().holders
+    assert rpc.has_terminal(address) and not rpc.has_terminal("no-such-terminal")
 
 
 def test_pack_kill_object_refuses_a_live_box_and_clears_a_dead_one(scratch: Scratch) -> None:
@@ -451,6 +572,26 @@ def test_the_agent_spawns_detached_infrastructure_with_gcs_argv(scratch: Scratch
         assert os.getsid(proxy) == proxy and os.getsid(report.orphan["sleep"]) == report.orphan["sleep"]
         assert scratch.ping_store(report.store_socket)
         assert report.pid == agent.pid
+    finally:
+        agent.kill()
+        agent.wait(timeout=10)
+    assert scratch.close() == []
+
+
+def test_the_agents_witness_drops_hc_scope_and_keeps_the_run_mark(scratch: Scratch) -> None:
+    agent = _agent(scratch, "a5", GC_HC_LIVE_SPAWN="witness", HC_SCOPE="12-abcdef")
+    try:
+        report = scratch.agent_report("a5", timeout_s=20, want=("witness",))
+        assert report.witness is not None
+        env = scratch.ownership.procs.environ(report.witness) or {}
+        assert "HC_SCOPE" not in env and env.get("GC_HC_LIVE_RUN") == scratch.run_id
+        assert os.getsid(report.witness) == report.witness
+        procs = LinuxProcs().snapshot()
+        ancestor = procs[report.witness].ppid
+        while ancestor > 1 and ancestor in procs:
+            assert ancestor != agent.pid, "the witness is the agent's descendant: hc's sweep would take it"
+            ancestor = procs[ancestor].ppid
+        assert scratch.ownership.alive(report.witness)
     finally:
         agent.kill()
         agent.wait(timeout=10)
@@ -507,6 +648,17 @@ def test_secret_scan_finds_a_canary_anywhere_under_the_roots(scratch: Scratch) -
     (nested / "terminals.json").write_bytes(b'{"env":{"K":"canary-123"}}')
     assert scratch.find_bytes(b"canary-123") == [str(nested / "terminals.json")]
     assert scratch.find_bytes(b"canary-999") == []
+
+
+def test_newest_mtime_tolerates_spawn_files_that_vanish(tmp_path: Path) -> None:
+    from test_live_secrets import newest_mtime
+
+    kept = tmp_path / "a.json"
+    kept.write_text("{}")
+    os.utime(kept, (1000.0, 1000.0))
+    assert newest_mtime([str(kept), str(tmp_path / "gone.json")]) == 1000.0
+    assert newest_mtime([str(tmp_path / "gone.json")]) is None
+    assert newest_mtime([]) is None
 
 
 def test_ping_store_is_false_for_no_socket(scratch: Scratch) -> None:

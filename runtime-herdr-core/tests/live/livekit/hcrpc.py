@@ -62,6 +62,16 @@ class HcRpc:
     def terminal(self, address: str) -> TerminalView:
         return _view(self.call("terminal.get", {"terminal": address}))
 
+    def has_terminal(self, name: str) -> bool:
+        """Whether hc has a terminal (live or finished) by that name or address."""
+        try:
+            self.terminal(name)
+        except HcRpcError as err:
+            if err.kind == "not_found":
+                return False
+            raise
+        return True
+
     def keep(self, address: str, keep: bool) -> None:
         self.call("terminal.keep", {"terminal": address, "keep": keep})
 

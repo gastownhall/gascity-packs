@@ -3,9 +3,13 @@
 The pack puts an ``hc`` shim first on every agent's PATH. With the core down
 it must refuse rather than let hc's CLI autostart a second core on the
 agent's own state directory and credentials. A holder may restart its
-crashed core; then the agent's ``hc`` reaches the city's own core. Either
-way: no core on another state directory, ``core.lock`` still names the
-city's socket, and no program ended.
+crashed core (hc's holder waits a 3 s grace first, and the probe runs well
+inside it, so refusal is the expected outcome); then the agent's ``hc``
+reaches the city's own core. Either way: no hc core or holder carries the
+agent's environment (the run's mark, which the pack's allowlisted core and a
+holder-restarted core never carry), ``core.lock`` still names the city's
+socket, a second pack session is not refused as foreign, and no program
+ended.
 """
 
 from __future__ import annotations
@@ -17,6 +21,9 @@ from livekit import crash
 from livekit.hcrpc import HcRpc
 from livekit.pack import Pack
 from livekit.scratch import Scratch
+
+HOLDER_GRACE_S = 3.0
+"""How long an hc holder waits before it restarts a crashed core (``HC_HOLDER_GRACE_MS``)."""
 
 
 def test_in_agent_hc_with_the_core_down(scratch: Scratch) -> None:
@@ -42,6 +49,13 @@ def test_in_agent_hc_with_the_core_down(scratch: Scratch) -> None:
         assert handle.read().strip() == paths.socket
     agent_state = os.path.join(scratch.base, "agent-state", "herdr-core")
     assert not os.path.exists(agent_state), "the agent's hc started a core on the agent's own state directory"
-    cores = [p for p in scratch.ownership.marked() if os.path.basename(p.argv[0] if p.argv else "") in ("hc", "herdr-core")]
-    assert cores == [], f"a core runs on the agent's environment: {cores}"
+    from_agent = scratch.ownership.runtime_from_agents()
+    assert from_agent == [], f"an hc core or holder runs on the agent's environment: {from_agent}"
     assert scratch.ownership.alive(report.pid), "the agent ended when its core died"
+
+    # Whatever answers now (or the core the next start brings up) is the
+    # pack's own: a core from the agent's environment would be refused.
+    crash.wait_until(rpc.answers, HOLDER_GRACE_S + 2)
+    second = pack.start_agent("live-h2")
+    assert second.code == 0, f"a second session was refused after the agent's hc ran: {second.stderr}"
+    assert scratch.ownership.runtime_from_agents() == []

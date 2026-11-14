@@ -16,19 +16,29 @@ SETTLE_S = 5.0
 """hc's sweep signals HUP, TERM and KILL 0.5 s apart and waits up to 2 s more."""
 
 
-def core_status(scratch: Scratch) -> CoreStatus:
-    """The scratch city's core, its holders adopted as the run's own: a core
-    answering on the run's socket under its fresh state root was started by
-    the run's ops, and so were the holders it lists."""
+def owned_core(scratch: Scratch) -> CoreStatus:
+    """The core answering on the scratch city's socket, required to be hc
+    runtime of the scratch root. hc starts holders on demand (for the first
+    ``terminal.run``), so a fresh core may list none; this does not look."""
     status = HcRpc(scratch.paths().socket).status()
     if not scratch.ownership.owns(status.pid, runtime_only=True):
         raise AssertionError(f"the core on the scratch socket (pid {status.pid}) is not hc runtime of the scratch root")
     scratch.ownership.note_unit(status.pid)
-    for pid in status.holders:
-        scratch.ownership.record(pid)
-        scratch.ownership.note_unit(pid)
+    return status
+
+
+def core_status(scratch: Scratch) -> CoreStatus:
+    """The scratch city's core and the holders it lists, each required to be
+    hc runtime of the scratch root (hc gives holders the core's environment)
+    before the run adopts it as its own; at least one holder must run."""
+    status = owned_core(scratch)
     if not status.holders:
         raise AssertionError("the core lists no holder")
+    for pid in status.holders:
+        if not scratch.ownership.owns(pid, runtime_only=True):
+            raise AssertionError(f"holder {pid} of the scratch core is not hc runtime of the scratch root")
+        scratch.ownership.record(pid)
+        scratch.ownership.note_unit(pid)
     return status
 
 

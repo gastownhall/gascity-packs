@@ -28,7 +28,7 @@ def test_start_refuses_a_core_started_outside_the_pack(scratch: Scratch) -> None
     )
     assert done.returncode == 0, done.stderr
     assert crash.wait_until(HcRpc(paths.socket).answers, 15), "the foreign core never answered"
-    crash.core_status(scratch)
+    crash.owned_core(scratch)  # a fresh core lists no holder: hc starts one per first terminal.run
 
     pack = Pack(scratch, rescope=scratch.lane == "systemd")
     refused = pack.start_agent("live-f")

@@ -28,6 +28,7 @@ from typing import Dict, Final, List, Literal, Optional, Tuple
 Lane = Literal["plain", "systemd"]
 Kill = Literal["K1", "K2"]
 Expect = Literal["survives", "swept"]
+WitnessExpect = Literal["survives", "dies"]
 Role = Literal["watchdog", "dolt", "proxy"]
 
 LANES: Final[Tuple[Lane, ...]] = ("plain", "systemd")
@@ -80,6 +81,14 @@ def expectation(case: Case, kill: Kill) -> Expect:
     if kill == "K1":
         return "survives" if case.strip else "swept"
     return "swept" if not case.rescope else "survives"
+
+
+def witness_expectation(kill: Kill) -> WitnessExpect:
+    """The negative control's witness: a process the agent leaves in the
+    holder's cgroup with ``HC_SCOPE`` removed, so hc's sweep cannot reach it.
+    It survives K1 and dies under K2, which shows the cgroup kill itself (not
+    the sweep) does the killing."""
+    return "dies" if kill == "K2" else "survives"
 
 
 def matrix() -> List[Run]:

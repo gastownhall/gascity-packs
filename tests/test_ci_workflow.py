@@ -263,10 +263,20 @@ def test_live_tier_runs_both_lanes_and_fails_loudly() -> None:
     manager = steps["Start a systemd user manager"]
     assert manager["if"] == "matrix.lane == 'systemd'"
     lines = _active(manager["run"])
-    assert 'sudo loginctl enable-linger "$USER"' in lines
+    # A failing enable-linger must reach the summary-and-exit branch, not end
+    # the step under bash -e before the job summary says why.
+    linger = [line for line in lines if "loginctl" in line]
+    assert linger == ['if ! sudo loginctl enable-linger "$USER"; then'], linger
+    assert 'state="enable-linger failed"' in lines
     assert "GITHUB_STEP_SUMMARY" in manager["run"] and "exit 1" in lines
     suites = _active(steps["Live suites"]["run"])
     assert suites == ["python -m pytest tests/live -v -rs -p no:cacheprovider"], suites
+
+
+def test_live_tier_runs_never_cancel_each_other_across_triggers() -> None:
+    concurrency = _live()["concurrency"]
+    assert "github.event_name" in concurrency["group"], "a dispatch must not cancel a nightly run, nor the reverse"
+    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
 
 
 def test_live_tier_is_not_part_of_the_blocking_ci() -> None:

@@ -27,9 +27,11 @@ on:
 permissions:
   contents: read
 
+# One group per trigger, so a manual dispatch never cancels a nightly run (nor
+# the reverse); only a newer push to the same pull request cancels its run.
 concurrency:
-  group: runtime-herdr-core-live-${{ github.ref }}
-  cancel-in-progress: true
+  group: runtime-herdr-core-live-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   live:
@@ -78,14 +80,17 @@ jobs:
         run: |
           uid="$(id -u)"
           run_dir="/run/user/$uid"
-          sudo loginctl enable-linger "$USER"
-          for _ in $(seq 1 60); do
-            if [ -S "$run_dir/systemd/private" ]; then break; fi
-            sleep 1
-          done
           state="missing"
-          if [ -S "$run_dir/systemd/private" ]; then
-            state="$(XDG_RUNTIME_DIR="$run_dir" timeout 60 systemctl --user is-system-running --wait 2>&1)" || true
+          if ! sudo loginctl enable-linger "$USER"; then
+            state="enable-linger failed"
+          else
+            for _ in $(seq 1 60); do
+              if [ -S "$run_dir/systemd/private" ]; then break; fi
+              sleep 1
+            done
+            if [ -S "$run_dir/systemd/private" ]; then
+              state="$(XDG_RUNTIME_DIR="$run_dir" timeout 60 systemctl --user is-system-running --wait 2>&1)" || true
+            fi
           fi
           case "$state" in
             running|degraded) ;;

@@ -26,6 +26,9 @@ from gc_runtime_herdr_core.herdrcore.procs import Proc, ProcError, ProcSource
 from .units import unit_of
 
 RUN_MARK_ENV = "GC_HC_LIVE_RUN"
+HC_RUNTIME_ENV = "HC_RUNTIME"
+"""hc marks its own cores and holders with ``HC_RUNTIME=1``."""
+HC_BINARIES = frozenset({"hc", "herdr-core"})
 
 
 class NotOwned(Exception):
@@ -82,6 +85,25 @@ class Ownership:
         """The run's own marked processes (agents, stand-ins), hc runtime excluded."""
         runtime = {p.pid for p in self.runtime()}
         return [p for p in self._scan(runtime_only=False) if p.pid not in runtime]
+
+    def runtime_from_agents(self) -> List[Proc]:
+        """hc cores and holders that carry the run's mark, so were started from
+        an agent's environment: hc runtime of the scratch root, or a process hc
+        marks as runtime (or an hc binary) wherever its state lives. The pack
+        starts its core with an allowlisted environment, and a holder restarts
+        its core with its own (the core's), so neither ever carries the mark."""
+        found: List[Proc] = []
+        for proc in self._scan(runtime_only=False):
+            try:
+                env = self.procs.environ(proc.pid) or {}
+            except ProcError:
+                continue
+            if env.get(RUN_MARK_ENV) != self.run_id:
+                continue
+            binary = os.path.basename(proc.argv[0]) if proc.argv else ""
+            if env.get("XDG_STATE_HOME") == self.state_root or env.get(HC_RUNTIME_ENV) == "1" or binary in HC_BINARIES:
+                found.append(proc)
+        return found
 
     def _scan(self, *, runtime_only: bool) -> List[Proc]:
         try:

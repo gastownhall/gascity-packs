@@ -11,7 +11,10 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 import pytest
 
+from gc_runtime_herdr_core.herdrcore.pin import PinError, load_pin
+
 from . import guard
+from .fetch import unverified
 from .cases import Lane
 from .scratch import Scratch, open_scratch, write_summary
 
@@ -27,6 +30,7 @@ __all__ = [
     "pytest_runtest_logreport",
     "pytest_sessionfinish",
     "scratch",
+    "summary_row",
     "user_manager_missing",
 ]
 
@@ -108,6 +112,12 @@ def hc_bin(clearance: guard.Clearance) -> str:
     path = os.environ.get(guard.HC_BIN_ENV, "")
     if not path or not os.path.isfile(path) or not os.access(path, os.X_OK):
         pytest.exit(f"{guard.HC_BIN_ENV} must name the pinned hc fetched by tests/live/fetch_hc.py", returncode=2)
+    try:
+        why = unverified(path, load_pin())
+    except PinError as err:
+        why = str(err)
+    if why is not None:
+        pytest.exit(f"{guard.HC_BIN_ENV} is not the pinned, verified hc: {why}", returncode=2)
     return path
 
 
@@ -133,14 +143,25 @@ def scratch(request: pytest.FixtureRequest, clearance: guard.Clearance, lane: La
         assert not problems, "teardown left the run's processes or units behind:\n" + "\n".join(problems)
 
 
+def summary_row(report: pytest.TestReport) -> Optional[Tuple[str, str, str]]:
+    """The job-summary row for a report: every call, and a setup or teardown
+    that did not pass (a passed call whose teardown found leftovers is red)."""
+    if report.when != "call" and report.passed:
+        return None
+    detail = ""
+    if report.skipped and isinstance(report.longrepr, tuple):
+        detail = str(report.longrepr[2])
+    elif report.failed:
+        text = str(report.longreprtext).strip()
+        detail = text.splitlines()[-1][:300] if text else ""
+    outcome = report.outcome if report.when == "call" or report.skipped else f"error ({report.when})"
+    return (report.nodeid.split("::", 1)[-1], outcome, detail)
+
+
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
-    if report.when == "call" or (report.when == "setup" and report.outcome != "passed"):
-        detail = ""
-        if report.skipped and isinstance(report.longrepr, tuple):
-            detail = str(report.longrepr[2])
-        elif report.failed:
-            detail = str(report.longreprtext).strip().splitlines()[-1][:300] if report.longreprtext else ""
-        _RESULTS.append((report.nodeid.split("::", 1)[-1], report.outcome, detail))
+    row = summary_row(report)
+    if row is not None:
+        _RESULTS.append(row)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:

@@ -327,3 +327,22 @@ def test_fake_hc_reports_installed_by_as_hc_does(short_tmp: Path) -> None:
         assert fake.schema_violations == []
     finally:
         pinned.parent.chmod(0o755)
+
+
+def test_holders_start_on_demand_with_the_first_program(fake_hc: FakeHc, short_tmp: Path) -> None:
+    # hc v0.1.19 starts a holder only for terminal.run (or kept-terminal
+    # recovery): a fresh core lists none.
+    fresh = raw_call(fake_hc.socket_path, "server.status", {})["result"]
+    assert fresh["holders"] == [] and fresh["holder"] is None
+    run(fake_hc, short_tmp, "exec cat")
+    after = raw_call(fake_hc.socket_path, "server.status", {})["result"]
+    assert [h["pid"] for h in after["holders"]] == [after["pid"]]
+    assert after["holder"] == after["holders"][0]
+
+
+def test_a_core_restart_keeps_a_holder_only_while_programs_remain(fake_hc: FakeHc, short_tmp: Path) -> None:
+    fake_hc.restart_core()
+    assert raw_call(fake_hc.socket_path, "server.status", {})["result"]["holders"] == []
+    run(fake_hc, short_tmp, "exec cat")
+    fake_hc.restart_core()
+    assert raw_call(fake_hc.socket_path, "server.status", {})["result"]["holders"] != []
