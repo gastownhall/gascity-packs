@@ -190,6 +190,69 @@ func TestRouteEventDrops(t *testing.T) {
 	}
 }
 
+// TestThreadBroadcastReplyIsDelivered pins that a thread reply posted with
+// "Also send to channel" is routed like any other thread reply. Slack
+// delivers it as a message event with subtype "thread_broadcast"; it is
+// still a human reply in the thread, so it must reach the bound session
+// with the thread preserved.
+func TestThreadBroadcastReplyIsDelivered(t *testing.T) {
+	srv := newTestServer(t)
+	c := newInboundCollector(t, srv)
+	mustBind(t, srv, "C1", "room", "s1")
+
+	routeMessage(srv, slackMessageEvent{Type: "message", Subtype: "thread_broadcast", User: "U9", Text: "looks good, ship it", Channel: "C1", TS: "1700.7", ThreadTS: "1700.6"})
+
+	msg, ok := c.got["s1"]
+	if !ok {
+		t.Fatalf("thread_broadcast reply was dropped; want delivery to s1")
+	}
+	if msg.Text != "looks good, ship it" {
+		t.Errorf("text = %q, want full body", msg.Text)
+	}
+	if msg.ReplyToMessageID != "1700.6" {
+		t.Errorf("reply_to_message_id = %q, want thread root 1700.6", msg.ReplyToMessageID)
+	}
+	if ref, ok := srv.latestInbound("s1"); !ok || ref.threadTS != "1700.6" {
+		t.Errorf("latestInbound(s1) = %+v ok=%v, want thread 1700.6", ref, ok)
+	}
+}
+
+// TestOtherSubtypesDropped pins that letting thread_broadcast through did
+// not open the gate for any other message subtype: edits, deletes, joins,
+// bot posts and the rest are still dropped in a bound channel.
+func TestOtherSubtypesDropped(t *testing.T) {
+	srv := newTestServer(t)
+	c := newInboundCollector(t, srv)
+	mustBind(t, srv, "C1", "room", "s1")
+
+	for _, subtype := range []string{
+		"message_changed",
+		"message_deleted",
+		"message_replied",
+		"bot_message",
+		"channel_join",
+		"channel_leave",
+		"channel_topic",
+		"me_message",
+		"file_share",
+	} {
+		t.Run(subtype, func(t *testing.T) {
+			before := len(c.all)
+			routeMessage(srv, slackMessageEvent{Type: "message", Subtype: subtype, User: "U9", Text: "hi", Channel: "C1", TS: "1700.8", ThreadTS: "1700.6"})
+			if len(c.all) != before {
+				t.Errorf("subtype %q: expected drop, but a delivery was made", subtype)
+			}
+		})
+	}
+
+	// A bot's broadcast is still a bot message and still dropped.
+	before := len(c.all)
+	routeMessage(srv, slackMessageEvent{Type: "message", Subtype: "thread_broadcast", BotID: "B1", User: "U9", Text: "hi", Channel: "C1", TS: "1700.9", ThreadTS: "1700.6"})
+	if len(c.all) != before {
+		t.Errorf("bot thread_broadcast: expected drop, but a delivery was made")
+	}
+}
+
 // TestRouteEventDropsForeignWorkspace pins the foreign-workspace drop at
 // routeEvent, the funnel both transports feed. Neither transport establishes
 // which workspace an event came from — Socket Mode has no signature, and the

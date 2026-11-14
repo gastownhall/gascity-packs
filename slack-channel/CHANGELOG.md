@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Thread replies sent with "Also send to channel" are no longer dropped.**
+  Slack delivers such a reply as a `message` event with subtype
+  `thread_broadcast`, and the inbound filter dropped every event with a
+  subtype, so the reply never reached the bound session. `thread_broadcast`
+  is now routed like a plain thread reply; every other subtype (edits,
+  deletes, joins, bot posts, ...) is still dropped.
+
 - **A pack pin bump no longer strands the adapter service.** The `[[service]]`
   command pointed straight at the gitignored `adapter/gc-slack-channel-adapter`
   binary, which `gc import install` (git-only) never ships, so the service
