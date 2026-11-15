@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
 import pytest
-from cityharness import City, make_city
+from cityharness import City, in_thread, make_city
 from conftest import teardown_cores
 from fakehc.cli import MANAGER_BLOCK, systemd_unit_env, write_launcher
 from fakehc.procfs import add_boot, add_proc
@@ -37,7 +37,7 @@ from gc_runtime_herdr_core.herdrcore.context import OpContext, live_host
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, PsProcs
 from gc_runtime_herdr_core.herdrcore.usermanager import parse_busctl_environment
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Deadline
-from gc_runtime_herdr_core.rpp.ops import OpRequest
+from gc_runtime_herdr_core.rpp.ops import OpError, OpRequest
 from gc_runtime_herdr_core.rpp.redact import Redactor
 
 needs_proc = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
@@ -263,6 +263,143 @@ def test_a_core_that_does_not_answer_is_found_by_its_recorded_identity(short_tmp
     assert not corescan.nothing_runs(ctx)
     coreid.write(ctx, coreid.CoreIdentity(pid=4242, start="778", boot="boot-1", core_id="c" * 32))
     assert corescan.core_processes(ctx, snapshot) == []
+    coreid.begin_start(ctx, starter_pid=77, since_ms=coreid.wall_ms() - 60_000)  # the pack's start still runs
+    assert [proc.pid for proc in corescan.core_processes(ctx, snapshot)] == [4242]
+    coreid.begin_start(ctx, starter_pid=78, since_ms=coreid.wall_ms() - 60_000)
+    assert corescan.core_processes(ctx, snapshot) == []
+
+
+# --- the pack's start, pending until its hc is done (macOS) -----------------------------------
+
+
+def pending_path(ctx: OpContext) -> Path:
+    return Path(ctx.pack_state) / coreid.PENDING_FILE
+
+
+STALLED_HC = """#!/bin/sh
+echo $$ > {pidfile}
+while [ ! -e {release} ]; do sleep 0.02; done
+exit {code}
+"""
+"""An hc whose ``server start`` asked launchd for the core (its pid in
+``pidfile``) and then waits until ``release`` exists."""
+
+
+def stalled_hc(tmp: Path, *, code: int = 0) -> Tuple[str, Path, Path]:
+    pidfile, release = tmp / "hc.pid", tmp / "release"
+    script = tmp / "stalled-hc"
+    script.write_text(STALLED_HC.format(pidfile=pidfile, release=release, code=code))
+    script.chmod(0o755)
+    return str(script), pidfile, release
+
+
+def await_pid(pidfile: Path) -> int:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        text = pidfile.read_text().strip() if pidfile.exists() else ""
+        if text:
+            return int(text)
+        time.sleep(0.02)
+    raise AssertionError("the stand-in hc did not start")
+
+
+def test_the_pending_start_is_recorded_before_the_packs_hc_is_waited_on(city: City) -> None:
+    """The pack names its hc's pid before it waits on it, privately; a start
+    that times out keeps it, closed at the time its hc ended."""
+    script, pidfile, _ = stalled_hc(city.root)
+    ctx = city.context(deadline_s=2.5)
+    since_ms = coreid.wall_ms()
+    with pytest.raises(OpError, match="timed out"):
+        core.start_core(ctx, script)
+    pending = coreid.read_pending(ctx)
+    assert pending is not None and pending.starter_pid == int(pidfile.read_text())
+    assert since_ms <= pending.since_ms and pending.until_ms is not None and pending.since_ms < pending.until_ms <= coreid.wall_ms()
+    path = pending_path(ctx)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert not [p for p in path.parent.iterdir() if p.name.startswith(".")], "written through a temp file, renamed"
+
+
+def test_a_core_a_timed_out_start_asked_for_is_accepted_by_a_later_start(city: City) -> None:
+    """hc asked launchd for the core and was killed at the pack's deadline;
+    the core comes up after. The next start accepts it and pins it."""
+    script, pidfile, _ = stalled_hc(city.root)
+    ctx = city.context(deadline_s=2.5)
+    with pytest.raises(OpError, match="timed out"):
+        core.start_core(ctx, script)
+    pending = coreid.read_pending(ctx)
+    assert pending is not None and pending.until_ms is not None
+    as_launchd_core(city, starter_pid=int(pidfile.read_text()), asked_ns=(pending.since_ms + 1) * 1_000_000)
+    done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+    ctx = city.context()
+    assert coreid.started_by_pack(ctx, ctx.client().server_status()), "pinned on its first acceptance"
+    assert coreid.read_pending(ctx) is None, "superseded by the record it pinned"
+
+
+def test_a_start_that_checks_while_the_packs_hc_still_runs_accepts_its_core(city: City) -> None:
+    """Two ops of the pack start the city at once: the second finds the core
+    the first one's hc asked for answering before the first recorded it."""
+    script, pidfile, release = stalled_hc(city.root)
+    errors: List[BaseException] = []
+
+    def first() -> None:
+        try:
+            core.start_core(city.context(), script)
+        except BaseException as err:  # noqa: BLE001 - reported below
+            errors.append(err)
+
+    thread = in_thread(first)
+    as_launchd_core(city, starter_pid=await_pid(pidfile))
+    ctx = city.context()
+    assert not identity_path(ctx).exists()
+    done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+    release.touch()
+    thread.join(timeout=30)
+    assert not thread.is_alive() and errors == []
+    assert coreid.started_by_pack(ctx, ctx.client().server_status())
+    assert coreid.read_pending(ctx) is None, "its start finished"
+
+
+def test_a_pending_start_never_lets_another_starter_in(city: City) -> None:
+    """The pending start names the pack's hc: a core another starter asked
+    for, or one asked for outside the time the pack's hc ran (its pid since
+    reused), is refused, and nothing is recorded."""
+    ctx = city.context()
+    since_ms = coreid.wall_ms() - 5000
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
+    as_launchd_core(city, starter_pid=5151, asked_ns=(since_ms + 1) * 1_000_000)
+    assert city.start("mc-a").code == 1
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms - 1) * 1_000_000)
+    assert city.start("mc-a").code == 1
+    coreid.close_start(ctx, starter_pid=4242, until_ms=since_ms + 1000)
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1001) * 1_000_000)
+    assert city.start("mc-a").code == 1
+    assert not identity_path(ctx).exists()
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1000) * 1_000_000)
+    assert city.start("mc-a").code == 0
+
+
+def test_a_later_start_supersedes_the_pending_one(city: City) -> None:
+    ctx = city.context()
+    since_ms = coreid.wall_ms()
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
+    coreid.begin_start(ctx, starter_pid=4343, since_ms=since_ms + 1)
+    coreid.close_start(ctx, starter_pid=4242, until_ms=since_ms + 2)  # the first one's end leaves the second's alone
+    pending = coreid.read_pending(ctx)
+    assert pending == coreid.PendingStart(starter_pid=4343, since_ms=since_ms + 1, until_ms=None)
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1) * 1_000_000)
+    assert city.start("mc-a").code == 1
+
+
+def test_a_forged_pending_start_is_not_trusted(city: City) -> None:
+    ctx = city.context()
+    since_ms = coreid.wall_ms()
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
+    pending_path(ctx).chmod(0o664)
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1) * 1_000_000)
+    assert coreid.read_pending(ctx) is None
+    assert city.start("mc-a").code == 1
 
 
 # --- a holder of the city restarted the core (macOS) ------------------------------------------

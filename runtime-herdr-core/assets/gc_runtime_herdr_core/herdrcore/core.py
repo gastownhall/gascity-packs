@@ -55,7 +55,7 @@ import pwd
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, Final, FrozenSet, List, Mapping, Optional, Set
+from typing import Callable, Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Set
 
 from ..hc.errors import HcError, HcUnreachable
 from ..hc.paths import ensure_dirs
@@ -66,7 +66,7 @@ from ..rpp.ops import OpError
 from ..rpp.statedir import StateDirError
 from . import coreid
 from .attach import ATTACH_TERMINAL_KEYS
-from .command import run_bounded
+from .command import Completed, run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
 from .corescan import holder_prefix, is_holder_of, listener_elsewhere, nothing_runs
@@ -336,23 +336,54 @@ def check_core_lock(ctx: OpContext) -> None:
     )
 
 
+@dataclass(frozen=True)
+class StarterRun:
+    """An hc the pack ran to start the core (:func:`run_starter`)."""
+
+    done: Completed
+    since_ms: int
+    """Wall clock before the pack ran it."""
+
+
+def run_starter(ctx: OpContext, argv: Sequence[str], *, env: Mapping[str, str], timeout_s: float) -> StarterRun:
+    """Run the hc command ``argv`` that starts the core (``server start`` or
+    ``server restart``), naming it as the pending start before it is waited
+    on and closing that once it ends (:mod:`.coreid`)."""
+    since_ms = coreid.wall_ms()
+    spawned: List[int] = []
+
+    def pending(pid: int) -> None:
+        spawned.append(pid)
+        coreid.begin_start(ctx, starter_pid=pid, since_ms=since_ms)
+
+    try:
+        done = run_bounded(argv, env=env, cwd=ctx.paths.state_root, timeout_s=timeout_s, cancel=ctx.request.cancel, on_spawn=pending)
+    except (OSError, StateDirError, LockTimeout) as err:
+        raise OpError(f"cannot note the start of the city's core: {err}") from None
+    finally:
+        if spawned:
+            _close_start(ctx, spawned[0])
+    return StarterRun(done=done, since_ms=since_ms)
+
+
+def _close_start(ctx: OpContext, starter_pid: int) -> None:
+    try:
+        coreid.close_start(ctx, starter_pid=starter_pid, until_ms=coreid.wall_ms())
+    except (OSError, StateDirError, LockTimeout) as err:
+        raise OpError(f"cannot note the end of the city's core start: {err}") from None
+
+
 def start_core(ctx: OpContext, hc_bin: str) -> None:
     """``hc server start`` under the allowlist, wait for the core's hello,
     then record the core that answers when that hc started it under launchd
-    (:func:`.coreid.record`)."""
+    (:mod:`.coreid`)."""
     ensure_dirs(ctx.paths)
     write_hc_config(ctx.paths)
     budget = ctx.request.deadline.budget(CORE_START_WAIT_S)
     if budget <= 0:
         raise OpError("no time left to start the city's core")
-    since_ms = coreid.wall_ms()
-    done = run_bounded(
-        [hc_bin, "server", "start"],
-        env=core_env(ctx, hc_bin),
-        cwd=ctx.paths.state_root,
-        timeout_s=budget,
-        cancel=ctx.request.cancel,
-    )
+    run = run_starter(ctx, [hc_bin, "server", "start"], env=core_env(ctx, hc_bin), timeout_s=budget)
+    done = run.done
     if not done.ok:
         detail = done.output.splitlines()[-1] if done.output else "no output"
         state = "timed out" if done.returncode is None else f"exited {done.returncode}"
@@ -366,18 +397,22 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
             if time.monotonic() >= end:
                 raise OpError("the city's core did not answer after hc server start") from None
             ctx.request.cancel.pause(0.05)
-    record_started_core(ctx, starter_pid=done.pid, since_ms=since_ms)
+    record_started_core(ctx, run)
 
 
-def record_started_core(ctx: OpContext, *, starter_pid: int, since_ms: int) -> None:
+def record_started_core(ctx: OpContext, run: StarterRun) -> None:
     """Record the core that answers now as the one the pack started, when the
-    hc the pack ran (pid ``starter_pid``, from ``since_ms``) asked launchd
-    for it. Any other core is not recorded (:mod:`.coreid`)."""
+    hc the pack ran asked launchd for it, and drop that start's pending
+    entry: it finished. Any other core is not recorded (:mod:`.coreid`)."""
     try:
         status = ctx.client().server_status()
     except HcError:
         return
-    coreid.record(ctx, status, starter_pid=starter_pid, since_ms=since_ms)
+    coreid.record(ctx, status, starter_pid=run.done.pid, since_ms=run.since_ms)
+    try:
+        coreid.finish_start(ctx, starter_pid=run.done.pid)
+    except (OSError, StateDirError, LockTimeout) as err:
+        raise OpError(f"cannot note the end of the city's core start: {err}") from None
 
 
 # --- parking ---------------------------------------------------------------------------
@@ -442,9 +477,10 @@ def launchd_reason(
     ctx: OpContext, status: StatusResult, started: coreid.LaunchdStart, expected: Mapping[str, str]
 ) -> Optional[str]:
     """Why a core hc placed under launchd is not the pack's, or None: it is
-    the core the pack's own hc started (its recorded identity), or one a
-    holder of the city restarted, judged by that holder's environment."""
-    if coreid.started_by_pack(ctx, status):
+    the core the pack's own hc started (its recorded identity, or the
+    pending start that names its starter), or one a holder of the city
+    restarted, judged by that holder's environment."""
+    if coreid.started_by_pack(ctx, status) or coreid.accept_pending(ctx, status, started):
         return None
     starter = coreid.live(ctx, started.starter_pid)
     if starter is None or starter.uid != os.getuid() or not is_holder_of(starter, holder_prefix(ctx.paths)):

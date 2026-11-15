@@ -35,7 +35,6 @@ from ..rpp.flock import LockTimeout
 from ..rpp.ops import OpError
 from ..rpp.redact import Redactor
 from ..rpp.statedir import StateDirError
-from . import coreid
 from .admin import (
     admin_context,
     admin_host,
@@ -47,10 +46,18 @@ from .admin import (
     lock_socket,
     ownership,
 )
-from .command import run_bounded
 from .config import ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
-from .core import CORE_START_WAIT_S, check_foreign, core_env, foreign_core_reason, record_started_core, start_core, unpark
+from .core import (
+    CORE_START_WAIT_S,
+    check_foreign,
+    core_env,
+    foreign_core_reason,
+    record_started_core,
+    run_starter,
+    start_core,
+    unpark,
+)
 from .install import InstallError, fetch_for, install, verify_installed
 from .pin import HcPin, PinError, host_target, load_pin
 from .procs import ProcError
@@ -250,15 +257,16 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
             f"the city's core was started outside the pack ({reason}); a planned "
             "restart would keep that environment: run `gc herdr-core restart-core` instead"
         )
-    expected = core_env(ctx, hc_bin)
-    since_ms = coreid.wall_ms()
-    done = run_bounded(
-        [hc_bin, "server", "restart"],
-        env=expected,
-        cwd=ctx.paths.state_root,
-        timeout_s=ctx.request.deadline.budget(CORE_START_WAIT_S + STOP_WAIT_S),
-        cancel=ctx.request.cancel,
-    )
+    try:
+        run = run_starter(
+            ctx,
+            [hc_bin, "server", "restart"],
+            env=core_env(ctx, hc_bin),
+            timeout_s=ctx.request.deadline.budget(CORE_START_WAIT_S + STOP_WAIT_S),
+        )
+    except OpError as err:
+        raise CommandError(err.message) from None
+    done = run.done
     if not done.ok:
         detail = done.output.splitlines()[-1] if done.output else "no output"
         raise CommandError(f"hc server restart failed ({detail}); herdr-core {hello.version} stays installed to roll back to")
@@ -273,7 +281,10 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
         if time.monotonic() >= end:
             raise CommandError(f"the city's core does not run herdr-core {pin.version} after the restart")
         ctx.request.cancel.pause(0.1)
-    record_started_core(ctx, starter_pid=done.pid, since_ms=since_ms)  # hc server restart starts the new core
+    try:
+        record_started_core(ctx, run)  # hc server restart starts the new core
+    except OpError as err:
+        raise CommandError(err.message) from None
     out(f"handed the city's core over from herdr-core {hello.version} to {pin.version}; its sessions kept running")
 
 
