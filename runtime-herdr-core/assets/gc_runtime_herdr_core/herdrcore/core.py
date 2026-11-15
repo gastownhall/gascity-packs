@@ -113,11 +113,13 @@ and starts its unit with ``EnvironmentFile=`` it (``platform/systemd.rs``)."""
 HC_RUNTIME_KEY: Final = "HC_RUNTIME"
 """hc marks its own cores and holders with ``HC_RUNTIME=1`` (sweep exemption)."""
 
-HC_MARK_KEYS: Final[FrozenSet[str]] = frozenset({HC_RUNTIME_KEY, "XPC_SERVICE_NAME", "_HC_RESPONSIBLE_PID"})
+HC_MARK_KEYS: Final[FrozenSet[str]] = frozenset({HC_RUNTIME_KEY, "XPC_SERVICE_NAME", "_HC_RESPONSIBLE_PID", "HC_LAUNCHD_DIRECT"})
 """What hc itself sets in a core's or holder's environment: ``HC_RUNTIME``;
 on macOS ``XPC_SERVICE_NAME=0`` in the environment a launchd core restores
-(``platform/macos_launchd.rs``), and ``_HC_RESPONSIBLE_PID`` in the one a
-holder re-execs itself with (``platform/macos_responsibility.rs``)."""
+(``platform/macos_launchd.rs``), ``HC_LAUNCHD_DIRECT`` on a core it serves
+directly when it cannot use launchd (the same file), and
+``_HC_RESPONSIBLE_PID`` in the one a holder re-execs itself with
+(``platform/macos_responsibility.rs``)."""
 
 HC_CORE_UNIT_PREFIX: Final = "hc-serve-"
 SYSTEMD_SERVICE_SUFFIX: Final = ".service"
@@ -511,6 +513,9 @@ def launchd_reason(
     starter = coreid.live(ctx, started.starter_pid)
     if starter is None or starter.uid != os.getuid() or not is_holder_of(starter, holder_prefix(ctx.paths)):
         return "it was started through launchd by an hc the pack did not run"
+    holder_started_ms = ctx.host.procs.started_ms(starter)
+    if holder_started_ms is None or holder_started_ms > started.asked_ns // 1_000_000:
+        return "it was asked for before the holder its start names began: that pid was another process's"
     try:
         holder_env = ctx.host.procs.environ(starter.pid)
     except ProcError as err:

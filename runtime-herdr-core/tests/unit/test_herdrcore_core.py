@@ -89,6 +89,16 @@ def test_systemds_service_variables_are_not_the_starters() -> None:
     assert core.foreign_reason(actual, _expected()) is None
 
 
+@pytest.mark.parametrize(
+    "mark",
+    [("HC_RUNTIME", "1"), ("XPC_SERVICE_NAME", "0"), ("_HC_RESPONSIBLE_PID", "31"), ("HC_LAUNCHD_DIRECT", "1")],
+    ids=lambda mark: mark[0],
+)
+def test_hcs_own_marks_are_not_the_starters(mark: "tuple[str, str]") -> None:
+    # HC_LAUNCHD_DIRECT: hc's macOS fallback serves the core directly, and marks it so.
+    assert core.foreign_reason(dict(_expected(), **{mark[0]: mark[1]}), _expected()) is None
+
+
 def test_a_core_hcs_cli_starts_for_attach_is_the_packs() -> None:
     # attach gives hc's CLI the allowlist and the viewer's terminal settings;
     # a core the CLI starts in a race carries both.

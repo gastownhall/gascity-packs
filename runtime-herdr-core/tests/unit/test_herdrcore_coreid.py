@@ -103,6 +103,9 @@ def test_the_launchd_argv_names_its_starter_and_when_it_asked() -> None:
     assert started == coreid.LaunchdStart(starter_pid=31, asked_ns=1_700_000_000_000_000_000)
     script = ("/usr/bin/python3", "/x/cli.py", "--hc-launchd", "/s/hc-launchd-7-5-" + "b" * 32 + "/ready")
     assert coreid.launchd_start(script) == coreid.LaunchdStart(starter_pid=7, asked_ns=5)
+    # ps prints argv joined by spaces: an hc path with spaces reads as more words.
+    spaced = ("/Applications/Herdr", "Core.app/Contents/MacOS/herdr-core", "--hc-launchd", "/tmp/hc-launchd-9-5-" + "c" * 32 + "/ready")
+    assert coreid.launchd_start(spaced) == coreid.LaunchdStart(starter_pid=9, asked_ns=5)
     for argv in (
         ("/opt/hc/herdr-core", "serve"),
         ("/opt/hc/herdr-core", "--hc-launchd"),
@@ -111,7 +114,8 @@ def test_the_launchd_argv_names_its_starter_and_when_it_asked() -> None:
         ("/opt/hc/herdr-core", "--hc-launchd", "/tmp/hc-launchd-x-5-" + "a" * 32 + "/ready"),
         ("/opt/hc/herdr-core", "--hc-launchd", "/tmp/elsewhere-31-5-" + "a" * 32 + "/ready"),
         ("/opt/hc/herdr-core", "--hc-launchd", "/tmp/hc-launchd-0-5-" + "a" * 32 + "/ready"),
-        ("a", "b", "c", "--hc-launchd", "/tmp/hc-launchd-31-5-" + "a" * 32 + "/ready"),
+        ("--hc-launchd", "/tmp/hc-launchd-31-5-" + "a" * 32 + "/ready"),
+        ("/opt/hc/herdr-core", "--hc-launchd", "/tmp/hc-launchd-31-5-" + "a" * 32 + "/ready", "extra"),
     ):
         assert coreid.launchd_start(argv) is None, argv
 
@@ -454,6 +458,17 @@ def test_a_launchd_core_whose_holder_carries_a_foreign_environment_is_refused(
     as_launchd_core(city, starter_pid=pid)
     done = city.start("mc-a")
     assert done.code == 1 and "OPENAI_API_KEY" in done.stderr and "sk-theirs" not in done.stderr
+
+
+@needs_proc
+def test_a_launchd_core_asked_for_before_its_holder_started_is_refused(city: City, started: List["subprocess.Popen[bytes]"]) -> None:
+    """A holder asks launchd only once it runs: a core asked for before the
+    holder named by its pid started was asked for by an earlier process
+    with that pid."""
+    pid = run_holder(started, city, holder_env(city))
+    as_launchd_core(city, starter_pid=pid, asked_ns=time.time_ns() - 60 * 1_000_000_000)
+    done = city.start("mc-a")
+    assert done.code == 1 and "restart-core" in done.stderr
 
 
 @needs_proc

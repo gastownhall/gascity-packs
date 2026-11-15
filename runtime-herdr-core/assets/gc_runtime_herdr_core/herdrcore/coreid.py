@@ -69,10 +69,6 @@ PENDING_LOCK_WAIT_S: Final = 5.0
 LAUNCHD_SENTINEL: Final = "--hc-launchd"
 LAUNCHD_DIR_PREFIX: Final = "hc-launchd-"
 LAUNCHD_READY: Final = "ready"
-SENTINEL_SLOTS: Final = 3
-"""The sentinel is argv[1] of hc's own binary; one slot more lets an
-interpreted stand-in (a script run by its interpreter) match too."""
-
 _READ_LIMIT: Final = 4096
 _HEX_LEN: Final = 32
 
@@ -89,26 +85,24 @@ class LaunchdStart:
 
 def launchd_start(argv: Sequence[str]) -> Optional[LaunchdStart]:
     """The starter of a core whose argv is hc's launchd form
-    (``<hc> --hc-launchd <dir>/ready``); None for any other argv."""
-    for index in range(1, min(len(argv), SENTINEL_SLOTS)):
-        if argv[index] != LAUNCHD_SENTINEL:
-            continue
-        if index + 1 >= len(argv):
-            return None
-        ready = argv[index + 1]
-        if os.path.basename(ready) != LAUNCHD_READY:
-            return None
-        name = os.path.basename(os.path.dirname(ready))
-        if not name.startswith(LAUNCHD_DIR_PREFIX):
-            return None
-        fields = name[len(LAUNCHD_DIR_PREFIX) :].split("-")
-        if len(fields) != 3 or not (fields[0].isdigit() and fields[1].isdigit()):
-            return None
-        if len(fields[2]) != _HEX_LEN or not all(c in "0123456789abcdefABCDEF" for c in fields[2]):
-            return None
-        pid = int(fields[0])
-        return LaunchdStart(starter_pid=pid, asked_ns=int(fields[1])) if pid > 0 else None
-    return None
+    (``<hc> --hc-launchd <dir>/ready``); None for any other argv. The form
+    is read from the end: ``ps`` prints argv joined by spaces, so an hc path
+    with spaces reads as more than one word."""
+    if len(argv) < 3 or argv[-2] != LAUNCHD_SENTINEL:
+        return None
+    ready = argv[-1]
+    if os.path.basename(ready) != LAUNCHD_READY:
+        return None
+    name = os.path.basename(os.path.dirname(ready))
+    if not name.startswith(LAUNCHD_DIR_PREFIX):
+        return None
+    fields = name[len(LAUNCHD_DIR_PREFIX) :].split("-")
+    if len(fields) != 3 or not (fields[0].isdigit() and fields[1].isdigit()):
+        return None
+    if len(fields[2]) != _HEX_LEN or not all(c in "0123456789abcdefABCDEF" for c in fields[2]):
+        return None
+    pid = int(fields[0])
+    return LaunchdStart(starter_pid=pid, asked_ns=int(fields[1])) if pid > 0 else None
 
 
 @dataclass(frozen=True)
