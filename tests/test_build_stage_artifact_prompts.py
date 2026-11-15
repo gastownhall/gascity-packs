@@ -43,6 +43,27 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_REPORT_KEY = "gc.build.review_report_path"
 FINAL_REPORT_KEY = "gc.build.final_report_path"
 CHECK_SCRIPT = "build-artifact-valid.sh"
+# How a prompt tells the agent to run the artifact check. Packs whose formulas
+# still use the legacy launcher-local `.gc/scripts/checks/...` path name that
+# path; packs migrated to the layer-resolved `../assets/scripts/checks/...` form
+# send the agent to the absolute script gc recorded as `gc.check_path`, and to
+# the validator beside it.
+LEGACY_CHECK_RUN = f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}"
+LAYER_CHECK_RUN = 'gc_bead_id=<claimed-step-id> "<gc.check_path>"'
+LAYER_RESOLVED_PACKS = frozenset({"compound-engineering"})
+
+
+def for_pack(pack: str, fragments: tuple[str, ...]) -> tuple[str, ...]:
+    if pack not in LAYER_RESOLVED_PACKS:
+        return fragments
+    return tuple(LAYER_CHECK_RUN if fragment == LEGACY_CHECK_RUN else fragment for fragment in fragments)
+
+
+def validator_call(pack: str, schema_id: str) -> str:
+    validator = '"<validator>"' if pack in LAYER_RESOLVED_PACKS else ".gc/scripts/validate_build_artifact.py"
+    return f"python3 {validator} --schema {schema_id} --path"
+
+
 YAML_BLOCK_RE = re.compile(r"^```yaml\n(?P<body>.*?)^```$", re.DOTALL | re.MULTILINE)
 
 # (pack, build formula) whose `review` stage expands into a code-review flow.
@@ -57,7 +78,7 @@ REVIEW_BUILDS = (
 # repair attempt start from the validator errors.
 VALIDATION_FRAGMENTS = (
     "on the workflow root bead, not on the claimed step bead",
-    f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}",
+    LEGACY_CHECK_RUN,
     "fix any error before setting `gc.outcome=pass`",
     "read the validator errors from `gc.attempt_log` on the validation loop control bead",
 )
@@ -85,7 +106,7 @@ REQUIREMENTS_TARGET_FRAGMENTS = (
     "read the validator errors from `gc.attempt_log` on the validation loop control bead",
     "repair the requirements artifact in place",
     "build artifact must start with yaml front matter",
-    f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}",
+    LEGACY_CHECK_RUN,
     "approval metadata alone does not satisfy it",
 )
 
@@ -201,7 +222,7 @@ class ReviewReportPathContractTests(unittest.TestCase):
         for pack, build in REVIEW_BUILDS:
             exp_path, _, _, target = expansion_target(pack, build, "review")
             text = prompt_text(exp_path, target)
-            for fragment in REVIEW_TARGET_FRAGMENTS:
+            for fragment in for_pack(pack, REVIEW_TARGET_FRAGMENTS):
                 with self.subTest(pack=pack, fragment=fragment):
                     self.assertIn(normalize(fragment), text)
 
@@ -226,7 +247,7 @@ class CompoundFinalReportContractTests(unittest.TestCase):
 
     def test_finalize_target_writes_and_records_the_final_report(self) -> None:
         text = prompt_text(self.exp_path, self.target)
-        for fragment in FINAL_TARGET_FRAGMENTS:
+        for fragment in for_pack("compound-engineering", FINAL_TARGET_FRAGMENTS):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize(fragment), text)
 
@@ -295,7 +316,7 @@ APPLY_LANE_FRAGMENTS = (
 )
 
 PLAN_TARGET_FRAGMENTS = (
-    f"gc_bead_id=<claimed-step-id> .gc/scripts/checks/{CHECK_SCRIPT}",
+    LEGACY_CHECK_RUN,
     "fix any error before setting `gc.outcome=pass`",
     "read the validator errors from `gc.attempt_log` on the validation loop control bead",
     "keep its yaml front matter intact",
@@ -315,8 +336,10 @@ def status_sentence(artifact: str) -> str:
 class ApplyFindingsFrontMatterTests(unittest.TestCase):
 
     def test_validator_ships_beside_the_check_script(self) -> None:
-        # Prompts call `.gc/scripts/validate_build_artifact.py`; the check lives
-        # at `.gc/scripts/checks/build-artifact-valid.sh`, both from gascity/assets/scripts.
+        # Legacy prompts call `.gc/scripts/validate_build_artifact.py` beside
+        # `.gc/scripts/checks/build-artifact-valid.sh`; layer-resolved prompts
+        # find the validator in the parent of the resolved check. Either way
+        # both ship from gascity/assets/scripts.
         scripts = REPO_ROOT / "gascity" / "assets" / "scripts"
         self.assertTrue((scripts / "validate_build_artifact.py").is_file())
         self.assertTrue((scripts / "checks" / CHECK_SCRIPT).is_file())
@@ -332,7 +355,7 @@ class ApplyFindingsFrontMatterTests(unittest.TestCase):
             for artifact in artifacts:
                 schema_id = f"gc.build.{artifact}.v1"
                 with self.subTest(pack=pack, lane=lane, schema=schema_id):
-                    self.assertIn(f"python3 .gc/scripts/validate_build_artifact.py --schema {schema_id} --path", text)
+                    self.assertIn(validator_call(pack, schema_id), text)
                 with self.subTest(pack=pack, lane=lane, schema=schema_id, check="allowed statuses"):
                     self.assertIn(status_sentence(artifact), text)
 
@@ -346,7 +369,7 @@ class ApplyFindingsFrontMatterTests(unittest.TestCase):
                 self.assertEqual(keys[0], "gc.build.plan_path")
                 self.assertIn("gc.build.plan_path", [k for k, _ in gascity_pack_inference_gate.BUILD_BASIC_ARTIFACT_CONTRACTS])
             text = prompt_text(exp_path, target)
-            for fragment in PLAN_TARGET_FRAGMENTS:
+            for fragment in for_pack(pack, PLAN_TARGET_FRAGMENTS):
                 with self.subTest(pack=pack, fragment=fragment):
                     self.assertIn(normalize(fragment), text)
             with self.subTest(pack=pack, check="allowed statuses"):

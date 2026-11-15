@@ -41,9 +41,13 @@ When you edit one of them:
   such as `reviewed`; record review progress in the apply summary and bead
   metadata, not in the artifact's front matter.
 - Before closing with `gc.outcome=pass`, from `$GC_RIG_ROOT`, re-run the
-  validator on every build artifact you edited and fix every reported error:
-  `python3 .gc/scripts/validate_build_artifact.py --schema gc.build.implementation-summary.v1 --path "<implementation summary path>"`.
-  `python3 .gc/scripts/validate_build_artifact.py --schema gc.build.review.v1 --path "<review report path>"`.
+  validator on every build artifact you edited and fix every reported error.
+  The validator is `validate_build_artifact.py` in the parent directory of the
+  `build-artifact-valid.sh` script that Gas City recorded as `gc.check_path` on
+  this workflow's artifact-validation loop control beads (`gc.kind=ralph`); call
+  that path `<validator>`:
+  `python3 "<validator>" --schema gc.build.implementation-summary.v1 --path "<implementation summary path>"`.
+  `python3 "<validator>" --schema gc.build.review.v1 --path "<review report path>"`.
 - On a repeated attempt (`gc.attempt` greater than 1), first read the validator
   errors from `gc.attempt_log` on the loop control bead and repair the
   artifact in place.
