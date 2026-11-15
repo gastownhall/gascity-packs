@@ -30,9 +30,10 @@ core is judged by its starter:
   brought up at the same time, which the pack's hc found answering, names
   that starter, and is never accepted.
 * **A holder of the city restarted it.** Its starter is a live holder of the
-  city's socket, run by this user. A holder is spawned directly, with the
-  environment its core restored, so it is judged by that environment
-  (:func:`.core.foreign_reason`).
+  city's socket, run by this user, that started no later than the core was
+  asked for (a later one has a pid that was another process's then). A
+  holder is spawned directly, with the environment its core restored, so
+  it is judged by that environment (:func:`.core.foreign_reason`).
 
 Any other launchd core was started by someone else's hc, and is foreign.
 Everywhere else a core's environment can be judged, so nothing is recorded

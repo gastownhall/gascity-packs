@@ -165,28 +165,46 @@ checked against the app yet, so the sessions may not appear there.
   user, a fixed `PATH` (the hc binary's directory, then the system's), the
   locale, the discovery tuple, the pack-owned hc config, and the user
   manager's runtime directory and bus when they exist. No gc token or
-  provider credential reaches the core. A running core is judged by the
-  environment it was started with: `start` refuses one whose environment
-  differs (someone else started it) and names the fix, and refuses a core
-  listening on another socket for this session too. A core hc placed under
-  the systemd user manager is judged by its unit's environment file (hc
-  writes the starter's environment to `$RUNTIME_DIRECTORY/environment`),
-  not by the manager's own environment block. Before systemd 244 a unit
-  has no `RUNTIME_DIRECTORY`, so the pack finds the unit
-  (`hc-serve-<8 hex>.service`) through the core's control group. A holder
-  that restarts a crashed core writes its own environment, manager's block
-  included, into the new core's file, so a file carrying names the pack
-  never sets is accepted only when a live holder of the city has every
-  name in it with the same value. On macOS hc runs the core as a launchd job with
-  launchd's environment, which never shows its starter's; its command line
-  names the process that asked launchd for it. So the pack records the
-  core its own `herdr-core server start` (or `server restart`) asked for:
-  its pid, its process start time and hc's core id, in a private file of
-  the pack's state. A live core that matches all of it is the pack's. A
-  core a holder of the city restarted after a crash is judged by that
-  holder's environment, which `ps -E` shows. Every other launchd core is
-  refused: one someone else's hc started, including one that came up
-  while the pack's own start ran, and one whose pid was reused.
+  provider credential reaches the core. A running core is judged by how
+  it was started: `start` refuses one someone else started and names the
+  fix, and refuses a core listening on another socket for this session
+  too. What is judged depends on where hc placed the core:
+  - **No service manager:** the core's live environment.
+  - **systemd user manager:** the unit's environment file, where hc
+    writes the starter's environment, never the manager's own block. The
+    file is read only when the core runs as an hc core unit: its
+    `RUNTIME_DIRECTORY` ends in `hc-serve-<8 hex>` and its control group
+    is that same unit, or, before systemd 244 (no `RUNTIME_DIRECTORY`),
+    its control group is an `hc-serve-<8 hex>.service`. Otherwise its live
+    environment is judged. A holder that restarts a crashed core writes
+    its own environment, manager's block included, into the new core's
+    file. So a file carrying names the pack never sets is accepted only
+    when a live holder of the city (this user's,
+    `hold --socket <city prefix>...`) has every name in it with the same
+    value; that holder's own environment is taken as the city's.
+  - **macOS launchd:** the core runs with launchd's environment, which
+    never shows its starter's. Its command line names the process that
+    asked launchd for it and when. Before the pack waits on its own
+    `herdr-core server start` (or `server restart`), it notes that hc's
+    pid and when it ran it, and when it ended; a core asked for by that
+    pid in that time is the pack's, even when the pack's hc timed out or
+    another start of the pack checks first. On first acceptance the pack
+    records the core's pid, process start time and hc's core id (private
+    files of the pack's state), and a live core matching all of it is the
+    pack's. A core a holder of the city restarted after a crash is judged
+    by that holder's environment (`ps -E`), and only when the holder
+    started no later than the core was asked for. Every other launchd core is
+    refused: one someone else's hc started, including one that came up
+    while the pack's own start ran, and one whose starter pid was reused.
+
+  Where an environment is judged, the discovery tuple is compared by
+  value. Every other variable is judged by name only: it must be one the
+  pack's allowlist sets, a locale variable, hc's own marks, the terminal
+  settings `attach` passes, or, in a live environment, systemd's service
+  variables. Before its own `server start` the pack removes hc's restart
+  handoff (`restart-env.json` in the city's state directory), so a
+  restart someone else asked for does not hand its environment to the
+  pack's core; upgrade's `server restart` keeps it.
   `restart-core` replaces a refused core with one the pack starts; it
   knows the city's core by the core id hc keeps in the city's state
   directory, so it needs no process environment. Where a

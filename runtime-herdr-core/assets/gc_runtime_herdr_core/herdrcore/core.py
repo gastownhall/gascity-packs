@@ -15,11 +15,13 @@ an in-agent CLI during a restart window, the Herdr app's autostart):
 ``start`` refuses to put sessions on it and names the fix. Reads stay
 permissive: they report what the core holds. A core hc placed under
 systemd is judged by its unit's environment file, found through
-``RUNTIME_DIRECTORY`` or, before systemd 244, through the core's control
-group. A core hc placed under launchd (macOS) runs with launchd's
-environment, so it is judged by who started it: the pack's own hc, which
-the pack records, or a holder of the city restarting a crashed core
-(:mod:`.coreid`).
+``RUNTIME_DIRECTORY`` (when the core runs in that unit) or, before systemd
+244, through the core's control group (:func:`foreign_reason`). A core hc
+placed under launchd (macOS) runs with launchd's environment, so it is
+judged by who started it: the pack's own hc, which the pack names before
+it waits on it, or a holder of the city restarting a crashed core
+(:mod:`.coreid`). Before its own ``hc server start`` the pack removes hc's
+restart handoff (:func:`clear_restart_env`).
 
 A read that finds the core down answers unknown and **kicks** a detached
 start, at most one at a time per city and none for five minutes after a
@@ -311,22 +313,30 @@ def foreign_reason(
 ) -> Optional[str]:
     """Why a core running with environment ``actual`` is not the pack's, or None.
 
-    A core hc placed under systemd runs with the user manager's environment
-    block, systemd's service variables and its unit's EnvironmentFile (the
-    starter's environment): the starter is judged by that file, never by the
-    manager's block, which the pack does not control and which changes. The
-    unit's runtime directory, which holds the file, is ``RUNTIME_DIRECTORY``,
-    or, under systemd older than 244, which sets none, found through the
-    core's control group ``cgroup`` (``hc-serve-<8 hex>.service``)
-    (:func:`unit_directory`): a ``RUNTIME_DIRECTORY`` that names no hc core
-    unit, or not the one the readable control group is, is only a variable,
-    and the core's own environment is judged. A holder
-    that restarts a crashed core writes its own environment, the manager's
-    block included, into the new core's file, so a file carrying names the
-    pack never sets is accepted when it is what a live holder of the city
-    (``holder_environs``) writes: every name with that holder's value
-    (:func:`restarted_by`). A core spawned without systemd is judged by its
-    own environment. Only key names are reported, never values.
+    What is judged, by placement:
+
+    * **No service manager:** ``actual``, the core's live environment.
+    * **systemd:** the unit's EnvironmentFile, where hc writes the starter's
+      environment; the manager's block and systemd's service variables in
+      ``actual`` are not the starter's. The file is read only when the core
+      runs as an hc core unit (:func:`unit_directory`): ``RUNTIME_DIRECTORY``
+      names ``hc-serve-<8 hex>`` and the readable control group ``cgroup``
+      is that unit, or, under systemd older than 244, which sets no
+      ``RUNTIME_DIRECTORY``, the control group alone names it. Otherwise
+      ``actual`` is judged.
+    * **launchd** (macOS): judged by its starter (:func:`launchd_reason`),
+      which judges a holder's environment here.
+
+    In what is judged, the discovery tuple must equal the pack's by value.
+    Every other variable is judged **by name only**: it must be one
+    :func:`allowed_core_keys` allows (the allowlist, the locale, the user's
+    runtime directory and bus, hc's marks, ``attach``'s terminal settings),
+    or, in a live environment, a systemd service variable. A unit file
+    carrying other names is accepted only when it is what a live holder of
+    the city (``holder_environs``) writes for a core it restarts: every name
+    with that holder's value (:func:`restarted_by`); the holder's own
+    environment is taken as the city's. Only key names are reported, never
+    values.
     """
     for key in DISCOVERY_KEYS:
         if actual.get(key) != expected.get(key):
