@@ -25,7 +25,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 import pytest
 from cityharness import City, in_thread, make_city
 from conftest import teardown_cores
-from fakehc.cli import MANAGER_BLOCK, systemd_unit_env, write_launcher
+from fakehc.cli import systemd_unit_env, write_launcher
 from fakehc.procfs import add_boot, add_proc
 from fakehc.rawclient import raw_call
 from test_herdrcore_commands import run as run_command
@@ -35,7 +35,6 @@ from gc_runtime_herdr_core.hc.paths import resolve_paths
 from gc_runtime_herdr_core.herdrcore import admin, core, coreid, corescan
 from gc_runtime_herdr_core.herdrcore.context import OpContext, live_host
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, PsProcs
-from gc_runtime_herdr_core.herdrcore.usermanager import parse_busctl_environment
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Deadline
 from gc_runtime_herdr_core.rpp.ops import OpError, OpRequest
 from gc_runtime_herdr_core.rpp.redact import Redactor
@@ -559,34 +558,84 @@ def test_an_old_systemd_core_whose_unit_cannot_be_found_is_judged_by_its_live_en
     assert done.code == 1 and "GOCACHE" in done.stderr  # the manager's block, which the live environment carries
 
 
-def test_a_core_a_holder_restarted_under_old_systemd_is_accepted(legacy_city: City) -> None:
-    """A holder runs as a unit with the manager's block, and hands it on in
-    the environment file of the core it restarts (hc holder.rs, systemd.rs):
-    the block's names are not the starter's."""
-    city = legacy_city
+def systemd_core(city: City, starter: Dict[str, str], *, legacy: bool) -> Tuple[Dict[str, str], str]:
+    """A core hc placed under systemd (``legacy``: older than 244), started
+    with ``starter``: its environ and its control group."""
+    env, unit = systemd_unit_env(starter, city.env["GC_HC_TEST_RUNTIME_DIR"], legacy=legacy)
+    uid = os.getuid()
+    return env, f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/{unit}.service"
+
+
+def systemd_holder(city: City, *, legacy: bool, **extra: str) -> Dict[str, str]:
+    """A holder's environ under systemd: a unit the pack's core started, so
+    the manager's block, the core's environment (block included) and
+    systemd's service variables; ``extra`` is in its block too."""
     starter = core.core_env(city.context(), city.env["GC_HC_TEST_BIN"])
     run = city.env["GC_HC_TEST_RUNTIME_DIR"]
-    packs_core, _ = systemd_unit_env(starter, run, legacy=True)
-    holder, _ = systemd_unit_env(packs_core, run, legacy=True, verb="hold")
-    env, cgroup = legacy_unit(city, holder)
-    city.procs.core_environ = env
-    city.procs.core_cgroup = cgroup
-    refused = city.start("mc-a")
-    assert refused.code == 1 and "GOCACHE" in refused.stderr, "the manager's block cannot be read: nothing excuses it"
-    city.manager_block.append(frozenset(MANAGER_BLOCK))
+    packs_core, _ = systemd_unit_env(starter, run, legacy=legacy)
+    holder, _ = systemd_unit_env(dict(packs_core, **extra), run, legacy=legacy, verb="hold")
+    return holder
+
+
+@needs_proc
+@pytest.mark.parametrize("legacy", [True, False], ids=["systemd-239", "systemd-255"])
+def test_a_core_a_holder_of_the_city_restarted_under_systemd_is_judged_by_that_holder(
+    legacy_city: City, started: List["subprocess.Popen[bytes]"], legacy: bool
+) -> None:
+    """A holder runs as a unit with the manager's block, and hc writes its
+    whole environment into the file of the core it restarts (hc holder.rs,
+    systemd.rs): the file is the holder's, names and values, so no user bus
+    is read."""
+    city = legacy_city
+    holder = systemd_holder(city, legacy=legacy)
+    run_holder(started, city, holder)
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=legacy)
     done = city.start("mc-a")
     assert done.code == 0, done.stderr
-    city.procs.core_environ, city.procs.core_cgroup = legacy_unit(city, dict(holder, OPENAI_API_KEY="sk-theirs"))
-    done = city.start("mc-b")
-    assert done.code == 1 and "OPENAI_API_KEY" in done.stderr
 
 
-def test_the_managers_block_is_read_as_busctl_prints_it() -> None:
-    reply = 'as 3 "HOME=/home/u" "PATH=/usr/bin:/bin" "WEIRD=a\\"b\\\\c\\nd\\303\\251"\n'
-    assert parse_busctl_environment(reply) == frozenset({"HOME", "PATH", "WEIRD"})
-    assert parse_busctl_environment("as 0\n") == frozenset()
-    for bad in ('as 2 "A=b"', 's "A=b"', 'as 1 "A=b', 'as 1 "A=b"x', 'as 1 "\\q"', "as x"):
-        assert parse_busctl_environment(bad) is None, bad
+@needs_proc
+def test_a_holder_restarted_core_keeps_names_that_left_the_managers_block(
+    legacy_city: City, started: List["subprocess.Popen[bytes]"]
+) -> None:
+    """The holder took DISPLAY and WAYLAND_DISPLAY from the manager's block
+    when it started; the block lost them at logout. The holder still has
+    them, and so does the core it restarts."""
+    city = legacy_city
+    holder = systemd_holder(city, legacy=True, DISPLAY=":0", WAYLAND_DISPLAY="wayland-0")
+    run_holder(started, city, holder)
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=True)
+    done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+
+
+@needs_proc
+def test_a_foreign_value_for_a_name_in_the_managers_block_is_refused(
+    legacy_city: City, started: List["subprocess.Popen[bytes]"]
+) -> None:
+    city = legacy_city
+    holder = systemd_holder(city, legacy=True)
+    run_holder(started, city, holder)
+    theirs = dict(holder, SSH_AUTH_SOCK="/tmp/theirs/agent.sock")
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, theirs, legacy=True)
+    done = city.start("mc-a")
+    assert done.code == 1 and "SSH_AUTH_SOCK" in done.stderr and "theirs" not in done.stderr
+
+
+@needs_proc
+def test_a_unit_file_with_no_live_holder_of_the_city_is_judged_as_the_packs_own(
+    legacy_city: City, started: List["subprocess.Popen[bytes]"]
+) -> None:
+    """With no live holder of the city whose environment it is, a unit
+    file carrying names the pack never sets is refused."""
+    city = legacy_city
+    holder = systemd_holder(city, legacy=True)
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=True)
+    done = city.start("mc-a")
+    assert done.code == 1 and "GOCACHE" in done.stderr
+    run_holder(started, city, holder, socket="/tmp/other-city.holder.0123abcd.sock")
+    done = city.start("mc-a")
+    assert done.code == 1 and "GOCACHE" in done.stderr, "a holder of another socket is not the city's"
 
 
 # --- the process table, one process at a time ---------------------------------------------

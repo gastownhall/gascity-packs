@@ -134,8 +134,6 @@ class City:
     procs: CoreEnvProcs
     fake: Optional[FakeHc] = None
     now_ms: List[int] = field(default_factory=list)
-    manager_block: List[FrozenSet[str]] = field(default_factory=list)
-    """The systemd user manager's block names the host reads (none: it cannot be read)."""
 
     @property
     def spawn_root(self) -> Path:
@@ -245,16 +243,14 @@ def make_city(tmp: Path, home: Path, *, city_path: str = "/cities/test", procs: 
     }
     paths = resolve_paths(env, machine=MACHINE, home=lambda: str(home))
     wrapped = CoreEnvProcs(procs or LinuxProcs())
-    block: List[FrozenSet[str]] = []
     host = Host(
         procs=wrapped,
         pack_dir=str(PACK_ROOT),
         python=sys.executable,
         machine=MACHINE,
         home=lambda: str(home),
-        manager_keys=lambda run_user: block[-1] if block else None,
     )
-    return City(root=tmp, home=home, env=env, paths=paths, host=host, procs=wrapped, manager_block=block)
+    return City(root=tmp, home=home, env=env, paths=paths, host=host, procs=wrapped)
 
 
 def write_core_json(paths: HcPaths) -> str:

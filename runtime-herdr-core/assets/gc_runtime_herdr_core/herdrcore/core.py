@@ -69,7 +69,7 @@ from .attach import ATTACH_TERMINAL_KEYS
 from .command import Completed, run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
-from .corescan import holder_prefix, is_holder_of, listener_elsewhere, nothing_runs
+from .corescan import holder_prefix, holders, is_holder_of, listener_elsewhere, nothing_runs
 from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0
@@ -249,8 +249,22 @@ def core_unit(cgroup: Optional[str], uid: int) -> Optional[str]:
     return unit
 
 
-def _no_manager_keys(run_user: str) -> Optional[FrozenSet[str]]:
-    return None
+HOLDER_SET_KEYS: Final[FrozenSet[str]] = frozenset({HC_RUNTIME_KEY, "XDG_RUNTIME_DIR"})
+"""What hc sets in the environment file of every unit it starts, over its
+starter's (``client.rs`` ``spawn_detached``, ``platform/systemd.rs``)."""
+
+
+def _no_holders() -> List[Mapping[str, str]]:
+    return []
+
+
+def restarted_by(unit_env: Mapping[str, str], holder_env: Mapping[str, str]) -> bool:
+    """Whether a unit file ``unit_env`` is what a holder with environment
+    ``holder_env`` writes for the core it restarts: hc writes the holder's
+    environment, less systemd's service variables, with its own
+    :data:`HOLDER_SET_KEYS` over it, so every other name in the file has
+    the holder's value."""
+    return all(holder_env.get(key) == value for key, value in unit_env.items() if key not in HOLDER_SET_KEYS)
 
 
 def foreign_reason(
@@ -259,7 +273,7 @@ def foreign_reason(
     *,
     cgroup: Optional[str] = None,
     unit_environment: Callable[[str], Optional[Dict[str, str]]] = read_unit_environment,
-    manager_keys: Callable[[str], Optional[FrozenSet[str]]] = _no_manager_keys,
+    holder_environs: Callable[[], Sequence[Mapping[str, str]]] = _no_holders,
 ) -> Optional[str]:
     """Why a core running with environment ``actual`` is not the pack's, or None.
 
@@ -269,11 +283,13 @@ def foreign_reason(
     manager's block, which the pack does not control and which changes. The
     unit's runtime directory, which holds the file, is ``RUNTIME_DIRECTORY``,
     or, under systemd older than 244, which sets none, found through the
-    core's control group ``cgroup`` (``hc-serve-<8 hex>.service``). The file
-    may also carry the names in the manager's block (``manager_keys``, given
-    the runtime directory): a holder hands them on when it restarts a core.
-    A core spawned without systemd is judged by its own environment. Only
-    key names are reported, never values.
+    core's control group ``cgroup`` (``hc-serve-<8 hex>.service``). A holder
+    that restarts a crashed core writes its own environment, the manager's
+    block included, into the new core's file, so a file carrying names the
+    pack never sets is accepted when it is what a live holder of the city
+    (``holder_environs``) writes: every name with that holder's value
+    (:func:`restarted_by`). A core spawned without systemd is judged by its
+    own environment. Only key names are reported, never values.
     """
     for key in DISCOVERY_KEYS:
         if actual.get(key) != expected.get(key):
@@ -300,9 +316,8 @@ def foreign_reason(
         started = unit_env
         allowed = set(allowed_core_keys(expected))
         stray = _stray(started, allowed)
-        if stray:
-            block = manager_keys(expected.get("XDG_RUNTIME_DIR", ""))
-            stray = [key for key in stray if block is None or key not in block]
+        if stray and any(restarted_by(unit_env, holder) for holder in holder_environs()):
+            stray = []
     else:
         stray = _stray(started, allowed)
     if stray:
@@ -469,8 +484,19 @@ def foreign_core_reason(ctx: OpContext, status: StatusResult, hc_bin: str) -> Op
         actual,
         expected,
         cgroup=ctx.host.procs.cgroup(status.pid),
-        manager_keys=ctx.host.manager_keys,
+        holder_environs=lambda: city_holder_environs(ctx),
     )
+
+
+def city_holder_environs(ctx: OpContext) -> List[Mapping[str, str]]:
+    """The environments of the city's live holders (this user's, ``hold
+    --socket <city prefix>...``); none when the process table cannot be read."""
+    try:
+        snapshot = ctx.host.procs.snapshot()
+    except ProcError:
+        return []
+    envs = ctx.host.procs.environs(proc.pid for proc in holders(snapshot, ctx.paths))
+    return list(envs.values())
 
 
 def launchd_reason(

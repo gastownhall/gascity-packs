@@ -174,9 +174,10 @@ checked against the app yet, so the sessions may not appear there.
   not by the manager's own environment block. Before systemd 244 a unit
   has no `RUNTIME_DIRECTORY`, so the pack finds the unit
   (`hc-serve-<8 hex>.service`) through the core's control group. A holder
-  that restarts a crashed core hands the manager's block on in the new
-  core's file, so the names in that block (read from the manager) are not
-  counted against it. On macOS hc runs the core as a launchd job with
+  that restarts a crashed core writes its own environment, manager's block
+  included, into the new core's file, so a file carrying names the pack
+  never sets is accepted only when a live holder of the city has every
+  name in it with the same value. On macOS hc runs the core as a launchd job with
   launchd's environment, which never shows its starter's; its command line
   names the process that asked launchd for it. So the pack records the
   core its own `herdr-core server start` (or `server restart`) asked for:

@@ -3,8 +3,7 @@ hc client, the per-name locks, and the host it runs on.
 
 What the ops touch outside their request (the process table, the machine's
 identity, the password-database home, where spawn files go, whether a
-systemd user manager can re-scope agents, that manager's environment, the
-clock) is a :class:`Host`, so
+systemd user manager can re-scope agents, the clock) is a :class:`Host`, so
 the unit tier runs the ops in process against fake-hc and a fake process
 table. The test-only overrides (``GC_HC_TEST_*``) are honoured only under
 ``GC_HC_TEST=1``.
@@ -21,7 +20,7 @@ import hashlib
 import os
 import time
 from dataclasses import dataclass, field, replace
-from typing import Callable, Final, FrozenSet, Mapping, Optional
+from typing import Callable, Final, Mapping, Optional
 
 from ..hc.client import BackendFault, CallTimeouts, CoreEndpoint, HcClient
 from ..hc.paths import HcPaths, resolve_paths
@@ -31,7 +30,6 @@ from ..rpp.ops import OpRequest
 from ..rpp.statedir import OP_CITY_ENV, ensure_private_dir, user_home
 from .config import pin_policy, resolve_hc_binary, test_mode
 from .procs import ProcSource, default_source
-from .usermanager import read_manager_keys
 
 FAULT_ENV: Final = "GC_RPP_FAULT"
 """``conformance-faults``: the backend fault to inject at every hc call
@@ -70,9 +68,6 @@ class Host:
     """The machine identity; None reads the real one."""
     home: Callable[[], str] = user_home
     now_ms: Callable[[], int] = field(default=lambda: int(time.time() * 1000))
-    manager_keys: Callable[[str], Optional[FrozenSet[str]]] = read_manager_keys
-    """The names in the systemd user manager's environment block, given its
-    runtime directory (:mod:`.usermanager`)."""
 
 
 def live_host(python: str) -> Host:
