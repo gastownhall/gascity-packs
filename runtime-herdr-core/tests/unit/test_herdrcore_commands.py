@@ -213,8 +213,11 @@ def test_upgrade_hands_the_core_over_and_keeps_its_sessions(city: City, set_pin:
     pinned = {"GC_HC_TEST_BIN": ""}  # sessions start with the pinned binary
     assert city.run("start", "mc-a", stdin=b'{"command":"cat"}', extra=pinned).code == 0
     core.set_version("0.1.18")  # an older build, below the pin's minimum
+    handoff = Path(city.paths.state_dir) / "restart-env.json"
+    handoff.write_text("{}")  # hc's own restart handoff: hc server restart writes and reads it
     code, out, err = run(city, "upgrade", env=env)
     assert code == 0, err
+    assert handoff.exists(), "upgrade's hc server restart keeps hc's restart handoff"
     assert out[-1] == "handed the city's core over from herdr-core 0.1.18 to 0.1.19; its sessions kept running"
     assert core.call_count("server.restart") == 1 and core.call_count("server.stop") == 0
     assert [t["labels"] for t in city.terminals(all_records=False) if t["state"] == "live"] != []

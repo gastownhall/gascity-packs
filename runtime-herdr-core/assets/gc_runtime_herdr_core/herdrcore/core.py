@@ -131,6 +131,11 @@ TEST_RUNTIME_DIR_ENV: Final = "GC_HC_TEST_RUNTIME_DIR"
 """Test-only (``GC_HC_TEST=1``): the runtime directory handed to the core
 instead of ``/run/user/<uid>``."""
 
+RESTART_ENV_FILE: Final = "restart-env.json"
+"""hc's restart handoff in the city's state directory: the environment an
+``hc server restart`` saved, which the next core hc starts restores when it
+is under three minutes old (``restart.rs``)."""
+
 FOREIGN_FIX: Final = "city core was started outside the pack: run `gc herdr-core restart-core`"
 
 
@@ -414,15 +419,30 @@ def _close_start(ctx: OpContext, starter_pid: int) -> None:
         raise OpError(f"cannot note the end of the city's core start: {err}") from None
 
 
+def clear_restart_env(ctx: OpContext) -> None:
+    """Remove hc's restart handoff before the pack's own ``hc server
+    start``: a restart someone else asked for in the last three minutes
+    would otherwise hand its environment to the core the pack starts. Never
+    before an ``hc server restart``, whose handoff it is."""
+    try:
+        os.unlink(os.path.join(ctx.paths.state_dir, RESTART_ENV_FILE))
+    except FileNotFoundError:
+        return
+    except OSError as err:
+        raise OpError(f"cannot clear hc's restart environment before starting the city's core: {err.strerror}") from None
+
+
 def start_core(ctx: OpContext, hc_bin: str) -> None:
-    """``hc server start`` under the allowlist, wait for the core's hello,
-    then record the core that answers when that hc started it under launchd
+    """``hc server start`` under the allowlist, with hc's restart handoff
+    cleared (:func:`clear_restart_env`), wait for the core's hello, then
+    record the core that answers when that hc started it under launchd
     (:mod:`.coreid`)."""
     ensure_dirs(ctx.paths)
     write_hc_config(ctx.paths)
     budget = ctx.request.deadline.budget(CORE_START_WAIT_S)
     if budget <= 0:
         raise OpError("no time left to start the city's core")
+    clear_restart_env(ctx)
     run = run_starter(ctx, [hc_bin, "server", "start"], env=core_env(ctx, hc_bin), timeout_s=budget)
     done = run.done
     if not done.ok:

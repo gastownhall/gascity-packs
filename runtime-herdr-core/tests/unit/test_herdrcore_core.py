@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Sequence
 
 import pytest
 from cityharness import City
@@ -22,6 +22,7 @@ from fakehc.rawclient import raw_call
 
 from gc_runtime_herdr_core.hc.paths import resolve_paths
 from gc_runtime_herdr_core.herdrcore import core
+from gc_runtime_herdr_core.herdrcore.command import Completed
 from gc_runtime_herdr_core.rpp.ops import OpError
 from gc_runtime_herdr_core.herdrcore.config import HC_CONFIG_TOML, ConfigError, pinned_binary, resolve_hc_binary
 
@@ -410,6 +411,24 @@ def test_a_runtime_directory_that_is_not_an_hc_core_units_is_not_read(tmp_path: 
     actual["RUNTIME_DIRECTORY"] = str(other)
     reason = core.foreign_reason(actual, expected)
     assert reason is not None and "GOCACHE" in reason, reason
+
+
+def test_the_packs_own_start_clears_a_restart_environment_hc_kept(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hc restores ``restart-env.json`` (written by an ``hc server restart``
+    within the last three minutes) into the next core it starts: the core
+    the pack starts takes the pack's environment instead."""
+    kept = Path(city.paths.state_dir) / "restart-env.json"
+    kept.write_text('{"vars": [["OPENAI_API_KEY", "sk-theirs"]]}')
+    seen: List[bool] = []
+
+    def fake_run(argv: Sequence[str], **kwargs: object) -> Completed:
+        seen.append(kept.exists())
+        return Completed(returncode=1, output="refused", pid=4242)
+
+    monkeypatch.setattr(core, "run_bounded", fake_run)
+    with pytest.raises(OpError, match="exited 1"):
+        core.start_core(city.context(), city.env["GC_HC_TEST_BIN"])
+    assert seen == [False]
 
 
 def test_environment_file_round_trips_hcs_quoting() -> None:
