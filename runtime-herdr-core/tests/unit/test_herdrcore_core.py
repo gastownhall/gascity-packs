@@ -364,6 +364,54 @@ def test_a_runtime_directory_outside_the_users_runtime_dir_is_refused(tmp_path: 
     assert core.foreign_reason(actual, expected) is not None
 
 
+def unit_cgroup(unit: str) -> str:
+    uid = os.getuid()
+    return f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/{unit}.service"
+
+
+def test_a_core_running_in_the_unit_its_runtime_directory_names_is_judged_by_its_file(tmp_path: Path) -> None:
+    expected = dict(_expected(), XDG_RUNTIME_DIR=str(tmp_path / "run-user"))
+    actual = systemd_unit(tmp_path, expected, unit_file_env(expected, tmp_path / "run-user"))
+    assert core.foreign_reason(actual, expected, cgroup=unit_cgroup("hc-serve-0a1b2c3d")) is None
+
+
+@pytest.mark.parametrize(
+    "cgroup",
+    [
+        "hc-serve-0a1b2c3e",  # another core's unit
+        "hc-hold-0a1b2c3d",  # a holder's
+        "/user.slice/user-{uid}.slice/session-2.scope",  # no unit: a login's process
+        "/",
+    ],
+    ids=["other-core-unit", "holder-unit", "login-scope", "root"],
+)
+def test_a_core_not_running_in_the_unit_its_runtime_directory_names_is_judged_by_its_environment(
+    tmp_path: Path, cgroup: str
+) -> None:
+    """RUNTIME_DIRECTORY is only a variable: a process that sets it to the
+    pack's core's directory does not borrow that core's file."""
+    expected = dict(_expected(), XDG_RUNTIME_DIR=str(tmp_path / "run-user"))
+    actual = systemd_unit(tmp_path, expected, unit_file_env(expected, tmp_path / "run-user"))
+    path = cgroup.format(uid=os.getuid()) if cgroup.startswith("/") else unit_cgroup(cgroup)
+    reason = core.foreign_reason(actual, expected, cgroup=path)
+    assert reason is not None and "GOCACHE" in reason, reason  # the manager's block, which its environment carries
+    clean = dict(unit_file_env(expected, tmp_path / "run-user"), RUNTIME_DIRECTORY=actual["RUNTIME_DIRECTORY"])
+    assert core.foreign_reason(clean, expected, cgroup=path) is None, "an environment the pack's own is accepted"
+
+
+@pytest.mark.parametrize("name", ["hc-hold-0a1b2c3d", "hc-serve-0a1b2c3", "hc-serve-0A1B2C3D", "app-unit"])
+def test_a_runtime_directory_that_is_not_an_hc_core_units_is_not_read(tmp_path: Path, name: str) -> None:
+    expected = dict(_expected(), XDG_RUNTIME_DIR=str(tmp_path / "run-user"))
+    actual = systemd_unit(tmp_path, expected, unit_file_env(expected, tmp_path / "run-user"))
+    other = Path(actual["RUNTIME_DIRECTORY"]).parent / name
+    other.mkdir(mode=0o700)
+    (other / "environment").write_text(core.format_environment_file(unit_file_env(expected, tmp_path / "run-user")))
+    (other / "environment").chmod(0o600)
+    actual["RUNTIME_DIRECTORY"] = str(other)
+    reason = core.foreign_reason(actual, expected)
+    assert reason is not None and "GOCACHE" in reason, reason
+
+
 def test_environment_file_round_trips_hcs_quoting() -> None:
     env = {"EMPTY": "", "SECRET": " leading\tspaces\n\"quotes\" 'single' \\slash $dollar `ticks`\r\ntrailing "}
     text = core.format_environment_file(env)
@@ -374,7 +422,12 @@ def test_environment_file_round_trips_hcs_quoting() -> None:
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
-def test_start_accepts_its_own_core_when_fake_hc_places_it_like_systemd(short_tmp: Path, home_dir: Path) -> None:
+def test_a_systemd_placed_core_outside_its_units_control_group_is_judged_by_its_environment(short_tmp: Path, home_dir: Path) -> None:
+    """fake-hc places its core like systemd (RUNTIME_DIRECTORY, the manager's
+    block, the unit file) but cannot run it in the unit's control group: the
+    pack's own executable then judges its live environment, which carries
+    the manager's block. The unit file is judged in process, where the
+    control group can be given."""
     env = entry_env(short_tmp, home_dir)
     run_user = short_tmp / "run-user"
     run_user.mkdir(mode=0o700)
@@ -382,19 +435,11 @@ def test_start_accepts_its_own_core_when_fake_hc_places_it_like_systemd(short_tm
     write_launcher(env["GC_HC_TEST_BIN"], systemd=True)
     paths = resolve_paths(env)
     try:
-        done = invoke(env, "start", "mc-a", stdin=b'{"command":"cat"}')
-        assert done.returncode == 0, done.stderr
+        refused = invoke(env, "start", "mc-a", stdin=b'{"command":"cat"}')
         started = core_environ(paths.socket)
         assert "RUNTIME_DIRECTORY" in started and "INVOCATION_ID" in started and "SHELL" in started
         assert started["XDG_RUNTIME_DIR"] == str(run_user)
-        # A unit started by someone else (its environment file names a secret,
-        # and the pack recorded no such core) is refused.
-        for identity in Path(paths.state_root).rglob("core-identity.json"):
-            identity.unlink()
-        unit_file = Path(started["RUNTIME_DIRECTORY"]) / "environment"
-        unit_file.write_text(unit_file.read_text() + 'OPENAI_API_KEY="sk-x"\n')
-        refused = invoke(env, "start", "mc-b", stdin=b'{"command":"cat"}')
-        assert refused.returncode == 1 and b"OPENAI_API_KEY" in refused.stderr and b"sk-x" not in refused.stderr
+        assert refused.returncode == 1 and b"GOCACHE" in refused.stderr, refused.stderr
     finally:
         teardown_cores(Path(paths.state_root))
 

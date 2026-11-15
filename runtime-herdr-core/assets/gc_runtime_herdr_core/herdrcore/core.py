@@ -234,6 +234,16 @@ def read_unit_environment(runtime_directory: str) -> Optional[Dict[str, str]]:
     return parse_environment_file(raw.decode("utf-8", "surrogateescape"))
 
 
+def is_core_unit_name(unit: str) -> bool:
+    """Whether ``unit`` is an hc core unit's name, ``hc-serve-<8 hex>``."""
+    unit_id = unit[len(HC_CORE_UNIT_PREFIX) :]
+    return (
+        unit.startswith(HC_CORE_UNIT_PREFIX)
+        and len(unit_id) == UNIT_ID_LEN
+        and all(c in "0123456789abcdef" for c in unit_id)
+    )
+
+
 def core_unit(cgroup: Optional[str], uid: int) -> Optional[str]:
     """The name of the hc core unit (``hc-serve-<8 hex>``) of this user's
     systemd manager that control group path ``cgroup`` is, or None."""
@@ -242,13 +252,30 @@ def core_unit(cgroup: Optional[str], uid: int) -> Optional[str]:
     if f"/user@{uid}.service/" not in cgroup:
         return None
     leaf = cgroup.rstrip("/").rsplit("/", 1)[-1]
-    if not (leaf.startswith(HC_CORE_UNIT_PREFIX) and leaf.endswith(SYSTEMD_SERVICE_SUFFIX)):
+    if not leaf.endswith(SYSTEMD_SERVICE_SUFFIX):
         return None
     unit = leaf[: -len(SYSTEMD_SERVICE_SUFFIX)]
-    unit_id = unit[len(HC_CORE_UNIT_PREFIX) :]
-    if len(unit_id) != UNIT_ID_LEN or not all(c in "0123456789abcdef" for c in unit_id):
+    return unit if is_core_unit_name(unit) else None
+
+
+def unit_directory(actual: Mapping[str, str], cgroup: Optional[str], run_user: str) -> Optional[str]:
+    """The runtime directory of the hc core unit a core with environment
+    ``actual`` and control group ``cgroup`` (None: unreadable) runs as, or
+    None when it runs as none, or when ``RUNTIME_DIRECTORY`` names no hc
+    core unit or not the one its control group is: that is only a variable,
+    and its environment is then judged. Before systemd 244, which sets no
+    ``RUNTIME_DIRECTORY``, the unit is the control group's, in ``run_user``
+    (empty when the user has no runtime directory)."""
+    running_in = core_unit(cgroup, os.getuid())
+    named = actual.get("RUNTIME_DIRECTORY")
+    if named is not None:
+        unit = os.path.basename(os.path.normpath(named))
+        if not is_core_unit_name(unit) or (cgroup is not None and running_in != unit):
+            return None
+        return named
+    if running_in is None:
         return None
-    return unit
+    return os.path.join(run_user, running_in) if run_user else running_in
 
 
 HOLDER_SET_KEYS: Final[FrozenSet[str]] = frozenset({HC_RUNTIME_KEY, "XDG_RUNTIME_DIR"})
@@ -285,7 +312,10 @@ def foreign_reason(
     manager's block, which the pack does not control and which changes. The
     unit's runtime directory, which holds the file, is ``RUNTIME_DIRECTORY``,
     or, under systemd older than 244, which sets none, found through the
-    core's control group ``cgroup`` (``hc-serve-<8 hex>.service``). A holder
+    core's control group ``cgroup`` (``hc-serve-<8 hex>.service``)
+    (:func:`unit_directory`): a ``RUNTIME_DIRECTORY`` that names no hc core
+    unit, or not the one the readable control group is, is only a variable,
+    and the core's own environment is judged. A holder
     that restarts a crashed core writes its own environment, the manager's
     block included, into the new core's file, so a file carrying names the
     pack never sets is accepted when it is what a live holder of the city
@@ -298,15 +328,9 @@ def foreign_reason(
             return f"its {key} differs from the pack's"
     allowed = set(allowed_core_keys(expected)) | SERVICE_KEYS
     started = actual
-    runtime_directory = actual.get("RUNTIME_DIRECTORY")
-    unit = None if runtime_directory is not None else core_unit(cgroup, os.getuid())
-    if unit is not None:
-        run_user = expected.get("XDG_RUNTIME_DIR", "")
-        if not run_user:
-            return "it runs as a systemd unit outside the user's runtime directory"
-        runtime_directory = os.path.join(run_user, unit)
+    run_user = expected.get("XDG_RUNTIME_DIR", "")
+    runtime_directory = unit_directory(actual, cgroup, run_user)
     if runtime_directory is not None:
-        run_user = expected.get("XDG_RUNTIME_DIR", "")
         if not run_user or os.path.dirname(os.path.normpath(runtime_directory)) != os.path.normpath(run_user):
             return "it runs as a systemd unit outside the user's runtime directory"
         unit_env = unit_environment(runtime_directory)
