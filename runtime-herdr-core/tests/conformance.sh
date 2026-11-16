@@ -20,8 +20,8 @@
 # and the conformance kit's own city keys each start one), fails if fake-hc
 # saw a request or sent a result outside hc's schema, and removes the root.
 #
-# PYTHON names the interpreter fake-hc runs under (it needs jsonschema);
-# default: python3.
+# PYTHON names the interpreter fake-hc runs under (it needs jsonschema, and
+# tomli below Python 3.11); default: python3.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

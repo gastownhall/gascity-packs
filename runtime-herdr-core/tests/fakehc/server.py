@@ -31,6 +31,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, cast
 
+from .hcconfig import HcConfigError, config_path, load_hc_config
 from .schema import SchemaGuard
 from .terminal import KEPT_RESTART_S, FakeTerminal, key_bytes
 
@@ -157,6 +158,8 @@ class FakeHc:
             ).items()
             if key not in _STRIPPED_FROM_CORE_ENV
         }
+        # hc paths.rs: the core's config is $XDG_CONFIG_HOME/herdr-core/config.toml.
+        self._config_path = config_path(self._base_env)
         self._guard = SchemaGuard.vendored()
         self._lock = threading.RLock()
         self._terminals: Dict[str, FakeTerminal] = {}
@@ -559,7 +562,17 @@ class FakeHc:
             os.unlink(self._next_version_file)
         self.restart_core(version=version)
 
+    def _check_config(self) -> None:
+        """hc ``api/run.rs``: every run reads config.toml fresh and fails on a bad one."""
+        if self._config_path is None:
+            return
+        try:
+            load_hc_config(self._config_path)
+        except HcConfigError as err:
+            raise RpcFailure("config", str(err)) from None
+
     def _run(self, params: Params) -> Dict[str, Any]:
+        self._check_config()
         argv = list(params.get("argv") or [])
         if params.get("line"):
             argv = ["/bin/sh", "-c", str(params["line"])]
