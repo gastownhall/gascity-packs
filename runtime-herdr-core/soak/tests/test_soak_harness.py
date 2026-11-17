@@ -15,7 +15,7 @@ from typing import Dict
 import pytest
 from .soaktestkit import ProcTree
 
-from soakcli import NOTE_COVERS, compare_snapshots, parser
+from soakcli import NOTE_COVERS, compare_snapshots, parser, pool_sessions
 from soakdrill import DRILLS, PIN_0_1_20, Drill, DrillError, is_always_on, take_lock
 from soakhc import CoreTuple
 from soaklib import GUARD_FILE, City, ProcFS, SoakPaths
@@ -112,6 +112,27 @@ def test_compare_snapshots() -> None:
     after = {"core": {"pid": 5, "start": 1, "version": "0.1.19"}, "boxes": [[10, 1, "s1"], [12, 3, "s2"]]}
     diff = compare_snapshots(before, after)
     assert diff["boxes_ended"] == [[11, 2, "s2"]] and diff["boxes_new"] == [[12, 3, "s2"]]
+    assert diff["pool_churn"] == {"ended": [], "new": []}
+
+
+def test_compare_snapshots_sets_demand_pool_churn_apart() -> None:
+    before = {"core": {"pid": 5, "start": 1, "version": "0.1.19"}, "boxes": [[10, 1, "s1"], [11, 2, "b1"], [13, 4, "b2"]]}
+    after = {"core": {"pid": 5, "start": 1, "version": "0.1.19"}, "boxes": [[10, 1, "s1"], [13, 4, "b2"], [14, 5, "b3"]]}
+    diff = compare_snapshots(before, after, pool_sessions={"b1", "b2", "b3"})
+    assert not diff["boxes_ended"] and not diff["boxes_new"] and diff["boxes_kept"] == 2
+    assert diff["pool_churn"] == {"ended": [[11, 2, "b1"]], "new": [[14, 5, "b3"]]}
+    killed = {"core": before["core"], "boxes": [[13, 4, "b2"], [14, 5, "b3"]]}
+    diff = compare_snapshots(before, killed, pool_sessions={"b1", "b2", "b3"})
+    assert diff["boxes_ended"] == [[10, 1, "s1"]]
+
+
+def test_pool_sessions_reads_boot_templates() -> None:
+    records = {
+        "s1": [{"ev": "boot", "template": "soak-steady"}],
+        "b1": [{"ev": "hb"}, {"ev": "boot", "template": "soak-burst"}],
+        "x": [{"ev": "hb"}],
+    }
+    assert pool_sessions(records) == {"b1"}
 
 
 def test_note_covers() -> None:

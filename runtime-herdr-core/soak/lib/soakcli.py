@@ -9,7 +9,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set
 
 from soaklib import City, ProcFS, Rec, Refused, SoakPaths, append_jsonl, city_from_env, guard, run, unit_of
 
@@ -146,16 +146,34 @@ def _core_snapshot(city: City) -> Rec:
     }
 
 
-def compare_snapshots(before: Mapping[str, Any], after: Mapping[str, Any]) -> Rec:
+def pool_sessions(records: Mapping[str, Sequence[Rec]]) -> Set[str]:
+    """The sessions whose scripted agent booted from the demand pool's template.
+
+    gc starts and stops those seats as the load comes and goes, so their
+    boxes end and appear whatever else runs beside the city."""
+    from soakload import BURST
+
+    return {sid for sid, recs in records.items() if any(r.get("ev") == "boot" and r.get("template") == BURST for r in recs)}
+
+
+def compare_snapshots(before: Mapping[str, Any], after: Mapping[str, Any], pool_sessions: Collection[str] = ()) -> Rec:
+    """What changed between two snapshots. Boxes of ``pool_sessions`` are
+    reported apart, as demand-pool churn, and are not judged."""
     b_boxes = {(int(p), int(s)): sid for p, s, sid in before.get("boxes", [])}
     a_boxes = {(int(p), int(s)): sid for p, s, sid in after.get("boxes", [])}
+    ended = sorted([p, s, sid] for (p, s), sid in b_boxes.items() if (p, s) not in a_boxes)
+    new = sorted([p, s, sid] for (p, s), sid in a_boxes.items() if (p, s) not in b_boxes)
     return {
         "core_same": before.get("core") == after.get("core"),
         "core_before": before.get("core"),
         "core_after": after.get("core"),
         "boxes_kept": len(set(b_boxes) & set(a_boxes)),
-        "boxes_ended": sorted([p, s, sid] for (p, s), sid in b_boxes.items() if (p, s) not in a_boxes),
-        "boxes_new": sorted([p, s, sid] for (p, s), sid in a_boxes.items() if (p, s) not in b_boxes),
+        "boxes_ended": [b for b in ended if b[2] not in pool_sessions],
+        "boxes_new": [b for b in new if b[2] not in pool_sessions],
+        "pool_churn": {
+            "ended": [b for b in ended if b[2] in pool_sessions],
+            "new": [b for b in new if b[2] in pool_sessions],
+        },
     }
 
 
@@ -167,7 +185,9 @@ def cmd_snapshot(args: argparse.Namespace, city: City) -> int:
     text = args.compare
     if os.path.isfile(text):
         text = Path(text).read_text(encoding="utf-8")
-    diff = compare_snapshots(json.loads(text), now)
+    from soakcheck import agent_records
+
+    diff = compare_snapshots(json.loads(text), now, pool_sessions(agent_records(city)))
     _print(diff)
     return 0 if diff["core_same"] and not diff["boxes_ended"] and not diff["boxes_new"] else 1
 

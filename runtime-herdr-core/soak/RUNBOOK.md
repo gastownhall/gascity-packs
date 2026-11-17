@@ -206,6 +206,7 @@ G=6cf1cccd640df81542d19b3a9270fdfc8c296a5b
 go install "github.com/gastownhall/gascity/cmd/gc@$G" "github.com/gastownhall/gascity/cmd/gc-osc7501@$G"
 go version -m ~/go/bin/gc | grep -E '^\s+mod\s+github.com/gastownhall/gascity\s'   # pseudo-version ending in 6cf1cccd640d
 git config --global user.name soak && git config --global user.email soak@localhost
+git config --global beads.role maintainer   # else gc doctor's beads-role check fails
 [ -n "$(dolt config --global --get user.name || true)" ]  || dolt config --global --add user.name soak
 [ -n "$(dolt config --global --get user.email || true)" ] || dolt config --global --add user.email soak@localhost
 SOAK
@@ -257,7 +258,8 @@ sleep 3; systemctl is-active soak-optrace.service; head -n 1 /home/soak/soak-dat
 ROOT
 ```
 
-`optrace.log` must start with a `B` line (section 7.5).
+`optrace.log` must hold a `B` line (section 7.5); bpftrace prints `Attaching N probes...`
+before it, which the harness ignores.
 
 **Pre-flight checks** (as `soak`; all must hold):
 
@@ -805,7 +807,7 @@ Pass criteria:
 | B1 | `gc doctor --json` reports `failed == 0`, before start and running; every `warning` result is listed in the report with a one-line reason | `doctor-prestart.json`, `doctor.json` |
 | B2 | `gc runtime check` exits 0; `gc runtime conformance --json` exits 0 with `ok`, `v2_ready == true` and no failed requirement | `runtime-check.txt`, `conformance.json` |
 | B3 | both workflows' roots are closed within 15 minutes of the sling | `soak wait`, `load.jsonl` |
-| B4 | after the teardown: no `core.lock` of the scratch root is held, no hc process or unit of it remains, the root is gone; the city's core pid and every box are unchanged by the conformance run | `soak conf-teardown`, `soak snapshot --compare` |
+| B4 | after the teardown: no `core.lock` of the scratch root is held, no hc process or unit of it remains, the root is gone; the city's core pid and every box are unchanged by the conformance run (`soak snapshot --compare` lists the demand pool's seats, which gc starts and stops with the load, apart as `pool_churn` and does not judge them) | `soak conf-teardown`, `soak snapshot --compare` |
 | B5 | every scripted incarnation so far has exactly one first turn | `soak report --first-turns` |
 | B6 | the core runs in an `hc-serve-*.service`, holders in `hc-hold-*.service`; each agent runs in a `run-*.scope` under `gascity-agents.slice` with no `HC_SCOPE`; the supervisor runs in `gascity-supervisor.service`; doctor's `hc-scope-hygiene` passes | `placement.json`, `doctor.json` |
 | B7 | 30 minutes of bring-up load with no predicate hit | `check.log` |
