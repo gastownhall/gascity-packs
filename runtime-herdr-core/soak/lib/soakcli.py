@@ -146,19 +146,26 @@ def _core_snapshot(city: City) -> Rec:
     }
 
 
-def pool_sessions(records: Mapping[str, Sequence[Rec]]) -> Set[str]:
-    """The sessions whose scripted agent booted from the demand pool's template.
+def demand_sessions(doc: Optional[Rec]) -> Set[str]:
+    """Every session, open or closed, of a template other than the always-on
+    pool, from ``gc session list --json --state all``.
 
-    gc starts and stops those seats as the load comes and goes, so their
-    boxes end and appear whatever else runs beside the city."""
-    from soakload import BURST
+    gc starts and retires those seats (the demand pool, the formula
+    dispatcher, the store's maintenance pool) as work comes and goes, so
+    their boxes end and appear whatever else runs beside the city."""
+    from soakload import STEADY, template_is
 
-    return {sid for sid, recs in records.items() if any(r.get("ev") == "boot" and r.get("template") == BURST for r in recs)}
+    rows = (doc or {}).get("sessions") or []
+    return {
+        str(row["id"])
+        for row in rows
+        if isinstance(row, dict) and row.get("id") and not template_is(str(row.get("template", "")), STEADY)
+    }
 
 
-def compare_snapshots(before: Mapping[str, Any], after: Mapping[str, Any], pool_sessions: Collection[str] = ()) -> Rec:
-    """What changed between two snapshots. Boxes of ``pool_sessions`` are
-    reported apart, as demand-pool churn, and are not judged."""
+def compare_snapshots(before: Mapping[str, Any], after: Mapping[str, Any], demand: Collection[str] = ()) -> Rec:
+    """What changed between two snapshots. Boxes of the ``demand`` sessions
+    are reported apart, as ``demand_churn``, and are not judged."""
     b_boxes = {(int(p), int(s)): sid for p, s, sid in before.get("boxes", [])}
     a_boxes = {(int(p), int(s)): sid for p, s, sid in after.get("boxes", [])}
     ended = sorted([p, s, sid] for (p, s), sid in b_boxes.items() if (p, s) not in a_boxes)
@@ -168,11 +175,11 @@ def compare_snapshots(before: Mapping[str, Any], after: Mapping[str, Any], pool_
         "core_before": before.get("core"),
         "core_after": after.get("core"),
         "boxes_kept": len(set(b_boxes) & set(a_boxes)),
-        "boxes_ended": [b for b in ended if b[2] not in pool_sessions],
-        "boxes_new": [b for b in new if b[2] not in pool_sessions],
-        "pool_churn": {
-            "ended": [b for b in ended if b[2] in pool_sessions],
-            "new": [b for b in new if b[2] in pool_sessions],
+        "boxes_ended": [b for b in ended if b[2] not in demand],
+        "boxes_new": [b for b in new if b[2] not in demand],
+        "demand_churn": {
+            "ended": [b for b in ended if b[2] in demand],
+            "new": [b for b in new if b[2] in demand],
         },
     }
 
@@ -185,9 +192,10 @@ def cmd_snapshot(args: argparse.Namespace, city: City) -> int:
     text = args.compare
     if os.path.isfile(text):
         text = Path(text).read_text(encoding="utf-8")
-    from soakcheck import agent_records
-
-    diff = compare_snapshots(json.loads(text), now, pool_sessions(agent_records(city)))
+    sessions = _gc_json(city, ["session", "list", "--json", "--state", "all"])
+    if sessions is None:
+        print("soak snapshot: gc session list --json --state all gave no JSON; every box is judged", file=sys.stderr)
+    diff = compare_snapshots(json.loads(text), now, demand_sessions(sessions))
     _print(diff)
     return 0 if diff["core_same"] and not diff["boxes_ended"] and not diff["boxes_new"] else 1
 

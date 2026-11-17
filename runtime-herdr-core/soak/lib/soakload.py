@@ -68,7 +68,7 @@ def running_sessions(doc: Optional[Rec], template: str) -> List[str]:
     for row in doc.get("sessions") or []:
         if not isinstance(row, dict) or row.get("closed"):
             continue
-        if template and not _template_is(str(row.get("template", "")), template):
+        if template and not template_is(str(row.get("template", "")), template):
             continue
         running = row.get("running")
         if running is False:
@@ -78,7 +78,7 @@ def running_sessions(doc: Optional[Rec], template: str) -> List[str]:
     return sorted(out)
 
 
-def _template_is(name: str, template: str) -> bool:
+def template_is(name: str, template: str) -> bool:
     """``name`` is ``template``, bare or qualified (``<pack>/<name>`` or ``<pack>.<name>``)."""
     return name == template or name.endswith("/" + template) or name.endswith("." + template)
 
