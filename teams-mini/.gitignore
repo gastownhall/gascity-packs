@@ -1,0 +1,6 @@
+# Built adapter binary — produced by `go build` in adapter/ and read in
+# place by the [[service]] proxy_process command.
+adapter/gc-teams-mini-adapter
+adapter/gc-teams-mini-adapter.build.*
+# Packaged Teams app (zip of manifest/ + icons), produced locally.
+manifest/*.zip

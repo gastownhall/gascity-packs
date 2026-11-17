@@ -1,0 +1,2 @@
+description = "Post plain text into a Teams conversation (optionally as a reply)"
+run = "../post-message.sh"
