@@ -91,6 +91,14 @@ def test_first_turn_lost_pending_short_lived_and_faulted() -> None:
     assert one(ended_late, alive=False, faults=[fault]) == FT_LOST
 
 
+def test_an_operator_note_that_covers_everything_explains_an_early_end() -> None:
+    ended_early = [boot(), rec("hb", 60.0, INC)]
+    note = {"t": 59.0, "kind": "note", "what": "city-stop", "covers": ["all"]}
+    assert one(ended_early, alive=False, faults=[note]) == FT_FAULTED
+    narrow = {"t": 59.0, "kind": "note", "what": "supervisor-restart", "covers": ["supervisor", "controller", "store"]}
+    assert one(ended_early, alive=False, faults=[narrow]) == FT_SHORT_LIVED
+
+
 def test_incarnations_group_by_inc_and_collect_background_children() -> None:
     other = "b00tb00t:200:6000"
     records = [

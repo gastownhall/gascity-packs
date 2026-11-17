@@ -26,6 +26,7 @@ from soakanalysis import (
     NUDGE_RECEIVED,
     OpRun,
     OpStats,
+    covers_everything,
     event_time,
     first_turn_counts,
     first_turns,
@@ -228,12 +229,17 @@ def death_to_restart(faults: Sequence[Rec], incs: Sequence[Incarnation], window:
     return out
 
 
-def _restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: Window) -> Dict[str, int]:
-    """Boots in the window after an earlier incarnation of the same session, by cause."""
+def restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: Window) -> Dict[str, int]:
+    """Boots in the window after an earlier incarnation of the same session, by cause.
+
+    A probe kill or a drill naming the session, its pid or everything explains
+    a restart; so does a planned operator action (``soak note``) that covers
+    everything, such as a city stop or start.
+    """
     by_session: Dict[str, List[Incarnation]] = {}
     for inc in incs:
         by_session.setdefault(inc.session_id, []).append(inc)
-    counts = {"starts": 0, "probe": 0, "drill": 0, "unexplained": 0}
+    counts = {"starts": 0, "probe": 0, "drill": 0, "operator": 0, "unexplained": 0}
     for sid, items in by_session.items():
         items.sort(key=lambda i: i.boot_t)
         previous: List[Optional[Incarnation]] = [None]
@@ -247,8 +253,9 @@ def _restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: 
             cause = None
             for f in faults:
                 ft = float(f.get("t", 0))
-                if prev.boot_t <= ft <= cur.boot_t and (f.get("all") or sid in (f.get("sessions") or []) or prev.pid in (f.get("pids") or [])):
-                    cause = "probe" if f.get("kind") == "probe-kill" else "drill"
+                if prev.boot_t <= ft <= cur.boot_t and (covers_everything(f) or sid in (f.get("sessions") or []) or prev.pid in (f.get("pids") or [])):
+                    kind = f.get("kind")
+                    cause = "probe" if kind == "probe-kill" else "operator" if kind == "note" else "drill"
             counts[cause or "unexplained"] += 1
     return counts
 
@@ -281,7 +288,7 @@ def compute(inp: ReportInputs) -> Report:
         m.nudge_latency = _stats([n.latency_s for n in w_nudges if n.latency_s is not None])
         m.messages = message_ops(inp.events, w.t0, w.t1)
         m.store_changes, m.unexplained_store_changes = _store_changes(inp.samples, inp.faults, w)
-        m.restarts = _restart_causes(incs, inp.faults, w)
+        m.restarts = restart_causes(incs, inp.faults, w)
         for e in inp.events:
             t = event_time(e)
             if t is None or not w.has(t):

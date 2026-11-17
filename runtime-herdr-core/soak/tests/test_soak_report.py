@@ -9,6 +9,7 @@ from .soaktestkit import rec
 from soaklib import Rec, append_jsonl
 from soakreport import (
     ReportInputs,
+    restart_causes,
     Window,
     compute,
     core_rss_hourly,
@@ -175,3 +176,22 @@ def test_load_inputs_reads_a_data_directory(tmp_path: Path) -> None:
     loaded = load_inputs(data, trace, src.alive, src.now)
     assert len(loaded.drills) == 1 and loaded.workflows == src.workflows
     assert render_markdown(compute(loaded)) == render_markdown(compute(src)).replace(src.city, loaded.city)
+
+
+def test_a_restart_across_an_operator_stop_and_start_is_explained() -> None:
+    a, b = "bt:100:1", "bt:200:2"
+    records = [
+        rec("boot", T0, a, session_id="s1", template="soak-burst"),
+        rec("hb", T0 + 60, a),
+        rec("boot", T0 + 3600, b, session_id="s1", template="soak-burst"),
+    ]
+    incs = incarnations(records, lambda inc: inc == b)
+    window = Window("w", T0 + 1800, T0 + 7200, "legacy")
+    notes = [
+        {"t": T0 + 100, "kind": "note", "what": "city-stop", "covers": ["all"]},
+        {"t": T0 + 3500, "kind": "note", "what": "city-start", "covers": ["all"]},
+    ]
+    assert restart_causes(incs, notes, window) == {"starts": 1, "probe": 0, "drill": 0, "operator": 1, "unexplained": 0}
+    narrow = [{"t": T0 + 100, "kind": "note", "what": "supervisor-restart", "covers": ["supervisor", "controller", "store"]}]
+    assert restart_causes(incs, narrow, window)["unexplained"] == 1
+    assert restart_causes(incs, [], window)["unexplained"] == 1

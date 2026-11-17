@@ -160,12 +160,17 @@ def _burst_has_beacon(burst: Sequence[Rec]) -> bool:
     return any(bool(r.get("beacon")) or is_beacon(str(r.get("text", ""))) for r in burst)
 
 
+def covers_everything(fault: Rec) -> bool:
+    """Whether a fault record may end every session: a drill's ``all`` or a note covering ``all``."""
+    return bool(fault.get("all")) or "all" in (fault.get("covers") or [])
+
+
 def fault_covers(fault: Rec, session_id: str, pid: int, t0: float, t1: float) -> bool:
     """Whether a fault record names this session or pid (or everything) and falls in ``[t0, t1]``."""
     t = _num(fault, "t", -1.0)
     if not (t0 <= t <= t1):
         return False
-    if fault.get("all"):
+    if covers_everything(fault):
         return True
     sessions = fault.get("sessions") or []
     pids = fault.get("pids") or []
