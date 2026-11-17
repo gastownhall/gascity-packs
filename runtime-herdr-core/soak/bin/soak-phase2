@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Phase 2 of the soak runbook (and the scheduled switch at T0 + 12 h of the
+# soak): drop session_reconciler so the controller boots v2 by default,
+# restart the supervisor, and check what v2 adopted and restarted.
+#
+#   soak-phase2 hc-bringup v2-switch --drill   (phase 2: ends with an agent-kill drill)
+#   soak-phase2 hc-soak soak-v2                (the soak's switch: no drill)
+set -euo pipefail
+
+CITY_NAME="${1:?usage: soak-phase2 <city> <phase> [--drill]}"
+PHASE="${2:?usage: soak-phase2 <city> <phase> [--drill]}"
+DRILL="${3:-}"
+SOAK="$HOME/soak/bin/soak"
+CITY="$HOME/cities/$CITY_NAME"
+DATA="$HOME/soak-data/$CITY_NAME"
+SETTLE_S="${SOAK_V2_SETTLE_S:-1800}"
+CHECKS=(--check exec-runtime-identity --check ownerless-runtimes --check daemon-session-reconciler)
+
+"$SOAK" guard
+cd "$CITY"
+"$SOAK" phase "$PHASE"
+gc doctor "${CHECKS[@]}" --json > "$DATA/v2-before.json" || true
+snap=$("$SOAK" snapshot)
+"$SOAK" toml-del city.toml daemon session_reconciler
+"$SOAK" note operator supervisor-restart "switch to the v2 reconciler"
+systemctl --user restart gascity-supervisor.service
+sleep 90
+if gc supervisor logs -n 500 | grep -F "city '$CITY_NAME': session reconciler: v2 (default: session_reconciler is unset)"; then
+  echo "V1: the supervisor log names the v2 default"
+else
+  echo "V1: FAIL: no v2 default line for $CITY_NAME in the supervisor log" >&2
+fi
+gc doctor "${CHECKS[@]}" --json > "$DATA/v2-after.json" || true
+"$SOAK" snapshot --compare "$snap" > "$DATA/v2-snapshot.json" || true
+cat "$DATA/v2-snapshot.json"
+echo "settling $SETTLE_S s"
+sleep "$SETTLE_S"
+if [ "$DRILL" = "--drill" ]; then
+  "$SOAK" drill agent-kill
+fi
+"$SOAK" report --city "$CITY_NAME" --first-turns

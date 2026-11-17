@@ -1,0 +1,15 @@
+#!/usr/bin/python3 -I
+"""The soak harness's one entry (see lib/soakcli.py and RUNBOOK.md).
+
+Every subcommand refuses unless /etc/gc-soak-throwaway holds this host's own
+machine id, which only the soak VM's provisioning writes."""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+
+from soakcli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:], os.environ))

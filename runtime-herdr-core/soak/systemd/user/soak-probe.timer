@@ -1,0 +1,10 @@
+[Unit]
+Description=herdr-core soak: a death probe every 30 minutes
+
+[Timer]
+OnActiveSec=30min
+OnUnitActiveSec=30min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

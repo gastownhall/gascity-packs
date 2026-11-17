@@ -1,0 +1,10 @@
+[Unit]
+Description=herdr-core soak: predicates every 5 minutes
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=5min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

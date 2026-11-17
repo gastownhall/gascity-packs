@@ -1,0 +1,9 @@
+[imports.herdr-core]
+source = "${PACK}"
+
+[providers.soak]
+display_name = "Soak scripted agent"
+command = "${AGENT}"
+prompt_mode = "none"
+ready_prompt_prefix = "soak> "
+process_names = ["soak-agent"]

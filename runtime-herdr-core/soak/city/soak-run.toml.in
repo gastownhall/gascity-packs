@@ -1,0 +1,33 @@
+formula = "soak-run"
+description = "Soak load: a fan-out of deterministic scripted steps."
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars.run]
+description = "Load-generator run label."
+default = "manual"
+
+[[steps]]
+id = "prepare"
+title = "soak {{run}} prepare"
+
+[[steps]]
+id = "work-a"
+title = "soak {{run}} work-a"
+needs = ["prepare"]
+
+[[steps]]
+id = "work-b"
+title = "soak {{run}} work-b"
+needs = ["prepare"]
+
+[[steps]]
+id = "work-c"
+title = "soak {{run}} work-c"
+needs = ["prepare"]
+
+[[steps]]
+id = "collect"
+title = "soak {{run}} collect"
+needs = ["work-a", "work-b", "work-c"]

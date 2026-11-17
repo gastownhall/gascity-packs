@@ -1,0 +1,10 @@
+provider = "soak"
+prompt_template = "assets/prompts/soak.template.md"
+work_dir = ".gc/agents/{{.AgentBase}}"
+min_active_sessions = ${STEADY}
+max_active_sessions = ${STEADY}
+
+[env]
+SOAK_ROLE = "steady"
+SOAK_DATA = "${DATA}"
+SOAK_CANARY_TOKEN = "${CANARY}"

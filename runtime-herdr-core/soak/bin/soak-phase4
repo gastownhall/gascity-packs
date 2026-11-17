@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Phase 4 of the soak runbook: start the 24-hour soak (`soak-phase4 start`)
+# or end it (`soak-phase4 end`, at T0 + 24 h). The switch at T0 + 12 h is
+# `soak-phase2 hc-soak soak-v2`.
+set -euo pipefail
+
+SOAK="$HOME/soak/bin/soak"
+CITY_NAME=hc-soak
+CITY="$HOME/cities/$CITY_NAME"
+DATA="$HOME/soak-data/$CITY_NAME"
+
+"$SOAK" guard
+case "${1:-}" in
+  start)
+    "$SOAK" city-init "$CITY_NAME" --steady 6 --burst 10 --mode abort --load soak
+    gc start "$CITY"
+    "$SOAK" wait --steady 6 --first-turns --timeout 900
+    "$SOAK" phase soak-legacy
+    systemctl --user enable --now soak-sample.service soak-load.service soak-check.timer soak-probe.timer
+    "$SOAK" note operator soak-start "T0"
+    ;;
+  end)
+    "$SOAK" phase soak-end
+    systemctl --user stop soak-load.service soak-probe.timer
+    echo "waiting 15 minutes for the last turns and nudges to settle"
+    sleep 900
+    set +e
+    "$SOAK" check --final
+    final=$?
+    (cd "$CITY" && gc doctor --json > "$DATA/doctor-final.json")
+    set -e
+    "$SOAK" report --city "$CITY_NAME" --markdown > "$DATA/report.md"
+    "$SOAK" note operator city-stop "end of the soak"
+    gc stop "$CITY"
+    systemctl --user stop soak-check.timer soak-sample.service
+    set +e
+    "$SOAK" final-scan | tee "$DATA/final-scan.json"
+    scan=$?
+    set -e
+    echo "final check exit $final; final scan exit $scan; report: $DATA/report.md"
+    ;;
+  *)
+    echo "usage: soak-phase4 start|end" >&2
+    exit 2
+    ;;
+esac

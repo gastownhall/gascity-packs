@@ -68,6 +68,24 @@ def test_runtime_herdr_core_job_is_blocking_on_its_python_floor() -> None:
     check = {step.get("name"): step for step in workflow["jobs"]["check"]["steps"]}
     shared = check["Run Python pack tests"]["run"].split()
     assert "runtime-herdr-core/tests/unit" in shared, "the shared pytest step must run runtime-herdr-core"
+    assert "runtime-herdr-core/soak/tests" in shared, "the shared pytest step must run the soak harness's tests"
+
+
+def test_runtime_herdr_core_type_checks_and_tests_the_soak_harness() -> None:
+    workflow = yaml.safe_load(
+        REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8")
+    )
+    runs = {step.get("name"): step for step in workflow["jobs"]["runtime-herdr-core"]["steps"]}
+    mypy = runs.get("Soak harness mypy --strict")
+    assert mypy is not None, f"runtime-herdr-core lost its soak mypy step; steps: {sorted(runs)}"
+    assert mypy.get("working-directory") == "runtime-herdr-core/soak"
+    lines = [line.strip() for line in mypy["run"].splitlines() if line.strip()]
+    assert any(line.startswith("python -m mypy --config-file mypy.ini") and line.endswith('"${{ matrix.target }}"') for line in lines)
+    assert any(line.endswith("bin/soak-agent") for line in lines), "both soak entries must be type-checked"
+    tests = runs.get("Soak harness unit tests")
+    assert tests is not None and "python -m pytest soak/tests" in tests["run"]
+    for step in (mypy, tests):
+        assert "continue-on-error" not in step and "||" not in step["run"]
 
 
 def test_runtime_herdr_core_runs_gc_conformance_against_a_pinned_gc() -> None:

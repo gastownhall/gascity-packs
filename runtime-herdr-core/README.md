@@ -84,6 +84,8 @@ runtime-herdr-core/
     gccontract/                    gc's un-welded launch contract through gc's exec provider (fake-hc)
     live/                          the live tier: the pack against the pinned herdr-core (CI runners only)
     infra_argv_drift.py            CI: the infrastructure argv table equals gc's at the pinned commit
+  soak/                            the scratch-city soak: RUNBOOK.md and its harness (runs only on a disposable VM)
+  docs/soak-report.md              the soak report (a template until the first soak runs)
 ```
 
 ## Install and commands
@@ -869,6 +871,16 @@ CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12
 (the contract harness on the 3.12 leg), with gc pinned to a gascity commit,
 and the unit tier again in the shared pytest step. The 3.12 leg also runs `tests/unit/test_op_imports.py` on
 Python 3.14, since what an op imports can change with the interpreter.
+
+The soak harness (`soak/`, see `soak/RUNBOOK.md`) runs a scratch city on
+a real herdr-core, but only on a disposable VM: every tool refuses unless
+`/etc/gc-soak-throwaway` holds the host's own machine id. Its unit tests run
+anywhere, on synthetic logs and fake-hc:
+
+```bash
+python -m pytest soak/tests -q
+(cd soak && python -m mypy --config-file mypy.ini && python -m mypy --config-file mypy.ini bin/soak-agent)
+```
 
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.

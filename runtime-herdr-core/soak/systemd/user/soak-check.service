@@ -1,0 +1,8 @@
+[Unit]
+Description=herdr-core soak: predicates
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/soak-data/current/soak.env
+ExecStart=%h/soak/bin/soak check
+TimeoutStartSec=3600
