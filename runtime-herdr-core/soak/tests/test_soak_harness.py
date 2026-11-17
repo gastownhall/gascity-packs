@@ -16,7 +16,7 @@ import pytest
 from .soaktestkit import ProcTree
 
 from soakcli import NOTE_COVERS, compare_snapshots, demand_sessions, parser
-from soakdrill import DRILLS, PIN_0_1_20, Drill, DrillError, is_always_on, take_lock
+from soakdrill import DRILLS, PIN_0_1_20, Drill, DrillError, is_always_on, is_dispatcher, new_dispatcher_box, take_lock
 from soakhc import CoreTuple
 from soaklib import GUARD_FILE, City, ProcFS, SoakPaths
 
@@ -163,8 +163,24 @@ def test_the_report_template_is_the_runbooks() -> None:
 
 def test_drill_names_and_always_on_templates() -> None:
     assert "core-kill" in DRILLS and "reboot-verify" in DRILLS and len(DRILLS) == 11
-    assert is_always_on("soak-steady") and is_always_on("core/control-dispatcher") and is_always_on("core.control-dispatcher")
+    assert is_always_on("soak-steady")
+    # The dispatcher is a demand session (max 1, no minimum): its return is recorded, not judged.
+    assert not is_always_on("core.control-dispatcher") and not is_always_on("core/control-dispatcher")
     assert not is_always_on("soak-burst") and not is_always_on("bd/dog")
+    assert is_dispatcher("core.control-dispatcher") and is_dispatcher("core/control-dispatcher") and not is_dispatcher("soak-steady")
+
+
+def test_a_new_dispatcher_box_counts_under_any_session_id(proc_tree: ProcTree, tmp_path: Path) -> None:
+    proc_tree.add(10, "sh", env={"GC_TEMPLATE": "core.control-dispatcher", "GC_SESSION_ID": "old"})
+    proc_tree.add(11, "sh", env={"GC_TEMPLATE": "soak-steady", "GC_SESSION_ID": "s1"})
+    procfs = ProcFS(str(proc_tree.root))
+    snap = procfs.snapshot(os.getuid())
+    boxes = [snap[10], snap[11]]
+    before = {10: (snap[10].start, "old"), 11: (snap[11].start, "s1")}
+    assert new_dispatcher_box(boxes, before) is None
+    proc_tree.add(12, "sh", env={"GC_TEMPLATE": "core.control-dispatcher", "GC_SESSION_ID": "new"})
+    snap = procfs.snapshot(os.getuid())
+    assert new_dispatcher_box([snap[11], snap[12]], before) == 12
 
 
 def test_the_drill_lock_is_exclusive(tmp_path: Path) -> None:

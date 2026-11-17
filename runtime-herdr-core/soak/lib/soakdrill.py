@@ -64,7 +64,12 @@ HC_VERSION = "0.1.19"
 UPGRADE_VERSION = "0.1.20"
 FOREIGN_REFUSAL = "started outside the pack"
 UPGRADE_LINE = f"handed the city's core over from herdr-core {HC_VERSION} to {UPGRADE_VERSION}; its sessions kept running"
-ALWAYS_ON_TEMPLATES = (STEADY, "control-dispatcher")
+ALWAYS_ON_TEMPLATES = (STEADY,)
+DISPATCHER_TEMPLATE = "control-dispatcher"
+"""The core pack's formula dispatcher is a demand session (``max_active_sessions
+= 1``, no minimum): gc closes a dead one and starts a fresh session, under a new
+id, when work needs it. Its return is recorded, not judged (as B4 counts its
+boxes as demand churn)."""
 
 PIN_0_1_20: Dict[str, Any] = {
     "version": "0.1.20",
@@ -151,8 +156,24 @@ class Before:
         }
 
 
+def _is_template(template: str, name: str) -> bool:
+    return template == name or template.endswith("/" + name) or template.endswith("." + name)
+
+
 def is_always_on(template: str) -> bool:
-    return any(template == t or template.endswith("/" + t) or template.endswith("." + t) for t in ALWAYS_ON_TEMPLATES)
+    return any(_is_template(template, t) for t in ALWAYS_ON_TEMPLATES)
+
+
+def is_dispatcher(template: str) -> bool:
+    return _is_template(template, DISPATCHER_TEMPLATE)
+
+
+def new_dispatcher_box(boxes: Sequence[ProcInfo], before_boxes: Dict[int, Tuple[int, str]]) -> Optional[int]:
+    """The pid of a dispatcher box that was not running before, if one runs."""
+    for p in boxes:
+        if is_dispatcher(p.env.get("GC_TEMPLATE", "")) and (p.pid, p.start) not in {(pid, v[0]) for pid, v in before_boxes.items()}:
+            return p.pid
+    return None
 
 
 @dataclass
@@ -312,18 +333,24 @@ class Drill:
 
     # --- shared criteria ------------------------------------------------------------------------------
 
-    def measure_back(self, before: Before, ended: Dict[str, int]) -> Dict[str, Optional[float]]:
-        """Seconds from the injection until each ended session runs a new box."""
+    def measure_back(self, before: Before, ended: Dict[str, int], dispatcher: bool = False) -> Tuple[Dict[str, Optional[float]], Optional[float]]:
+        """Seconds from the injection until each ended session runs a new box,
+        and (with ``dispatcher``) until a dispatcher session runs a new box."""
         back: Dict[str, Optional[float]] = {sid: None for sid in ended}
+        disp_back: Optional[float] = None
         deadline = self.t_inject + max(BACK_LIMIT_S * 3, 300.0)
-        while time.time() < deadline and any(v is None for v in back.values()):
+        while time.time() < deadline and (any(v is None for v in back.values()) or (dispatcher and disp_back is None)):
             status = self.status()
-            now_boxes = self.boxes_now(status.holders) if status else {}
-            for pid, (_start, sid) in now_boxes.items():
-                if sid in back and back[sid] is None and pid != ended[sid]:
+            holders = set(status.holders) if status else set()
+            boxes = [p for p in self.snapshot().values() if p.ppid in holders]
+            for p in boxes:
+                sid = p.env.get("GC_SESSION_ID", "")
+                if sid in back and back[sid] is None and p.pid != ended[sid]:
                     back[sid] = round(time.time() - self.t_inject, 1)
+            if dispatcher and disp_back is None and new_dispatcher_box(boxes, before.boxes) is not None:
+                disp_back = round(time.time() - self.t_inject, 1)
             time.sleep(1.0)
-        return back
+        return back, disp_back
 
     def measure_reaped(self, pairs: Sequence[Tuple[int, int]]) -> Optional[float]:
         deadline = self.t_inject + REAP_LIMIT_S * 4
@@ -332,6 +359,14 @@ class Drill:
                 return round(time.time() - self.t_inject, 1)
             time.sleep(0.5)
         return None
+
+    def ended_dispatcher(self, before: Before) -> bool:
+        """Whether the drill ended a dispatcher box."""
+        return any(is_dispatcher(before.sessions.get(sid, "")) and not self.procfs.alive(pid, start) for pid, (start, sid) in before.boxes.items())
+
+    def judge_dispatcher(self, ended: bool, back: Optional[float]) -> None:
+        if ended:
+            self.judge("C2-dispatcher", "a dispatcher session (a demand session, new id) runs again (s; recorded)", back, None)
 
     def ended_sessions(self, before: Before) -> Dict[str, int]:
         """Always-on sessions whose box from before is gone: session id -> old box pid."""
@@ -355,10 +390,11 @@ class Drill:
     def c2_c3(self, before: Before) -> Dict[str, int]:
         time.sleep(2.0)
         ended = self.ended_sessions(before)
+        disp_ended = self.ended_dispatcher(before)
         dead_incs = [i for i in self.incs() if i.inc in before.alive_incs and not i.alive]
         pairs = [pair for i in dead_incs for pair in i.bg]
         reaped = self.measure_reaped(pairs) if pairs else 0.0
-        back = self.measure_back(before, ended)
+        back, disp_back = self.measure_back(before, ended, disp_ended)
         worst = max([v for v in back.values() if v is not None], default=0.0)
         all_back = all(v is not None for v in back.values())
         self.judge("C2", f"ended always-on sessions run again within {BACK_LIMIT_S:.0f} s", {"sessions": back, "max_s": worst}, all_back and worst <= BACK_LIMIT_S)
@@ -368,6 +404,7 @@ class Drill:
             {"children": len(pairs), "reaped_s": reaped},
             reaped is not None and reaped <= REAP_LIMIT_S,
         )
+        self.judge_dispatcher(disp_ended, disp_back)
         return ended
 
     def settle(self) -> None:
@@ -668,10 +705,12 @@ class Drill:
         start = run([self.gc, "start", city], timeout=900.0)
         self.notes.append(f"gc start: exit {start.code}")
         ended = {sid: pid for pid, (_s, sid) in before.boxes.items() if sid and is_always_on(before.sessions.get(sid, ""))}
-        back = self.measure_back(before, ended)
+        disp_ended = any(is_dispatcher(before.sessions.get(sid, "")) for _s, sid in before.boxes.values())
+        back, disp_back = self.measure_back(before, ended, disp_ended)
         worst = max([v for v in back.values() if v is not None], default=0.0)
         self.judge("C2", "every always-on session back after gc start (measured from the start)", back, all(v is not None for v in back.values()))
         self.judge("C2-latency", "slowest session back (s)", worst, None)
+        self.judge_dispatcher(disp_ended, disp_back)
         text = self.herdr_status()
         self.judge("F9-version", f"the core runs {HC_VERSION} again", _line(text, "running:"), f"herdr-core {HC_VERSION}" in _line(text, "running:"))
         self.c1(before, store_may_change=True)
@@ -778,4 +817,16 @@ def drill_main(city: City, paths: SoakPaths, name: str, settle_s: float = SETTLE
     return 0 if rec["verdict"] == "pass" else 1
 
 
-__all__ = ["DRILLS", "Drill", "DrillError", "PIN_0_1_20", "agent_owner", "city_cores", "drill_main", "take_lock"]
+__all__ = [
+    "DRILLS",
+    "Drill",
+    "DrillError",
+    "PIN_0_1_20",
+    "agent_owner",
+    "city_cores",
+    "drill_main",
+    "is_always_on",
+    "is_dispatcher",
+    "new_dispatcher_box",
+    "take_lock",
+]

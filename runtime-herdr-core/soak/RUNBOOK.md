@@ -944,7 +944,7 @@ Criteria every drill also checks (C1 to C6):
 | ID | Criterion |
 |---|---|
 | C1 | `gc beads health --json` passes after the drill; the store's proxy and Dolt pids are the ones before the drill (except F1, F9 and F10, which restart or stop the store by design) |
-| C2 | every always-on session and the control dispatcher the drill ended runs again (a new incarnation's `boot`, or `running` in `gc session list --json`) within 2 × patrol (60 s) + 10 s of the injection |
+| C2 | every always-on session the drill ended runs again (a new incarnation's `boot`, or `running` in `gc session list --json`) within 2 × patrol (60 s) + 10 s of the injection. The core pack's formula dispatcher is a demand session (`max_active_sessions = 1`, no minimum; B4 counts it as demand churn): gc closes a dead one and starts a fresh session, under a new id, when work needs it, so the time until a dispatcher box runs again is recorded (`C2-dispatcher`), not judged |
 | C3 | every background child of every ended incarnation is gone within 1 × patrol (30 s) + 10 s of the injection |
 | C4 | 10 minutes after the injection, `soak orphans` finds no orphan |
 | C5 | every new incarnation has exactly one first turn; no surviving incarnation got a second |
