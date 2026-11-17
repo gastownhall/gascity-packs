@@ -21,3 +21,9 @@ def test_tree_bytes_counts_regular_files_without_following_links(tmp_path: Path)
     (root / "link").symlink_to(tmp_path)
     assert tree_bytes(root) == 123
     assert tree_bytes(tmp_path / "missing") is None
+
+
+def test_tree_bytes_of_a_single_file_is_its_size(tmp_path: Path) -> None:
+    mirror = tmp_path / "events.jsonl"
+    mirror.write_bytes(b"x" * 77)
+    assert tree_bytes(mirror) == 77

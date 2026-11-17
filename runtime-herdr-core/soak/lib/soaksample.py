@@ -40,9 +40,12 @@ def parse_meminfo(text: str) -> Optional[int]:
 
 
 def tree_bytes(path: Path) -> Optional[int]:
-    """Apparent bytes of the regular files under ``path`` (None when it is missing)."""
+    """Apparent bytes of the regular files under ``path``, or of ``path``
+    itself when it is a file (None when it is missing)."""
     if not path.exists():
         return None
+    if path.is_file():
+        return path.stat().st_size
     total = 0
     for dirpath, _dirs, files in os.walk(str(path)):
         for name in files:
