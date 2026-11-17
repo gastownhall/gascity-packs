@@ -62,6 +62,9 @@ _OWN_STEP_CLOSE = re.compile(
 )
 
 
+_CLAIM_RESOLUTION = re.compile(r'^\s*([A-Z_]+)=\$\(gc hook current --id-only\)', re.MULTILINE)
+
+
 def bash_blocks(description: str) -> list[str]:
     blocks: list[str] = []
     block: list[str] = []
@@ -79,8 +82,14 @@ def bash_blocks(description: str) -> list[str]:
 
 
 def drain_ack_violations(description: str, step_id: str) -> list[str]:
-    """Every drain-ack line not preceded, in its own bash block, by a
-    fail-closed, claim-resolved, step-guarded close of the running step."""
+    """Every drain-ack line not directly preceded by a fail-closed close of the
+    step this session claimed, with the claim resolution and the in-progress
+    step guard earlier in the same bash block.
+
+    The close must be the nearest line above the ack: a block can hold several
+    acks (one per early-exit arm), and an earlier arm's close must not vouch
+    for a later one.
+    """
     violations = []
     for block in bash_blocks(description):
         lines = block.split("\n")
@@ -88,12 +97,12 @@ def drain_ack_violations(description: str, step_id: str) -> list[str]:
             if "gc runtime drain-ack" not in line:
                 continue
             preceding = "\n".join(lines[:i])
-            closes_own_step = any(
-                (m.group(1) or m.group(2)) != "WORK_BEAD_ID"
-                for m in _OWN_STEP_CLOSE.finditer(preceding)
-            )
+            claim_vars = set(_CLAIM_RESOLUTION.findall(preceding))
+            previous = next((l for l in reversed(lines[:i]) if l.strip()), "")
+            m = _OWN_STEP_CLOSE.search(previous)
+            closes_own_step = bool(m) and (m.group(1) or m.group(2)) in claim_vars
             guarded = f'endswith(".{step_id}")' in preceding
-            if "gc hook current --id-only" not in preceding or not closes_own_step or not guarded:
+            if not claim_vars or not closes_own_step or not guarded:
                 violations.append(line.strip())
     return violations
 
