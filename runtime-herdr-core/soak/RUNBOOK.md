@@ -8,7 +8,7 @@ calls lives beside it (`soak/`, section 7) and is unit-tested on synthetic
 logs and fake-hc only. Results go to `runtime-herdr-core/docs/soak-report.md`
 (template in section 15).
 
-Contents: 0 what a pass shows · 1 ground rules · 2 pinned versions · 3 VM
+Contents: 0 what a pass shows · 1 ground rules (1.1 decisions for Soak 1) · 2 pinned versions · 3 VM
 layout · 4 provision the VM · 5 toolchain · 6 pack, live tier, harness ·
 7 the harness · 8 the city · 9 phase 1 bring-up · 10 phase 2 v2 switch ·
 11 phase 3 fault drills · 12 phase 4 the 24-hour soak · 13 abort predicates
@@ -69,6 +69,52 @@ minutes, the drills 5 hours, the soak 25 hours.
 - **The canary** used by the secrets check is a random string generated on
   the VM. It is not a credential.
 
+### 1.1 Decisions for Soak 1
+
+Decided 2026-11-17 by the task owner; the rest of this runbook follows them.
+
+1. **The performance predicate is record-only.** AP5 (pack cost) is judged
+   every run and its numbers are recorded (`perf` in each `check.jsonl`
+   record: rate, limit, CPU, CPU limit, `n`, the reconciler); over its limit
+   it is a `WARN` line naming the numbers (`AP5: record-only: ...`), never a
+   hit, and its unreadable inputs do not count towards AP9. The harness's
+   `soakcheck.RECORD_ONLY` holds the list. Every correctness predicate (AP1
+   to AP4, AP6 to AP9) still aborts in `abort` mode. S5 is still reported
+   against its target; a miss is a finding, not an abort.
+2. **The default store only.** Every city is the default a new city gets at
+   the pinned gc: bd's proxied Dolt server for work, SQLite for the
+   infrastructure classes (section 8). No managed-Dolt city is created, and
+   no drill switches a city to one. Dolt is installed only because bd's
+   proxy runs `dolt sql-server`.
+3. **Watching.** The orchestrating session is the watcher: it checks the VM
+   about every 30 minutes (the last `check.log` line, `ABORTED`, the last
+   digest) and tells the task owner on an abort or when the soak ends. On
+   `ABORTED` nothing is restarted.
+4. **The upgrade drill is a VM-local pin edit.** F8 writes the 0.1.20 pin
+   (section 11; sha256 values from the 0.1.20 release manifest) over the VM's
+   pack copy only, never a pin bump of the pack. F9, which runs next,
+   restores the pinned 0.1.19 `hc-pin.json` from the pack commit and checks
+   the copy against `runtime-herdr-core.SHA256SUMS`, and checks that the core
+   runs 0.1.19 again after `gc start`. If the drills stop between F8 and F9,
+   restore the pin by hand with F9's `git show` command before anything
+   else runs on the city.
+
+Accepted defaults:
+
+- `soak probe` sends `SIGKILL` to one always-on scripted agent every 30
+  minutes for the death-to-restart samples (section 7.3).
+- Anything outside the abort list (section 13) is a warning only.
+- Disclosed tuning deviations: `max_wakes_per_tick = 25` and
+  `proxied_idle_timeout = "0"` (section 8); both go in the report's
+  deviations.
+- The bd pack's `dog` maintenance pool runs the scripted agent and does
+  nothing (a no-op), disclosed.
+- Soak 1 runs on a fresh city, `hc-soak`.
+- First-turn handbacks are recorded as not applicable: the pack has no
+  `proc.launch` yet.
+- The live-tier pre-flight (section 6) is recorded, not gating.
+- Scripted agents only; no model credential is placed on the VM.
+
 ## 2. Pinned versions and sources
 
 | What | Version | Source and check |
@@ -78,7 +124,7 @@ minutes, the drills 5 hours, the soak 25 hours.
 | Go | 1.27.4 | `https://go.dev/dl/go1.27.4.linux-amd64.tar.gz`, sha256 `7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840`; `GOTOOLCHAIN=local` so nothing else builds gc |
 | gc (and `gc-osc7501`) | gascity `6cf1cccd640df81542d19b3a9270fdfc8c296a5b` | `CGO_ENABLED=0 go install github.com/gastownhall/gascity/cmd/gc@<sha> …/cmd/gc-osc7501@<sha>`; its `go.mod` asks for Go 1.27.4 and has no `replace`; it contains the vanished-session nudge fix, the infrastructure scope, the process scanner and its tmux fence the pack needs |
 | bd | v1.3.4 | `https://github.com/gastownhall/beads/releases/download/v1.3.4/beads_1.3.4_linux_amd64.tar.gz`, sha256 `175c26904bde3ff9168d2282ff6b56f17b17f60c22fa5acb3dacc9fb3465303a` (gascity `deps.env` `BD_VERSION` and its `.github/scripts/install-bd-archive.sh`); gc's floor is 1.3.0, a split city needs 1.3.2 or later |
-| dolt | 2.6.0 | `https://github.com/dolthub/dolt/releases/download/v2.6.0/dolt-linux-amd64.tar.gz`, sha256 `a8d4c2e2e94b85fd3592cb80748044f846ccfd03d25a536ed1f754baf7da6401` (`deps.env` `DOLT_VERSION`, gc's managed-Dolt minimum) |
+| dolt | 2.6.0 | `https://github.com/dolthub/dolt/releases/download/v2.6.0/dolt-linux-amd64.tar.gz`, sha256 `a8d4c2e2e94b85fd3592cb80748044f846ccfd03d25a536ed1f754baf7da6401` (`deps.env` `DOLT_VERSION`; the `dolt sql-server` bd's proxy runs) |
 | herdr-core | 0.1.19 | installed by the pack's own `gc herdr-core install` from `releases.herdr.dev/core/0.1.19/`; `linux-x86_64` sha256 `4adcfb423d52f24c5cc4a1e2cd2fcad1f62d28bb77876ac472c29082a3eaa424` (pin and manifest must agree) |
 | herdr-core, upgrade drill only | 0.1.20 | `releases.herdr.dev/core/0.1.20/manifest.json`; `linux-x86_64` sha256 `ac6b86890c451a37584620aaa438b71bc0d0bd430a2e7c1d7e095f052c414e74` (drill F8 only, a VM-local pin edit) |
 | The pack | gascity-packs `a9ff70be08a43906af9623aa63270ea4eb52d3e6` | `runtime-herdr-core/` exported with `git archive` to a plain directory the city imports |
@@ -290,7 +336,8 @@ Every suite passes, or skips with the reason the live tier names (the
 cgroup-wide kill of cases A and B, which the city drills F2 and F3 cover
 with a real store). This gc is newer than the live tier's CI pin: a
 conformance failure here is recorded and investigated before phase 1, not
-waved through.
+waved through. For Soak 1 the pre-flight's result is recorded in the report,
+not gating (section 1.1).
 
 ## 7. The harness
 
@@ -556,8 +603,10 @@ within two minutes; if none do, the city execs another path: read it from
   `GC_INSTANCE_TOKEN=T` and the city's `GC_CITY_PATH`, older than the
   window asked for, where no live box carries `T` (a box is a process whose
   parent is a holder of the city's core), and which is neither
-  infrastructure nor under infrastructure (argv[1] `db-proxy-child` or
-  `__gc-managed-dolt-scope-watchdog`, `nudge poll`, and their descendants).
+  infrastructure nor under infrastructure (gc's infrastructure argv:
+  argv[1] `db-proxy-child` or `__gc-managed-dolt-scope-watchdog`, `nudge
+  poll`, and their descendants; the watchdog never runs in the default-store
+  city, it is listed to match gc).
 - **hc runtime**: processes with command name `herdr-core` (or marked
   `HC_RUNTIME=1`) whose argv names `serve` or `hold`; their
   `XDG_STATE_HOME` and `HC_SESSION` say whose they are.
@@ -975,16 +1024,16 @@ During the soak nothing else runs against the city: no manual nudges, no
 config edits but the scheduled switch, and no doctor runs but the one
 `soak check` makes every 6 hours (its errors are warnings in the digest).
 
-**Watching.** A named person (or an automated watcher that pages one)
-reads, every 5 minutes, the last line of `check.log` and whether `ABORTED`
-exists, and every hour the last digest:
+**Watching.** The orchestrating session (section 1.1) reads, about every
+30 minutes, the last line of `check.log`, whether `ABORTED` exists, and the
+last digest, and tells the task owner on an abort or at the end:
 
 ```bash
 soakssh "soak@$SOAK_VM" 'tail -n 1 ~/soak-data/current/check.log; cat ~/soak-data/current/ABORTED 2>/dev/null; true'
 soakssh "soak@$SOAK_VM" 'tail -n 40 ~/soak-data/current/digest.log'
 ```
 
-On `ABORTED`, the person is paged at once and nothing is restarted.
+On `ABORTED`, the task owner is told at once and nothing is restarted.
 
 Soak pass criteria (both halves unless stated):
 
@@ -996,7 +1045,7 @@ Soak pass criteria (both halves unless stated):
 | S4 | unconfirmed message ops / closed message ops | < 1% |
 | S5 | controller-spawned pack ops per second per session, phase mean | ≤ 0.30 legacy, ≤ 0.05 v2 |
 | S6 | core RSS: every hourly median within ±20% of hour 2's median | yes |
-| S7 | no abort predicate hit | yes |
+| S7 | no abort predicate hit (AP5 is record-only, section 1.1) | yes |
 | S8 | recorded: per-op spawn rate, p50/p95/p99 op latency and CPU per op, controller-tree CPU, death-to-restart latency (n, p50, p95, max), for each reconciler | recorded |
 
 Also reported with target 0, as warnings, not abort predicates: nudges lost
@@ -1007,7 +1056,9 @@ files older than 5 minutes, workflows open after 30 minutes.
 ## 13. Abort predicates and the abort procedure
 
 `soak check` evaluates every predicate every 5 minutes. In `abort` mode
-(phase 4) any hit aborts at once; in `warn` mode it is logged. Each run
+(phase 4) any hit aborts at once; in `warn` mode it is logged. AP5 is
+record-only for Soak 1 (section 1.1): it never hits, warns with its numbers
+when over its limit, and its unreadable inputs do not count towards AP9. Each run
 appends one record to `check.jsonl` and one line to `check.log`
 (`<time> <phase> OK|WARN|HIT <ids> <reason>`). Budgets use `n`, the mean
 number of live boxes in the window (at least 1).
@@ -1018,7 +1069,7 @@ number of live boxes in the window (at least 1).
 | AP2 | an infrastructure process killed | the supervisor's `MainPID`, every store proxy and Dolt pid and start ticks, from the previous run | one of them is gone and no `faults.jsonl` record covers it (the planned supervisor restart, the drills) |
 | AP3 | controller crash loop | `NRestarts` and `MainPID` changes of `gascity-supervisor.service`, `controller.started` events | more than 3 controller starts in 15 minutes not covered by a fault record |
 | AP4 | a lost or duplicated first turn | 7.6 first turns | any, for an incarnation booted in the phase |
-| AP5 | pack cost over twice the budget | op trace, samples | over the last 15 minutes, controller-spawned ops per second above 2 × 0.30 × n (legacy) or 2 × 0.05 × n (v2), or controller-spawned op CPU above 2 × 0.015 × n cores |
+| AP5 (record-only) | pack cost over twice the budget | op trace, samples | over the last 15 minutes, controller-spawned ops per second above 2 × 0.30 × n (legacy) or 2 × 0.05 × n (v2), or controller-spawned op CPU above 2 × 0.015 × n cores |
 | AP6 | state size | samples | the city's hc state directory above 2 GiB, or `R` above 4 GiB |
 | AP7 | an unexpected core or holder | 7.6 hc runtime | a `herdr-core` serve or hold process whose `XDG_STATE_HOME` or `HC_SESSION` is not the city's, or two cores of the city (skipped while `CONFORMANCE` exists) |
 | AP8 | a secret on disk (hourly) | the canary | the canary in any regular file under `R`, under `~/.local/share/gc-runtime-herdr-core` or under `/tmp/gc-herdr-core-<uid>` |

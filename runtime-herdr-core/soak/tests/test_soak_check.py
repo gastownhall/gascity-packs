@@ -6,10 +6,12 @@ from typing import Any, List
 
 import pytest
 
+from soaklib import City
 from soakanalysis import FT_DUPLICATED, FT_EXACT, FT_LOST, FirstTurn, HcProc, NudgeVerdict, OpStats
 from soakcheck import (
     HIT,
     OK,
+    RECORD_ONLY,
     WARN,
     Inputs,
     State,
@@ -110,13 +112,74 @@ def test_ap4_a_lost_or_duplicated_first_turn_in_the_phase() -> None:
     assert ids(evaluate(before_phase, primed(), "abort")) == []
 
 
-def test_ap5_twice_the_budget() -> None:
+def warning_ids(outcome: Any) -> List[str]:
+    return [f.id for f in outcome.warnings]
+
+
+def test_ap5_twice_the_budget_is_record_only() -> None:
     # legacy: 2 x 0.30 x 12 = 7.2 ops/s; v2: 2 x 0.05 x 12 = 1.2 ops/s
+    assert RECORD_ONLY == frozenset({"AP5"})
     busy = OpStats(seconds=900.0, sessions=12.0, ops=7000, ctl_ops=900 * 7, ctl_cpu_us=0)
-    assert ids(evaluate(healthy(ops=busy), primed(), "abort")) == []
-    assert ids(evaluate(healthy(ops=busy, reconciler="v2"), primed(), "abort")) == ["AP5"]
+    out = evaluate(healthy(ops=busy), primed(), "abort")
+    assert out.status == OK and out.perf is not None and out.perf["rate_limit"] == pytest.approx(7.2)
+    over = evaluate(healthy(ops=busy, reconciler="v2"), primed(), "abort")
+    assert ids(over) == [] and over.status == WARN and warning_ids(over) == ["AP5"]
+    assert over.warnings[0].reason.startswith("record-only: controller-spawned ops 7.000/s over 1.200/s")
+    assert over.as_rec()["perf"] == {
+        "reconciler": "v2",
+        "n": 12.0,
+        "rate_ctl": pytest.approx(7.0),
+        "rate_limit": pytest.approx(1.2),
+        "ctl_cpu_cores": 0.0,
+        "cpu_limit": pytest.approx(0.36),
+        "record_only": True,
+    }
     hot = OpStats(seconds=900.0, sessions=12.0, ops=10, ctl_ops=10, ctl_cpu_us=int(0.4 * 900 * 1e6))
-    assert ids(evaluate(healthy(ops=hot), primed(), "abort")) == ["AP5"]
+    out = evaluate(healthy(ops=hot), primed(), "abort")
+    assert ids(out) == [] and warning_ids(out) == ["AP5"] and "0.400 cores over 0.360" in out.warnings[0].reason
+
+
+def test_ap5_over_budget_never_aborts_while_a_correctness_predicate_still_does(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import soakcheck
+
+    busy = OpStats(seconds=900.0, sessions=12.0, ops=7000, ctl_ops=900 * 7, ctl_cpu_us=int(0.4 * 900 * 1e6))
+    aborts: List[Any] = []
+    monkeypatch.setattr(soakcheck, "abort", lambda city, outcome, paths, gc, procfs: aborts.append(outcome))
+
+    class FakeCollector:
+        inputs: Inputs
+
+        def __init__(self, *args: Any) -> None:
+            pass
+
+        def collect(self, state: State, final: bool = False) -> Inputs:
+            return FakeCollector.inputs
+
+    monkeypatch.setattr(soakcheck, "Collector", FakeCollector)
+    city = City(name="hc-soak", path=tmp_path, data=tmp_path, mode="abort")
+    for i in range(4):
+        FakeCollector.inputs = healthy(now=NOW + 300 * i, ops=busy, reconciler="v2")
+        assert soakcheck._check(city, None, False, "gc") == 0  # type: ignore[arg-type]
+    assert aborts == [] and not State.load(tmp_path / "check-state.json").aborted
+    log = (tmp_path / "check.log").read_text(encoding="utf-8").splitlines()
+    assert len(log) == 4 and all(" WARN AP5 AP5: record-only: controller-spawned ops 7.000/s over 1.200/s" in line for line in log)
+    recs = [json.loads(line) for line in (tmp_path / "check.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert all(r["status"] == WARN and r["hits"] == [] and r["perf"]["rate_ctl"] == pytest.approx(7.0) for r in recs)
+
+    FakeCollector.inputs = healthy(now=NOW + 1500, ops=busy, reconciler="v2", first_turns=[FirstTurn("i2", "s2", FT_LOST, 0, NOW - 600, None, False)])
+    soakcheck._check(city, None, False, "gc")  # type: ignore[arg-type]
+    assert [ids(o) for o in aborts] == [["AP4"]] and warning_ids(aborts[0]) == ["AP5"]
+
+
+def test_ap5_inputs_unreadable_never_make_ap9() -> None:
+    state = primed()
+    for i in range(4):
+        out = evaluate(healthy(now=NOW + 300 * i, ops=None), state, "abort")
+        assert "AP5" in out.unknown and not out.hits and out.status == WARN
+    assert "AP5" not in state.unknown
+    stale = primed()
+    stale.unknown["AP5"] = 7
+    assert ids(evaluate(healthy(ops=None), stale, "abort")) == [] and "AP5" not in stale.unknown
 
 
 def test_ap6_state_size() -> None:

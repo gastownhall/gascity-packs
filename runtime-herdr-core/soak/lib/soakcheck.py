@@ -1,6 +1,10 @@
 """``soak check``: the abort predicates (AP1 to AP9) and the warnings, every
 five minutes, and the abort procedure on the first hit in ``abort`` mode.
 
+The predicates in :data:`RECORD_ONLY` are judged and recorded but never hit:
+over their limit they warn, with the numbers, and their unreadable inputs do
+not count towards AP9.
+
 :func:`evaluate` is pure: it judges one run's :class:`Inputs` against the
 :class:`State` carried from the previous run. :func:`collect` gathers the
 inputs from the city, the logs and the process table.
@@ -66,6 +70,11 @@ WORKFLOW_IDLE_S = 1200.0
 WORKFLOW_OPEN_S = 1800.0
 
 OK, WARN, HIT = "OK", "WARN", "HIT"
+
+RECORD_ONLY = frozenset({"AP5"})
+"""Predicates that record and warn but never abort. Soak 1 (decision of
+2026-11-17): the performance predicate AP5 is record-only; every correctness
+predicate aborts."""
 
 
 @dataclass(frozen=True)
@@ -160,6 +169,15 @@ class Outcome:
     hits: List[Finding] = field(default_factory=list)
     warnings: List[Finding] = field(default_factory=list)
     unknown: Dict[str, str] = field(default_factory=dict)
+    perf: Optional[Rec] = None
+    """AP5's measured values and limits, whenever it was judged."""
+
+    def judge(self, finding: Finding) -> None:
+        """A predicate's finding: a hit, or a warning when it is record-only."""
+        if finding.id in RECORD_ONLY:
+            self.warnings.append(Finding(finding.id, "record-only: " + finding.reason))
+        else:
+            self.hits.append(finding)
 
     @property
     def status(self) -> str:
@@ -185,6 +203,7 @@ class Outcome:
             "hits": [asdict(f) for f in self.hits],
             "warnings": [asdict(f) for f in self.warnings],
             "unknown": self.unknown,
+            "perf": self.perf,
         }
 
 
@@ -265,12 +284,21 @@ def evaluate(inp: Inputs, state: State, mode: str) -> Outcome:
         n = max(1.0, inp.ops.sessions)
         limit = 2 * BUDGET_PER_SESSION[inp.reconciler] * n
         cpu_limit = 2 * CPU_BUDGET_PER_SESSION * n
+        out.perf = {
+            "reconciler": inp.reconciler,
+            "n": n,
+            "rate_ctl": inp.ops.rate_ctl,
+            "rate_limit": limit,
+            "ctl_cpu_cores": inp.ops.ctl_cpu_cores,
+            "cpu_limit": cpu_limit,
+            "record_only": "AP5" in RECORD_ONLY,
+        }
         if inp.ops.rate_ctl > limit:
-            out.hits.append(
+            out.judge(
                 Finding("AP5", f"controller-spawned ops {inp.ops.rate_ctl:.3f}/s over {limit:.3f}/s ({inp.reconciler}, n={n:.1f})")
             )
         elif inp.ops.ctl_cpu_cores > cpu_limit:
-            out.hits.append(Finding("AP5", f"controller-spawned op CPU {inp.ops.ctl_cpu_cores:.3f} cores over {cpu_limit:.3f}"))
+            out.judge(Finding("AP5", f"controller-spawned op CPU {inp.ops.ctl_cpu_cores:.3f} cores over {cpu_limit:.3f} (n={n:.1f})"))
 
     # AP6 state size
     if inp.sizes is None:
@@ -311,10 +339,11 @@ def evaluate(inp: Inputs, state: State, mode: str) -> Outcome:
     if inp.probe_errors:
         unknown("probe", f"{inp.probe_errors} failed probe(s)")
     for key in list(state.unknown):
-        if key not in out.unknown:
+        if key not in out.unknown or key in RECORD_ONLY:
             del state.unknown[key]
     for key in out.unknown:
-        state.unknown[key] = state.unknown.get(key, 0) + 1
+        if key not in RECORD_ONLY:
+            state.unknown[key] = state.unknown.get(key, 0) + 1
     blind = sorted(k for k, n in state.unknown.items() if n >= UNKNOWN_LIMIT)
     if blind:
         out.hits.append(Finding("AP9", "cannot evaluate on 3 consecutive runs: " + ", ".join(f"{k} ({out.unknown[k]})" for k in blind)))
@@ -695,4 +724,4 @@ def _check(city: City, paths: SoakPaths, final: bool, gc: str) -> int:
     return 1 if final and outcome.hits else 0
 
 
-__all__ = ["Collector", "Finding", "Inputs", "Outcome", "State", "check_main", "digest", "evaluate"]
+__all__ = ["RECORD_ONLY", "Collector", "Finding", "Inputs", "Outcome", "State", "check_main", "digest", "evaluate"]
