@@ -7,3 +7,6 @@ command = "${AGENT}"
 prompt_mode = "none"
 ready_prompt_prefix = "soak> "
 process_names = ["soak-agent"]
+
+[providers.soak.env]
+SOAK_DATA = "${DATA}"

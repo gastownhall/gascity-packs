@@ -650,6 +650,9 @@ does exactly this, as `soak`, and stops at the first failure:
    prompt_mode = "none"
    ready_prompt_prefix = "soak> "
    process_names = ["soak-agent"]
+
+   [providers.soak.env]
+   SOAK_DATA = "/home/soak/soak-data/<name>"   # every agent on the provider, the bd pack's `dog` too
    ```
 
 5. Write the city's own pack files:

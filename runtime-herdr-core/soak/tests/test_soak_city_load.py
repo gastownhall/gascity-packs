@@ -104,6 +104,10 @@ def test_city_templates_render_completely() -> None:
         for path, text in rendered.items():
             if path.endswith(".toml"):
                 assert toml_check(text) is not None, path
+        pack = toml_check(rendered["pack.toml"])
+        # Every agent on the scripted provider needs SOAK_DATA, including the
+        # imported packs' pools (the store's maintenance pool) that set no env.
+        assert pack is not None and pack["providers"]["soak"]["env"] == {"SOAK_DATA": "/home/soak/soak-data/hc-soak"}
         run = toml_check(rendered["formulas/soak-run.toml"])
         assert run is not None and [s["id"] for s in run["steps"]] == ["prepare", "work-a", "work-b", "work-c", "collect"]
 
