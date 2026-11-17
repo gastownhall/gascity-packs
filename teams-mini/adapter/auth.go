@@ -103,6 +103,15 @@ type tokenVerifier struct {
 	keys        map[string]*rsa.PublicKey
 	fetchedAt   time.Time
 	lastUnknown time.Time
+	// lastFetchFail is when a fetch last failed; the stale and cold paths
+	// back off from it so an unreachable Microsoft is not re-dialled on
+	// every request.
+	lastFetchFail time.Time
+	// fetching serialises fetches without holding mu across the network;
+	// fetchGen counts completed fetches so a waiter can tell whether the
+	// fetch it queued behind already did its work.
+	fetching sync.Mutex
+	fetchGen uint64
 }
 
 func newTokenVerifier(openIDConfigURL, audience string) *tokenVerifier {
@@ -181,39 +190,83 @@ func (v *tokenVerifier) verify(ctx context.Context, authorization string) (*botC
 	return &claims, nil
 }
 
+// prefetch warms the key cache so the first inbound request does not pay
+// for the JWKS round-trip. Failure is logged, not fatal: the first request
+// will try again, and the adapter must come up even when Microsoft's
+// metadata endpoint is briefly unreachable.
+func (v *tokenVerifier) prefetch(ctx context.Context) error {
+	_, err := v.keyFor(ctx, "")
+	if err != nil && strings.HasPrefix(err.Error(), "unknown signing key") {
+		return nil // fetched fine; the empty kid is just not in it
+	}
+	return err
+}
+
 // keyFor returns the public key for a kid, fetching or refreshing the JWKS
-// as needed.
+// as needed. The decision to fetch is made under mu; the fetch itself runs
+// under a separate mutex so concurrent requests on a cold or stale cache
+// wait for one fetch rather than each starting their own, and so requests
+// that only need a cached key are never blocked behind the network.
 func (v *tokenVerifier) keyFor(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
 	now := v.now()
-	stale := v.keys == nil || now.Sub(v.fetchedAt) > jwksTTL
-	if !stale {
+	gen := v.fetchGen
+	if v.keys != nil && now.Sub(v.fetchedAt) <= jwksTTL {
 		if k, ok := v.keys[kid]; ok {
+			v.mu.Unlock()
 			return k, nil
 		}
 		// Unknown kid on a fresh cache: Microsoft may have rolled keys.
 		// Refresh early, but not more than once per window, so a stream of
 		// forged tokens with random kids cannot drive fetches.
 		if now.Sub(v.lastUnknown) < jwksUnknownKidRefreshMin {
+			v.mu.Unlock()
 			return nil, fmt.Errorf("unknown signing key %q", kid)
 		}
 		v.lastUnknown = now
+	} else if now.Sub(v.lastFetchFail) < jwksUnknownKidRefreshMin {
+		// Cold or stale cache and a fetch failed recently: do not hammer
+		// Microsoft on every request. Serve the stale set if it has the key.
+		if k, ok := v.keys[kid]; ok {
+			v.mu.Unlock()
+			return k, nil
+		}
+		v.mu.Unlock()
+		return nil, errors.New("signing keys unavailable (recent fetch failed; retrying shortly)")
 	}
+	v.mu.Unlock()
+
+	v.fetching.Lock()
+	defer v.fetching.Unlock()
+	// Another request may have completed a fetch while this one waited.
+	v.mu.Lock()
+	if v.fetchGen != gen {
+		k, ok := v.keys[kid]
+		v.mu.Unlock()
+		if ok {
+			return k, nil
+		}
+		return nil, fmt.Errorf("unknown signing key %q", kid)
+	}
+	v.mu.Unlock()
+
 	keys, err := v.fetchKeys(ctx)
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	if err != nil {
-		if v.keys != nil {
-			// Keep serving the old set rather than failing closed on a
-			// transient fetch error, but the requested kid still has to be
-			// in it.
-			if k, ok := v.keys[kid]; ok {
-				return k, nil
-			}
+		v.lastFetchFail = v.now()
+		// Keep serving the old set rather than failing closed on a
+		// transient fetch error, but the requested kid still has to be
+		// in it.
+		if k, ok := v.keys[kid]; ok {
+			return k, nil
 		}
 		return nil, fmt.Errorf("fetch signing keys: %w", err)
 	}
 	v.keys = keys
-	v.fetchedAt = now
+	v.fetchedAt = v.now()
+	v.fetchGen++
 	if k, ok := keys[kid]; ok {
 		return k, nil
 	}
@@ -229,8 +282,8 @@ func (v *tokenVerifier) fetchKeys(ctx context.Context) (map[string]*rsa.PublicKe
 	if err := v.getJSON(ctx, v.openIDConfigURL, &cfg); err != nil {
 		return nil, fmt.Errorf("openid configuration: %w", err)
 	}
-	if cfg.JWKSURI == "" {
-		return nil, errors.New("openid configuration names no jwks_uri")
+	if !strings.HasPrefix(cfg.JWKSURI, "https://") {
+		return nil, fmt.Errorf("openid configuration names a non-https jwks_uri %q", cfg.JWKSURI)
 	}
 	var set jwks
 	if err := v.getJSON(ctx, cfg.JWKSURI, &set); err != nil {
@@ -294,5 +347,9 @@ func rsaKeyFromJWK(k jwk) (*rsa.PublicKey, error) {
 	if e < 3 {
 		return nil, errors.New("exponent too small")
 	}
-	return &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: e}, nil
+	n := new(big.Int).SetBytes(nBytes)
+	if n.BitLen() < 2048 {
+		return nil, fmt.Errorf("modulus too short (%d bits)", n.BitLen())
+	}
+	return &rsa.PublicKey{N: n, E: e}, nil
 }

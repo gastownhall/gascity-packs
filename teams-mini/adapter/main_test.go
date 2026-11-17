@@ -14,21 +14,25 @@ import (
 
 func TestStripMentions(t *testing.T) {
 	tests := []struct {
-		in   string
-		want string
+		in, bot, want string
 	}{
-		{"<at>gc</at> status please", "status please"},
-		{"  <at>gc</at>   hello", "hello"},
-		{"<at>gc</at> ping <at>Ada Lovelace</at> about it", "ping about it"},
-		{"no mention here", "no mention here"},
-		{"<at>gc</at>", ""},
-		{"   ", ""},
-		{"text then <at>gc</at>", "text then"},
-		{"<at>multi\nline</at> deploy", "deploy"},
+		{"<at>gc</at> status please", "gc", "status please"},
+		{"  <at>gc</at>   hello", "gc", "hello"},
+		{"<at>gc</at> ping <at>Ada Lovelace</at> about it", "gc", "ping @Ada Lovelace about it"},
+		{"<at>Ada</at> and <at>gc</at>: thoughts?", "gc", "@Ada and : thoughts?"},
+		{"<at>GC</at> case-insensitive", "gc", "case-insensitive"},
+		{"no mention here", "gc", "no mention here"},
+		{"<at>gc</at>", "gc", ""},
+		{"   ", "gc", ""},
+		{"text then <at>gc</at>", "gc", "text then"},
+		{"<at>multi\nline</at> deploy", "multi\nline", "deploy"},
+		// No bot name known: the first mention is assumed to be the bot.
+		{"<at>whoever</at> hi <at>Ada</at>", "", "hi @Ada"},
+		{"<at></at> empty tag", "gc", "empty tag"},
 	}
 	for _, tc := range tests {
-		if got := stripMentions(tc.in); got != tc.want {
-			t.Errorf("stripMentions(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := stripMentions(tc.in, tc.bot); got != tc.want {
+			t.Errorf("stripMentions(%q, %q) = %q, want %q", tc.in, tc.bot, got, tc.want)
 		}
 	}
 }
@@ -107,6 +111,9 @@ func TestSameServiceURL(t *testing.T) {
 	}
 	if sameServiceURL("https://a/x", "https://b/x") {
 		t.Fatal("different hosts must not match")
+	}
+	if sameServiceURL("", "") || sameServiceURL("", "https://a/") {
+		t.Fatal("an empty claim must never match")
 	}
 }
 
@@ -293,7 +300,7 @@ func channelMention(text string) activity {
 		ServiceURL: "https://smba.trafficmanager.net/emea/",
 		Text:       text,
 		From:       channelAccount{ID: "29:user", Name: "Ada"},
-		Recipient:  channelAccount{ID: "28:bot"},
+		Recipient:  channelAccount{ID: "28:bot", Name: "gc"},
 		Conversation: conversationInfo{
 			ID:               "19:abc@thread.tacv2;messageid=1699",
 			ConversationType: "channel",
@@ -404,8 +411,8 @@ func TestHandleActivitiesRejectsBadAuth(t *testing.T) {
 		}
 		rec := httptest.NewRecorder()
 		h(rec, req)
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("auth %q: status %d, want 401", auth, rec.Code)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("auth %q: status %d, want 403", auth, rec.Code)
 		}
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/messages", nil)
@@ -507,6 +514,29 @@ func TestPostMessage(t *testing.T) {
 		if p.body["type"] != "message" || p.body["text"] != "build is green" {
 			t.Errorf("body = %v", p.body)
 		}
+		if from, _ := p.body["from"].(map[string]any); from["id"] != "28:app-1" {
+			t.Errorf("from = %v", p.body["from"])
+		}
+		if conv, _ := p.body["conversation"].(map[string]any); conv["id"] != "conv-1" {
+			t.Errorf("conversation = %v", p.body["conversation"])
+		}
+		if _, has := p.body["replyToId"]; has {
+			t.Errorf("new message must not carry replyToId")
+		}
+	})
+
+	t.Run("real teams conversation id survives the path", func(t *testing.T) {
+		const id = "19:abc@thread.tacv2;messageid=1699"
+		convs.remember(id, bf.srv.URL+"/emea/")
+		code, _ := call(`{"conversation":"` + id + `","text":"x"}`)
+		if code != http.StatusOK {
+			t.Fatalf("code=%d", code)
+		}
+		bf.mu.Lock()
+		defer bf.mu.Unlock()
+		if p := bf.posts[len(bf.posts)-1]; p.path != "/emea/v3/conversations/"+id+"/activities" {
+			t.Errorf("path = %q", p.path)
+		}
 	})
 
 	t.Run("posts a reply", func(t *testing.T) {
@@ -516,8 +546,12 @@ func TestPostMessage(t *testing.T) {
 		}
 		bf.mu.Lock()
 		defer bf.mu.Unlock()
-		if p := bf.posts[len(bf.posts)-1]; p.path != "/emea/v3/conversations/conv-1/activities/act-7" {
+		p := bf.posts[len(bf.posts)-1]
+		if p.path != "/emea/v3/conversations/conv-1/activities/act-7" {
 			t.Errorf("path = %q", p.path)
+		}
+		if p.body["replyToId"] != "act-7" {
+			t.Errorf("replyToId = %v", p.body["replyToId"])
 		}
 	})
 
@@ -526,7 +560,7 @@ func TestPostMessage(t *testing.T) {
 		calls := bf.tokenCalls
 		bf.mu.Unlock()
 		if calls != 1 {
-			t.Fatalf("token fetched %d times across two posts, want 1", calls)
+			t.Fatalf("token fetched %d times across three posts, want 1", calls)
 		}
 	})
 

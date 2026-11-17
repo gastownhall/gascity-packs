@@ -37,7 +37,8 @@ any reverse proxy that terminates TLS will do.
    resource. Pick **Multi Tenant** (default) or **Single Tenant** for *Type of
    App*, and let it create a new Microsoft App ID.
 2. On the bot's **Configuration** blade note the **Microsoft App ID**. Click
-   **Manage Password** and create a client secret; copy its **value** now.
+   **Manage Password** (it opens the app registration behind the bot) and
+   create a client secret; copy its **value** now, it is shown once.
 3. Still under **Configuration**, set **Messaging endpoint** to
    `https://<your-public-host>/api/messages` (see step 3 for the host).
 4. Under **Channels**, add **Microsoft Teams** and accept the terms.
@@ -79,7 +80,8 @@ GC_CITY_NAME=<your-city-name>                       # the gc city to bridge into
 ```
 
 That is the full required set, four variables. If you chose **Single Tenant**
-in step 1, also set `TEAMS_APP_TYPE=single-tenant`.
+in step 1, also set `TEAMS_APP_TYPE=single-tenant`; the bot must then live in
+the same tenant as `TEAMS_TENANT_ID`.
 
 ### 3. Expose the endpoint and start (2 min)
 
@@ -121,6 +123,20 @@ European tenants `https://smba.trafficmanager.net/emea/`, for the Americas
 `https://smba.trafficmanager.net/amer/`; the exact value is in any inbound
 activity's `serviceUrl`).
 
+## Things that will not work, so you don't lose an hour on them
+
+- **The Bot Framework Emulator.** It signs requests with a different issuer,
+  so the adapter refuses every one of them. Test from Teams itself.
+- **Posting into a conversation the bot is not in.** Microsoft answers 403.
+  Add the app to the team or chat first, or mention the bot once so the
+  conversation exists.
+- **Government and sovereign clouds.** The Microsoft endpoints are the public
+  ones and are not configurable.
+- **Running behind your own sign-in.** If your Gas City sits behind an SSO
+  gateway, `/api/messages` has to be reachable by Microsoft's bot service
+  without logging in. The adapter verifies Microsoft's signature itself, so
+  exempting that one path is safe.
+
 ## What's verified on the inbound path
 
 Every request to `/api/messages` must carry a Bot Framework JWT. The adapter
@@ -130,6 +146,11 @@ the audience (your app id), the validity window, and that the token's
 dropped. Only `message` activities are bridged, and in channels and group
 chats only when the bot itself is mentioned. Nothing is bridged on a failed
 check.
+
+The one thing the token does not cover is the request body, which is how the
+Bot Framework works rather than a choice here. The TLS terminator in front of
+port 8777 is therefore part of the trust boundary: it must be real TLS to a
+host you control (Funnel is), not a plain-http hop across a network you don't.
 
 ## Environment reference
 

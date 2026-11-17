@@ -2,7 +2,8 @@
 
 Teams installs a bot from a zip containing `manifest.json` plus the two icons.
 The manifest here has `${TEAMS_APP_ID}` where the Azure Bot's Microsoft App ID
-goes. Build the package with:
+goes; as checked in it is a template, not yet a valid manifest, until that
+substitution runs. Build the package with:
 
 ```sh
 TEAMS_APP_ID=11111111-2222-3333-4444-555555555555

@@ -3,7 +3,6 @@
   "manifestVersion": "1.17",
   "version": "0.1.0",
   "id": "${TEAMS_APP_ID}",
-  "packageName": "com.gascity.teamsmini",
   "developer": {
     "name": "Gas City",
     "websiteUrl": "https://github.com/gastownhall/gascity-packs",

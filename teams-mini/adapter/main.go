@@ -154,6 +154,13 @@ func main() {
 		cfg.publicListen, internalDescr, cfg.gcAPIBase, cfg.cityName, cfg.inboundTarget, cfg.appType)
 
 	verifier := newTokenVerifier(cfg.openIDConfigURL, cfg.appID)
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), jwksFetchTimeout)
+		if err := verifier.prefetch(ctx); err != nil {
+			log.Printf("warning: could not prefetch Bot Framework signing keys (%v); will retry on first request", err)
+		}
+		cancel()
+	}
 	convs := newConversationTable(cfg.serviceURLFallback)
 	tokens := newTokenSource(cfg)
 
@@ -366,6 +373,9 @@ func validServiceURL(raw string) (string, error) {
 // through the regional service that delivered the inbound activity, so an
 // outbound post needs the matching serviceUrl; a conversation the adapter
 // has not seen since start falls back to TEAMS_SERVICE_URL.
+//
+// The table is unbounded: one short string per conversation ever seen,
+// which for a Tier 1 bot is a few hundred entries over a long uptime.
 type conversationTable struct {
 	mu       sync.RWMutex
 	byConv   map[string]string
@@ -444,15 +454,18 @@ func handleActivities(cfg config, verifier *tokenVerifier, convs *conversationTa
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxInboundBody))
-		if err != nil {
-			http.Error(w, "read body", http.StatusBadRequest)
-			return
-		}
+		// Verify before reading the body. Unlike Slack's HMAC, the Bot
+		// Framework token does not cover the body, so there is no reason to
+		// buffer up to a megabyte for a request that will be refused.
 		claims, err := verifier.verify(r.Context(), r.Header.Get("Authorization"))
 		if err != nil {
 			log.Printf("bot framework token verify FAILED: %v", err)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxInboundBody))
+		if err != nil {
+			http.Error(w, "read body", http.StatusBadRequest)
 			return
 		}
 
@@ -463,10 +476,13 @@ func handleActivities(cfg config, verifier *tokenVerifier, convs *conversationTa
 		}
 		// The token's serviceurl claim must match the activity's serviceUrl:
 		// a token minted for one regional service cannot be replayed with an
-		// activity pointing the adapter's replies somewhere else.
-		if claims.ServiceURL != "" && !sameServiceURL(claims.ServiceURL, act.ServiceURL) {
-			log.Printf("serviceUrl mismatch: token=%s activity=%s", claims.ServiceURL, act.ServiceURL)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		// activity pointing the adapter's replies (and its outbound bearer
+		// token) somewhere else. The check is unconditional: a token with no
+		// serviceurl claim is refused too, since every token the Bot
+		// Framework mints for a bot carries one.
+		if !sameServiceURL(claims.ServiceURL, act.ServiceURL) {
+			log.Printf("serviceUrl mismatch: token=%q activity=%q", claims.ServiceURL, act.ServiceURL)
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 
@@ -479,7 +495,8 @@ func handleActivities(cfg config, verifier *tokenVerifier, convs *conversationTa
 // sameServiceURL compares two serviceUrls ignoring a trailing slash, which
 // the Bot Framework is inconsistent about between the claim and the body.
 func sameServiceURL(a, b string) bool {
-	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
+	a, b = strings.TrimRight(a, "/"), strings.TrimRight(b, "/")
+	return a != "" && a == b
 }
 
 // bridgeActivity decodes a message activity and POSTs it to gc's extmsg
@@ -495,6 +512,9 @@ func bridgeActivity(cfg config, convs *conversationTable, act activity) {
 	// installed by any organisation, yet every bridged message is stamped
 	// with cfg.tenantID as its account id below; without this guard a second
 	// tenant's mentions would be filed under this one.
+	// An absent tenant is allowed through: Teams stamps one on every
+	// activity, so this only affects hand-built payloads, which cannot pass
+	// token verification anyway.
 	tenant := act.ChannelData.Tenant.ID
 	if tenant == "" {
 		tenant = act.Conversation.TenantID
@@ -513,7 +533,7 @@ func bridgeActivity(cfg config, convs *conversationTable, act activity) {
 	if kind == "room" && !mentionsBot(act) {
 		return // Tier 1 answers only direct mentions in rooms
 	}
-	text := stripMentions(act.Text)
+	text := stripMentions(act.Text, act.Recipient.Name)
 	if text == "" {
 		return
 	}
@@ -572,18 +592,29 @@ func mentionsBot(act activity) bool {
 }
 
 // atTagRE matches Teams' inline mention markup, `<at>Display Name</at>`,
-// which arrives in the text wherever a user @-mentioned someone. Stripping
-// every occurrence (not just a leading one, as Slack's bridge does) is
-// right here because Teams renders the mention as the display name, so a
-// message like "<at>gc</at> status for <at>Ada</at>" reads naturally as
-// "status for" to the mayor without a stray tag.
-var atTagRE = regexp.MustCompile(`(?s)<at>.*?</at>`)
+// which arrives in the text wherever a user @-mentioned someone.
+var atTagRE = regexp.MustCompile(`(?s)<at>(.*?)</at>`)
 
 // spaceRunRE collapses the whitespace a removed mention leaves behind.
 var spaceRunRE = regexp.MustCompile(`\s{2,}`)
 
-func stripMentions(text string) string {
-	out := atTagRE.ReplaceAllString(text, "")
+// stripMentions removes the bot's own mention and rewrites everyone else's
+// as a plain `@Name`, so "<at>gc</at> ping <at>Ada</at> about it" reaches
+// the mayor as "ping @Ada about it": the bot tag is noise, the person is
+// not. botName is the display name Teams rendered for the bot, taken from
+// the activity's recipient; when it is empty only the first mention is
+// treated as the bot's.
+func stripMentions(text, botName string) string {
+	first := true
+	out := atTagRE.ReplaceAllStringFunc(text, func(tag string) string {
+		name := strings.TrimSpace(atTagRE.FindStringSubmatch(tag)[1])
+		isBot := (botName != "" && strings.EqualFold(name, botName)) || (botName == "" && first)
+		first = false
+		if isBot || name == "" {
+			return ""
+		}
+		return "@" + name
+	})
 	out = spaceRunRE.ReplaceAllString(out, " ")
 	return strings.TrimSpace(out)
 }
@@ -752,7 +783,7 @@ func handlePostMessage(cfg config, convs *conversationTable, tokens *tokenSource
 			writeJSONError(w, http.StatusBadGateway, "token: "+err.Error())
 			return
 		}
-		id, err := postToTeams(r.Context(), serviceURL, token, req)
+		id, err := postToTeams(r.Context(), serviceURL, token, cfg.appID, req)
 		if err != nil {
 			writeJSONError(w, http.StatusBadGateway, err.Error())
 			return
@@ -775,16 +806,26 @@ func writeJSONError(w http.ResponseWriter, status int, msg string) {
 // postToTeams posts a message activity into a conversation. With a reply_to
 // it is posted as a reply to that activity (a thread reply in a channel);
 // otherwise it is a new message in the conversation.
-func postToTeams(ctx context.Context, serviceURL, token string, req postMessageReq) (string, error) {
+func postToTeams(ctx context.Context, serviceURL, token, appID string, req postMessageReq) (string, error) {
 	target := serviceURL + "v3/conversations/" + url.PathEscape(req.Conversation) + "/activities"
 	if req.ReplyTo != "" {
 		target += "/" + url.PathEscape(req.ReplyTo)
 	}
-	payload, err := json.Marshal(map[string]any{
-		"type":       "message",
-		"text":       req.Text,
-		"textFormat": "markdown",
-	})
+	// from, conversation and replyToId are what the Connector's "create a
+	// reply" contract names; Teams accepts a bare {type,text} but other
+	// channels refuse it, so send the full shape. A bot's channel account
+	// id is its app id with the "28:" bot prefix.
+	body := map[string]any{
+		"type":         "message",
+		"text":         req.Text,
+		"textFormat":   "markdown",
+		"from":         map[string]string{"id": "28:" + appID},
+		"conversation": map[string]string{"id": req.Conversation},
+	}
+	if req.ReplyTo != "" {
+		body["replyToId"] = req.ReplyTo
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}

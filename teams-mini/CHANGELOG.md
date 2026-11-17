@@ -22,9 +22,14 @@ in Teams.
     the activity. Keys are cached 24h and refreshed early on an unknown
     `kid`, rate-limited to one refresh per 5 minutes.
   - Handles `message` activities only; in channels and group chats only when
-    the bot is mentioned. Activities from another tenant are dropped. Each
-    bridged message is POSTed to `/v0/city/{city}/extmsg/inbound`, addressed
-    to the mayor session (override with `TEAMS_MINI_INBOUND_TARGET`).
+    the bot is mentioned. Activities from another tenant are dropped. The
+    bot's own `<at>` mention is removed and other people's are kept as
+    `@Name`. Each bridged message is POSTed to
+    `/v0/city/{city}/extmsg/inbound`, addressed to the mayor session
+    (override with `TEAMS_MINI_INBOUND_TARGET`). Failed checks answer 403.
+  - Signing keys are prefetched at start; a failed fetch backs off for five
+    minutes while the cached set keeps serving, so an unreachable Microsoft
+    neither blocks startup nor is re-dialled on every request.
   - Outbound `/post-message` endpoint on the gc-proxied UDS, posting Teams
     markdown via the Bot Framework conversations API, as a new message or a
     reply to an activity. The client-credentials token is cached and

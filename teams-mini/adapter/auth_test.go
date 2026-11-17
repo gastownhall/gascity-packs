@@ -56,9 +56,18 @@ func newSigningKeys(t *testing.T, kids ...string) *signingKeys {
 		}
 		_ = json.NewEncoder(w).Encode(out)
 	})
-	s.srv = httptest.NewServer(mux)
+	// TLS, because the verifier refuses a non-https jwks_uri; the client it
+	// hands out trusts the test certificate.
+	s.srv = httptest.NewTLSServer(mux)
 	t.Cleanup(s.srv.Close)
 	return s
+}
+
+// verifier returns a tokenVerifier wired to this fake Microsoft.
+func (s *signingKeys) verifier(audience string) *tokenVerifier {
+	v := newTokenVerifier(s.openIDURL(), audience)
+	v.client = s.srv.Client()
+	return v
 }
 
 func (s *signingKeys) setPublished(kids ...string) { s.publish.Store(&kids) }
@@ -103,7 +112,7 @@ func goodClaims(now time.Time) map[string]any {
 func TestTokenVerifier(t *testing.T) {
 	ms := newSigningKeys(t, "k1")
 	now := time.Now()
-	v := newTokenVerifier(ms.openIDURL(), "app-1")
+	v := ms.verifier("app-1")
 	v.now = func() time.Time { return now }
 	ctx := context.Background()
 
@@ -207,7 +216,7 @@ func TestTokenVerifierKeyRollover(t *testing.T) {
 	ms := newSigningKeys(t, "k1", "k2")
 	ms.setPublished("k1")
 	now := time.Now()
-	v := newTokenVerifier(ms.openIDURL(), "app-1")
+	v := ms.verifier("app-1")
 	v.now = func() time.Time { return now }
 	ctx := context.Background()
 
@@ -260,7 +269,7 @@ func TestTokenVerifierKeyRollover(t *testing.T) {
 func TestTokenVerifierSurvivesFetchFailure(t *testing.T) {
 	ms := newSigningKeys(t, "k1")
 	now := time.Now()
-	v := newTokenVerifier(ms.openIDURL(), "app-1")
+	v := ms.verifier("app-1")
 	v.now = func() time.Time { return now }
 	ctx := context.Background()
 	if _, err := v.verify(ctx, "Bearer "+ms.token(t, "k1", "RS256", goodClaims(now))); err != nil {
@@ -278,7 +287,7 @@ func TestHandleActivitiesEndToEnd(t *testing.T) {
 	ms := newSigningKeys(t, "k1")
 	gc := newCaptureGC(t)
 	cfg := testConfig(gc.srv.URL)
-	v := newTokenVerifier(ms.openIDURL(), cfg.appID)
+	v := ms.verifier(cfg.appID)
 	convs := newConversationTable("")
 	h := handleActivities(cfg, v, convs)
 	now := time.Now()
@@ -303,10 +312,81 @@ func TestHandleActivitiesEndToEnd(t *testing.T) {
 	// another: refused before anything is bridged.
 	act := channelMention("<at>gc</at> hello")
 	act.ServiceURL = "https://attacker.example/"
-	if code := post("Bearer "+ms.token(t, "k1", "RS256", goodClaims(now)), act); code != http.StatusUnauthorized {
-		t.Fatalf("serviceUrl mismatch: status %d, want 401", code)
+	if code := post("Bearer "+ms.token(t, "k1", "RS256", goodClaims(now)), act); code != http.StatusForbidden {
+		t.Fatalf("serviceUrl mismatch: status %d, want 403", code)
 	}
-	if _, ok := convs.lookup(act.Conversation.ID, ""); ok && gc.count() != 1 {
-		t.Fatal("mismatched activity must not be bridged")
+	// A token with no serviceurl claim at all is refused too.
+	noClaim := goodClaims(now)
+	delete(noClaim, "serviceurl")
+	if code := post("Bearer "+ms.token(t, "k1", "RS256", noClaim), channelMention("<at>gc</at> hello")); code != http.StatusForbidden {
+		t.Fatalf("missing serviceurl claim: status %d, want 403", code)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if gc.count() != 1 {
+		t.Fatalf("gc received %d messages, want only the valid one", gc.count())
+	}
+	if u, _ := convs.lookup(act.Conversation.ID, ""); u == "https://attacker.example/" {
+		t.Fatal("attacker serviceUrl must not be remembered")
+	}
+}
+
+func TestTokenVerifierBacksOffWhenFetchKeepsFailing(t *testing.T) {
+	ms := newSigningKeys(t, "k1")
+	now := time.Now()
+	v := ms.verifier("app-1")
+	v.now = func() time.Time { return now }
+	ctx := context.Background()
+	tok := ms.token(t, "k1", "RS256", goodClaims(now))
+	if _, err := v.verify(ctx, "Bearer "+tok); err != nil {
+		t.Fatal(err)
+	}
+	// Break the JWKS endpoint, let the cache go stale, and hit it with
+	// several requests: one failed fetch, then the stale key keeps serving
+	// without re-dialling until the back-off window passes.
+	ms.srv.Close()
+	now = now.Add(jwksTTL + time.Second)
+	fetchesBefore := ms.fetches.Load()
+	for i := 0; i < 5; i++ {
+		tok = ms.token(t, "k1", "RS256", goodClaims(now))
+		if _, err := v.verify(ctx, "Bearer "+tok); err != nil {
+			t.Fatalf("request %d: stale key should still verify: %v", i, err)
+		}
+	}
+	if got := ms.fetches.Load(); got != fetchesBefore {
+		t.Fatalf("JWKS endpoint reached %d times after it died, want 0 (it is closed; count is attempts that connected)", got-fetchesBefore)
+	}
+	if v.lastFetchFail.IsZero() {
+		t.Fatal("failed fetch was not recorded")
+	}
+	// A token for an unknown kid during the back-off window fails fast
+	// with the back-off error rather than another 15s fetch attempt.
+	start := time.Now()
+	_, err := v.verify(ctx, "Bearer "+ms.token(t, "nope", "RS256", goodClaims(now)))
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("expected back-off error, got %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("back-off path should not attempt the network")
+	}
+}
+
+func TestTokenVerifierPrefetch(t *testing.T) {
+	ms := newSigningKeys(t, "k1")
+	v := ms.verifier("app-1")
+	if err := v.prefetch(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if ms.fetches.Load() != 1 {
+		t.Fatalf("fetches = %d, want 1", ms.fetches.Load())
+	}
+	if _, err := v.verify(context.Background(), "Bearer "+ms.token(t, "k1", "RS256", goodClaims(time.Now()))); err != nil {
+		t.Fatal(err)
+	}
+	if ms.fetches.Load() != 1 {
+		t.Fatalf("first verify refetched; fetches = %d", ms.fetches.Load())
+	}
+	dead := newTokenVerifier("http://127.0.0.1:1/nope", "app-1")
+	if err := dead.prefetch(context.Background()); err == nil {
+		t.Fatal("prefetch against a dead endpoint should report the error")
 	}
 }
