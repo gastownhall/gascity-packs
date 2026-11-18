@@ -21,7 +21,7 @@ from fakehc.cli import write_launcher
 from fakehc.rawclient import raw_call
 
 from gc_runtime_herdr_core.hc.paths import resolve_paths
-from gc_runtime_herdr_core.herdrcore import core
+from gc_runtime_herdr_core.herdrcore import core, coreid
 from gc_runtime_herdr_core.herdrcore.command import Completed
 from gc_runtime_herdr_core.rpp.ops import OpError
 from gc_runtime_herdr_core.herdrcore.config import HC_CONFIG_TOML, ConfigError, pinned_binary, resolve_hc_binary
@@ -429,6 +429,26 @@ def test_the_packs_own_start_clears_a_restart_environment_hc_kept(city: City, mo
     with pytest.raises(OpError, match="exited 1"):
         core.start_core(city.context(), city.env["GC_HC_TEST_BIN"])
     assert seen == [False]
+
+
+def test_an_hc_that_cannot_be_run_is_reported_as_such(city: City) -> None:
+    """It never started: the error is the spawn's, and no start is pending."""
+    missing = city.root / "no-such-hc"
+    with pytest.raises(OpError) as caught:
+        core.start_core(city.context(), str(missing))
+    assert caught.value.message.startswith(f"cannot run {missing} server start: "), caught.value.message
+    assert coreid.read_pending(city.context()) == ()
+
+
+def test_a_start_the_pack_cannot_note_is_not_waited_on(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    def full(ctx: object, *, starter_pid: int, since_ms: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(coreid, "begin_start", full)
+    started = time.monotonic()
+    with pytest.raises(OpError, match="^cannot note the start of the city's core: .*No space left on device"):
+        core.start_core(city.context(), city.env["GC_HC_TEST_BIN"])
+    assert time.monotonic() - started < core.CORE_START_WAIT_S
 
 
 def test_environment_file_round_trips_hcs_quoting() -> None:

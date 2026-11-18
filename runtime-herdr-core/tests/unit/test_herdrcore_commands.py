@@ -70,6 +70,14 @@ def test_status_reports_a_core_started_outside_the_pack(city: City) -> None:
     assert code == 0 and "started:   outside the pack" in "\n".join(out)
 
 
+def test_status_cannot_tell_who_started_a_core_whose_environment_cannot_be_read(city: City) -> None:
+    city.procs.core_environ = None
+    code, out, _ = run(city, "status")
+    text = "\n".join(out)
+    assert code == 0 and "started:   cannot tell (its environment cannot be read)" in text
+    assert "outside the pack" not in text
+
+
 # --- restart-core ----------------------------------------------------------------------
 
 

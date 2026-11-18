@@ -13,8 +13,8 @@ of the city's core runs.
 The core itself is ``<hc> serve``, started with the pack's discovery tuple
 (:mod:`.core`), so its environment names the city's socket. On macOS it is
 ``<hc> --hc-launchd <ready socket>``, whose environment is launchd's: there
-it is the process the pack recorded when it started it, or one the pack's
-pending start asked for (:mod:`.coreid`). A core of the
+it is the process the pack recorded when it started it, or one a pending
+start of the pack asked for (:mod:`.coreid`). A core of the
 city's session may listen on another socket (``core.lock`` names it,
 herdr-core #200); its holders are then beside that one, so while it
 answers, what runs cannot be told from the city's socket.

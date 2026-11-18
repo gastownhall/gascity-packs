@@ -4,11 +4,14 @@ On macOS hc starts the core as a launchd job: the core runs as
 ``<hc> --hc-launchd <dir>/ready`` with launchd's environment, and ``<dir>``
 names the pid of the process that asked for it. The pack records the core
 its own hc asked for, and accepts a core a holder of the city restarted by
-that holder's environment; any other launchd core is foreign. Under systemd
-older than 244 a core's unit has no ``RUNTIME_DIRECTORY``, so the pack finds
-its environment file through the core's control group. Everywhere the
-environment can be judged, it is: a record never overrides it. Nothing here
-runs a real herdr-core."""
+that holder's environment, recording it; any other launchd core is foreign.
+Under systemd a core a holder restarted has that holder's environment in its
+unit file: the pack's by the lineage the pack recorded when it accepted that
+holder's core, never by a live holder. Under systemd older than 244 a core's
+unit has no ``RUNTIME_DIRECTORY``, so the pack finds its environment file
+through the core's control group. Everywhere the environment can be judged,
+it is: a record never overrides it. Only a start records. Nothing here runs
+a real herdr-core."""
 
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ from test_herdrcore_commands import run as run_command
 from test_herdrcore_core import core_environ, entry_env, invoke
 
 from gc_runtime_herdr_core.hc.paths import resolve_paths
-from gc_runtime_herdr_core.herdrcore import admin, core, coreid, corescan
+from gc_runtime_herdr_core.herdrcore import admin, commands, core, coreid, corescan
 from gc_runtime_herdr_core.herdrcore.context import OpContext, live_host
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, PsProcs
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Deadline
@@ -266,9 +269,12 @@ def test_a_core_that_does_not_answer_is_found_by_its_recorded_identity(short_tmp
     assert not corescan.nothing_runs(ctx)
     coreid.write(ctx, coreid.CoreIdentity(pid=4242, start="778", boot="boot-1", core_id="c" * 32))
     assert corescan.core_processes(ctx, snapshot) == []
-    coreid.begin_start(ctx, starter_pid=77, since_ms=coreid.wall_ms() - 60_000)  # the pack's start still runs
+    since_ms = coreid.wall_ms() - 60_000
+    coreid.begin_start(ctx, starter_pid=77, since_ms=since_ms)  # the pack's start still runs
     assert [proc.pid for proc in corescan.core_processes(ctx, snapshot)] == [4242]
-    coreid.begin_start(ctx, starter_pid=78, since_ms=coreid.wall_ms() - 60_000)
+    coreid.begin_start(ctx, starter_pid=78, since_ms=since_ms)  # another start leaves its entry be
+    assert [proc.pid for proc in corescan.core_processes(ctx, snapshot)] == [4242]
+    coreid.close_start(ctx, starter_pid=77, since_ms=since_ms, until_ms=since_ms + 1)  # it ended before the core was asked for
     assert corescan.core_processes(ctx, snapshot) == []
 
 
@@ -314,10 +320,13 @@ def test_the_pending_start_is_recorded_before_the_packs_hc_is_waited_on(city: Ci
     since_ms = coreid.wall_ms()
     with pytest.raises(OpError, match="timed out"):
         core.start_core(ctx, script)
-    pending = coreid.read_pending(ctx)
-    assert pending is not None and pending.starter_pid == int(pidfile.read_text())
+    (pending,) = coreid.read_pending(ctx)
+    assert pending.starter_pid == int(pidfile.read_text())
     assert since_ms <= pending.since_ms and pending.until_ms is not None and pending.since_ms < pending.until_ms <= coreid.wall_ms()
     path = pending_path(ctx)
+    assert json.loads(path.read_text()) == {
+        "starts": [{"starter_pid": pending.starter_pid, "since_ms": pending.since_ms, "until_ms": pending.until_ms}]
+    }
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert not [p for p in path.parent.iterdir() if p.name.startswith(".")], "written through a temp file, renamed"
 
@@ -329,14 +338,83 @@ def test_a_core_a_timed_out_start_asked_for_is_accepted_by_a_later_start(city: C
     ctx = city.context(deadline_s=2.5)
     with pytest.raises(OpError, match="timed out"):
         core.start_core(ctx, script)
-    pending = coreid.read_pending(ctx)
-    assert pending is not None and pending.until_ms is not None
+    (pending,) = coreid.read_pending(ctx)
+    assert pending.until_ms is not None
     as_launchd_core(city, starter_pid=int(pidfile.read_text()), asked_ns=(pending.since_ms + 1) * 1_000_000)
     done = city.start("mc-a")
     assert done.code == 0, done.stderr
     ctx = city.context()
     assert coreid.started_by_pack(ctx, ctx.client().server_status()), "pinned on its first acceptance"
-    assert coreid.read_pending(ctx) is None, "superseded by the record it pinned"
+    assert coreid.read_pending(ctx) == (), "superseded by the record it pinned"
+    assert not pending_path(ctx).exists()
+
+
+def quick_hc(tmp: Path) -> str:
+    """An hc whose ``server start`` finds the core answering, and asked for none."""
+    script = tmp / "quick-hc"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def await_pending(ctx: OpContext, starter_pid: int) -> None:
+    """Until the pack's start that runs ``starter_pid`` has noted it."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if any(entry.starter_pid == starter_pid for entry in coreid.read_pending(ctx)):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"no pending start names {starter_pid}")
+
+
+def test_a_core_a_timed_out_start_asked_for_stays_the_packs_after_another_start(city: City) -> None:
+    """hc A asked launchd for the core and was killed at the pack's deadline;
+    the core came up after, and another start's hc B then found it
+    answering. B's start leaves A's entry be: a later start accepts the core
+    A asked for, and pins it."""
+    script, pidfile, _ = stalled_hc(city.root)
+    with pytest.raises(OpError, match="timed out"):
+        core.start_core(city.context(deadline_s=2.5), script)
+    ctx = city.context()
+    (first,) = coreid.read_pending(ctx)
+    as_launchd_core(city, starter_pid=int(pidfile.read_text()), asked_ns=(first.since_ms + 1) * 1_000_000)
+    core.start_core(ctx, quick_hc(city.root))
+    assert coreid.read_pending(ctx) == (first,), "B's start finished; A's entry stays"
+    done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+    assert coreid.started_by_pack(ctx, ctx.client().server_status())
+    assert coreid.read_pending(ctx) == ()
+
+
+def test_a_core_a_running_start_asked_for_is_the_packs_while_another_start_runs_and_ends(city: City) -> None:
+    """Starts of the pack run at once: hc A asked launchd for the core and
+    still runs when another start's hc B finds that core answering and ends.
+    A's entry stays open, so a start that checks now accepts A's core."""
+    script, pidfile, release = stalled_hc(city.root)
+    errors: List[BaseException] = []
+
+    def first() -> None:
+        try:
+            core.start_core(city.context(), script)
+        except BaseException as err:  # noqa: BLE001 - reported below
+            errors.append(err)
+
+    thread = in_thread(first)
+    ctx = city.context()
+    try:
+        pid = await_pid(pidfile)
+        await_pending(ctx, pid)
+        as_launchd_core(city, starter_pid=pid)
+        core.start_core(ctx, quick_hc(city.root))
+        assert [entry.starter_pid for entry in coreid.read_pending(ctx)] == [pid]
+        done = city.start("mc-a")
+        assert done.code == 0, done.stderr
+    finally:
+        release.touch()
+        thread.join(timeout=30)
+    assert not thread.is_alive() and errors == []
+    assert coreid.started_by_pack(ctx, ctx.client().server_status())
+    assert coreid.read_pending(ctx) == ()
 
 
 def test_a_start_that_checks_while_the_packs_hc_still_runs_accepts_its_core(city: City) -> None:
@@ -361,7 +439,7 @@ def test_a_start_that_checks_while_the_packs_hc_still_runs_accepts_its_core(city
     thread.join(timeout=30)
     assert not thread.is_alive() and errors == []
     assert coreid.started_by_pack(ctx, ctx.client().server_status())
-    assert coreid.read_pending(ctx) is None, "its start finished"
+    assert coreid.read_pending(ctx) == (), "its start finished"
 
 
 def test_a_pending_start_never_lets_another_starter_in(city: City) -> None:
@@ -375,7 +453,7 @@ def test_a_pending_start_never_lets_another_starter_in(city: City) -> None:
     assert city.start("mc-a").code == 1
     as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms - 1) * 1_000_000)
     assert city.start("mc-a").code == 1
-    coreid.close_start(ctx, starter_pid=4242, until_ms=since_ms + 1000)
+    coreid.close_start(ctx, starter_pid=4242, since_ms=since_ms, until_ms=since_ms + 1000)
     as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1001) * 1_000_000)
     assert city.start("mc-a").code == 1
     assert not identity_path(ctx).exists()
@@ -383,16 +461,70 @@ def test_a_pending_start_never_lets_another_starter_in(city: City) -> None:
     assert city.start("mc-a").code == 0
 
 
-def test_a_later_start_supersedes_the_pending_one(city: City) -> None:
+def test_each_start_changes_only_its_own_entry(city: City) -> None:
+    """A later start leaves an earlier one's entry be: the core the earlier
+    one's hc asked for in its time stays the pack's."""
     ctx = city.context()
     since_ms = coreid.wall_ms()
     coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
     coreid.begin_start(ctx, starter_pid=4343, since_ms=since_ms + 1)
-    coreid.close_start(ctx, starter_pid=4242, until_ms=since_ms + 2)  # the first one's end leaves the second's alone
-    pending = coreid.read_pending(ctx)
-    assert pending == coreid.PendingStart(starter_pid=4343, since_ms=since_ms + 1, until_ms=None)
+    coreid.close_start(ctx, starter_pid=4242, since_ms=since_ms, until_ms=since_ms + 2)
+    first = coreid.PendingStart(starter_pid=4242, since_ms=since_ms, until_ms=since_ms + 2)
+    assert coreid.read_pending(ctx) == (first, coreid.PendingStart(starter_pid=4343, since_ms=since_ms + 1, until_ms=None))
+    coreid.finish_start(ctx, starter_pid=4343, since_ms=since_ms + 1)
+    assert coreid.read_pending(ctx) == (first,)
     as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1) * 1_000_000)
+    assert city.start("mc-a").code == 0
+
+
+def test_starts_whose_hcs_had_one_pid_are_told_apart_by_when_they_ran(city: City) -> None:
+    """The pid of one start's hc was reused by a later start's: each start
+    closes and drops only its own entry, and a core that pid asked for
+    between the two runs is neither's."""
+    ctx = city.context()
+    since_ms = coreid.wall_ms() - 10_000
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
+    coreid.close_start(ctx, starter_pid=4242, since_ms=since_ms, until_ms=since_ms + 1000)
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms + 5000)
+    coreid.close_start(ctx, starter_pid=4242, since_ms=since_ms + 5000, until_ms=since_ms + 6000)
+    assert [(s.since_ms, s.until_ms) for s in coreid.read_pending(ctx)] == [
+        (since_ms, since_ms + 1000),
+        (since_ms + 5000, since_ms + 6000),
+    ]
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 3000) * 1_000_000)
     assert city.start("mc-a").code == 1
+    coreid.finish_start(ctx, starter_pid=4242, since_ms=since_ms)
+    assert [(s.since_ms, s.until_ms) for s in coreid.read_pending(ctx)] == [(since_ms + 5000, since_ms + 6000)]
+
+
+def test_an_entry_whose_hc_never_ended_counts_only_for_a_while(city: City) -> None:
+    """The pack was killed waiting on its hc, so it never closed the entry:
+    it counts as ended PENDING_OPEN_MS after it began, and a core a process
+    with that pid asked for after that is not the pack's."""
+    ctx = city.context()
+    since_ms = coreid.wall_ms() - coreid.PENDING_OPEN_MS - 60_000
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + coreid.PENDING_OPEN_MS + 1) * 1_000_000)
+    assert city.start("mc-a").code == 1
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + coreid.PENDING_OPEN_MS) * 1_000_000)
+    assert city.start("mc-a").code == 0
+
+
+def test_an_open_entry_outlasts_every_wait_on_the_packs_hc() -> None:
+    assert coreid.PENDING_OPEN_MS > (core.CORE_START_WAIT_S + commands.STOP_WAIT_S) * 1000
+
+
+def test_entries_that_ended_long_ago_go_and_only_the_newest_are_kept(city: City) -> None:
+    ctx = city.context()
+    now = coreid.wall_ms()
+    ended = now - coreid.PENDING_KEEP_MS - 10_000
+    coreid.begin_start(ctx, starter_pid=4141, since_ms=ended - 1000)
+    coreid.close_start(ctx, starter_pid=4141, since_ms=ended - 1000, until_ms=ended)
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=now)
+    assert [s.starter_pid for s in coreid.read_pending(ctx)] == [4242]
+    for n in range(coreid.PENDING_MAX + 3):
+        coreid.begin_start(ctx, starter_pid=5000 + n, since_ms=now + n)
+    assert [s.starter_pid for s in coreid.read_pending(ctx)] == list(range(5003, 5000 + coreid.PENDING_MAX + 3))
 
 
 def test_a_forged_pending_start_is_not_trusted(city: City) -> None:
@@ -401,8 +533,24 @@ def test_a_forged_pending_start_is_not_trusted(city: City) -> None:
     coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
     pending_path(ctx).chmod(0o664)
     as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1) * 1_000_000)
-    assert coreid.read_pending(ctx) is None
+    assert coreid.read_pending(ctx) == ()
     assert city.start("mc-a").code == 1
+
+
+def test_status_records_nothing(city: City) -> None:
+    """Only a start records what it accepts: ``status`` reads the core a
+    pending start asked for as the pack's, and leaves the entry and the
+    record as they were."""
+    ctx = city.context()
+    since_ms = coreid.wall_ms()
+    coreid.begin_start(ctx, starter_pid=4242, since_ms=since_ms)
+    as_launchd_core(city, starter_pid=4242, asked_ns=(since_ms + 1) * 1_000_000)
+    code, out, _ = run_command(city, "status")
+    assert code == 0 and "started:   by the pack" in "\n".join(out)
+    assert core.foreign_core(ctx, ctx.client().server_status(), city.env["GC_HC_TEST_BIN"]) is None
+    assert not identity_path(ctx).exists() and len(coreid.read_pending(ctx)) == 1
+    assert city.start("mc-a").code == 0
+    assert identity_path(ctx).exists() and coreid.read_pending(ctx) == ()
 
 
 # --- a holder of the city restarted the core (macOS) ------------------------------------------
@@ -447,6 +595,27 @@ def test_a_launchd_core_a_holder_of_the_city_restarted_is_accepted(city: City, s
     pid = run_holder(started, city, holder_env(city))
     as_launchd_core(city, starter_pid=pid)
     done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+
+
+@needs_proc
+def test_a_launchd_core_a_holder_restarted_stays_the_packs_once_that_holder_ends(
+    city: City, started: List["subprocess.Popen[bytes]"]
+) -> None:
+    """The start that accepts it records it: once the holder that restarted
+    it ends (its session did), the core still runs, and is still the pack's."""
+    pid = run_holder(started, city, holder_env(city))
+    as_launchd_core(city, starter_pid=pid)
+    ctx = city.context()
+    code, _, _ = run_command(city, "status")
+    assert code == 0 and not identity_path(ctx).exists(), "status records nothing"
+    done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+    assert coreid.started_by_pack(ctx, ctx.client().server_status()), "recorded on its acceptance"
+    holder = started.pop()
+    holder.kill()
+    holder.wait()
+    done = city.start("mc-b")
     assert done.code == 0, done.stderr
 
 
@@ -581,76 +750,154 @@ def systemd_core(city: City, starter: Dict[str, str], *, legacy: bool) -> Tuple[
     return env, f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/{unit}.service"
 
 
-def systemd_holder(city: City, *, legacy: bool, **extra: str) -> Dict[str, str]:
-    """A holder's environ under systemd: a unit the pack's core started, so
-    the manager's block, the core's environment (block included) and
-    systemd's service variables; ``extra`` is in its block too."""
+def lineage_path(city: City) -> Path:
+    return Path(city.context().pack_state) / coreid.LINEAGE_FILE
+
+
+def accept_packs_systemd_core(city: City, *, legacy: bool, **block: str) -> Dict[str, str]:
+    """The pack's own core under systemd, which a start accepts (and records
+    the lineage of); ``block``: more of the manager's block when it started.
+    Its environ."""
     starter = core.core_env(city.context(), city.env["GC_HC_TEST_BIN"])
-    run = city.env["GC_HC_TEST_RUNTIME_DIR"]
-    packs_core, _ = systemd_unit_env(starter, run, legacy=legacy)
-    holder, _ = systemd_unit_env(dict(packs_core, **extra), run, legacy=legacy, verb="hold")
+    env, cgroup = systemd_core(city, starter, legacy=legacy)
+    env.update(block)
+    city.procs.core_environ, city.procs.core_cgroup = env, cgroup
+    done = city.start("mc-a")
+    assert done.code == 0, done.stderr
+    return env
+
+
+def holder_of(city: City, core_environ: Dict[str, str], *, legacy: bool) -> Dict[str, str]:
+    """The environ of a holder the core running with ``core_environ`` spawned:
+    a unit too (hc ``client.rs`` ``spawn_detached``), so the manager's block,
+    that core's environment less systemd's service variables, and its own."""
+    holder, _ = systemd_unit_env(core_environ, city.env["GC_HC_TEST_RUNTIME_DIR"], legacy=legacy, verb="hold")
     return holder
+
+
+@pytest.mark.parametrize("legacy", [True, False], ids=["systemd-239", "systemd-255"])
+def test_a_start_records_the_lineage_of_the_systemd_core_it_accepts(legacy_city: City, legacy: bool) -> None:
+    """What every holder of the pack's core carries: a digest of each value
+    by name, privately; never a value. ``status`` records none."""
+    city = legacy_city
+    starter = core.core_env(city.context(), city.env["GC_HC_TEST_BIN"])
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, starter, legacy=legacy)
+    code, out, _ = run_command(city, "status")
+    assert code == 0 and "started:   by the pack" in "\n".join(out)
+    assert not lineage_path(city).exists()
+    env = accept_packs_systemd_core(city, legacy=legacy)
+    path = lineage_path(city)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert json.loads(path.read_text()) == {
+        "digests": {key: coreid.value_digest(value) for key, value in env.items() if key not in core.SERVICE_KEYS}
+    }
+    assert env["GOCACHE"] not in path.read_text() and env["SSH_AUTH_SOCK"] not in path.read_text()
+
+
+@pytest.mark.parametrize("legacy", [True, False], ids=["systemd-239", "systemd-255"])
+def test_a_core_a_holder_of_the_packs_core_restarted_under_systemd_is_the_packs_by_lineage(legacy_city: City, legacy: bool) -> None:
+    """hc writes a holder's whole environment into the file of the core it
+    restarts (hc holder.rs, systemd.rs): names the pack never sets, the
+    manager's block, with the values the pack recorded when it accepted
+    that holder's core. No holder need still run, and the core it restarted
+    passes the lineage on to its own holders."""
+    city = legacy_city
+    packs_core = accept_packs_systemd_core(city, legacy=legacy)
+    restarted, city.procs.core_cgroup = systemd_core(city, holder_of(city, packs_core, legacy=legacy), legacy=legacy)
+    city.procs.core_environ = restarted
+    done = city.start("mc-b")
+    assert done.code == 0, done.stderr
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder_of(city, restarted, legacy=legacy), legacy=legacy)
+    done = city.start("mc-c")
+    assert done.code == 0, done.stderr
+
+
+def test_a_holder_restarted_core_keeps_names_that_left_the_managers_block(legacy_city: City) -> None:
+    """The manager's block had DISPLAY and WAYLAND_DISPLAY when the pack's
+    core started, and lost them at logout: that core's holders still carry
+    them, and so does the file of a core one of them restarts."""
+    city = legacy_city
+    packs_core = accept_packs_systemd_core(city, legacy=True, DISPLAY=":0", WAYLAND_DISPLAY="wayland-0")
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder_of(city, packs_core, legacy=True), legacy=True)
+    assert city.procs.core_environ["DISPLAY"] == ":0"
+    done = city.start("mc-b")
+    assert done.code == 0, done.stderr
+
+
+def test_a_foreign_value_for_a_name_the_lineage_carries_is_refused(legacy_city: City) -> None:
+    city = legacy_city
+    holder = holder_of(city, accept_packs_systemd_core(city, legacy=True), legacy=True)
+    theirs = dict(holder, SSH_AUTH_SOCK="/tmp/theirs/agent.sock")
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, theirs, legacy=True)
+    done = city.start("mc-b")
+    assert done.code == 1 and "SSH_AUTH_SOCK" in done.stderr and "theirs" not in done.stderr
+
+
+def test_the_lineage_never_lets_a_live_environment_in(legacy_city: City) -> None:
+    """The lineage judges only a unit's file: a core judged by its live
+    environment carries the manager's block, and is refused."""
+    city = legacy_city
+    accept_packs_systemd_core(city, legacy=True)
+    city.procs.core_cgroup = "/user.slice/session-2.scope"
+    done = city.start("mc-b")
+    assert done.code == 1 and "GOCACHE" in done.stderr
+
+
+@needs_proc
+def test_with_no_lineage_a_holder_restarted_core_is_refused_whatever_holder_runs(
+    legacy_city: City, started: List["subprocess.Popen[bytes]"]
+) -> None:
+    """No start of the pack accepted the core that holder's environment came
+    from: a live holder of the city vouches for nothing."""
+    city = legacy_city
+    starter = core.core_env(city.context(), city.env["GC_HC_TEST_BIN"])
+    packs_core, _ = systemd_core(city, starter, legacy=True)
+    holder = holder_of(city, packs_core, legacy=True)
+    run_holder(started, city, holder)
+    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=True)
+    done = city.start("mc-a")
+    assert done.code == 1 and "GOCACHE" in done.stderr
+    assert not lineage_path(city).exists()
+
+
+def foreign_systemd_core(city: City, *, legacy: bool) -> Tuple[Dict[str, str], str, Dict[str, str]]:
+    """A core someone else started under systemd with the city's discovery
+    tuple and their own key: its environ, its control group, and the
+    environ of a holder of the city's socket it spawns, run by this user."""
+    starter = core.core_env(city.context(), city.env["GC_HC_TEST_BIN"])
+    env, cgroup = systemd_core(city, dict(starter, OPENAI_API_KEY="sk-theirs"), legacy=legacy)
+    return env, cgroup, holder_of(city, env, legacy=legacy)
 
 
 @needs_proc
 @pytest.mark.parametrize("legacy", [True, False], ids=["systemd-239", "systemd-255"])
-def test_a_core_a_holder_of_the_city_restarted_under_systemd_is_judged_by_that_holder(
+def test_a_holder_a_foreign_core_spawned_never_vouches_for_that_core(
     legacy_city: City, started: List["subprocess.Popen[bytes]"], legacy: bool
 ) -> None:
-    """A holder runs as a unit with the manager's block, and hc writes its
-    whole environment into the file of the core it restarts (hc holder.rs,
-    systemd.rs): the file is the holder's, names and values, so no user bus
-    is read."""
     city = legacy_city
-    holder = systemd_holder(city, legacy=legacy)
+    accept_packs_systemd_core(city, legacy=legacy)
+    city.procs.core_environ, city.procs.core_cgroup, holder = foreign_systemd_core(city, legacy=legacy)
+    done = city.start("mc-b")
+    assert done.code == 1 and "OPENAI_API_KEY" in done.stderr and "sk-theirs" not in done.stderr
+    run_holder(started, city, holder)
+    done = city.start("mc-b")
+    assert done.code == 1 and "OPENAI_API_KEY" in done.stderr and "sk-theirs" not in done.stderr
+
+
+@needs_proc
+@pytest.mark.parametrize("legacy", [True, False], ids=["systemd-239", "systemd-255"])
+def test_a_core_a_holder_of_a_foreign_core_restarted_is_refused(
+    legacy_city: City, started: List["subprocess.Popen[bytes]"], legacy: bool
+) -> None:
+    """That holder writes its own environment, the foreign one, into the file
+    of the core it restarts, and still runs."""
+    city = legacy_city
+    accept_packs_systemd_core(city, legacy=legacy)
+    _, _, holder = foreign_systemd_core(city, legacy=legacy)
     run_holder(started, city, holder)
     city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=legacy)
-    done = city.start("mc-a")
-    assert done.code == 0, done.stderr
-
-
-@needs_proc
-def test_a_holder_restarted_core_keeps_names_that_left_the_managers_block(
-    legacy_city: City, started: List["subprocess.Popen[bytes]"]
-) -> None:
-    """The holder took DISPLAY and WAYLAND_DISPLAY from the manager's block
-    when it started; the block lost them at logout. The holder still has
-    them, and so does the core it restarts."""
-    city = legacy_city
-    holder = systemd_holder(city, legacy=True, DISPLAY=":0", WAYLAND_DISPLAY="wayland-0")
-    run_holder(started, city, holder)
-    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=True)
-    done = city.start("mc-a")
-    assert done.code == 0, done.stderr
-
-
-@needs_proc
-def test_a_foreign_value_for_a_name_in_the_managers_block_is_refused(
-    legacy_city: City, started: List["subprocess.Popen[bytes]"]
-) -> None:
-    city = legacy_city
-    holder = systemd_holder(city, legacy=True)
-    run_holder(started, city, holder)
-    theirs = dict(holder, SSH_AUTH_SOCK="/tmp/theirs/agent.sock")
-    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, theirs, legacy=True)
-    done = city.start("mc-a")
-    assert done.code == 1 and "SSH_AUTH_SOCK" in done.stderr and "theirs" not in done.stderr
-
-
-@needs_proc
-def test_a_unit_file_with_no_live_holder_of_the_city_is_judged_as_the_packs_own(
-    legacy_city: City, started: List["subprocess.Popen[bytes]"]
-) -> None:
-    """With no live holder of the city whose environment it is, a unit
-    file carrying names the pack never sets is refused."""
-    city = legacy_city
-    holder = systemd_holder(city, legacy=True)
-    city.procs.core_environ, city.procs.core_cgroup = systemd_core(city, holder, legacy=True)
-    done = city.start("mc-a")
-    assert done.code == 1 and "GOCACHE" in done.stderr
-    run_holder(started, city, holder, socket="/tmp/other-city.holder.0123abcd.sock")
-    done = city.start("mc-a")
-    assert done.code == 1 and "GOCACHE" in done.stderr, "a holder of another socket is not the city's"
+    done = city.start("mc-b")
+    assert done.code == 1 and "OPENAI_API_KEY" in done.stderr and "sk-theirs" not in done.stderr
 
 
 # --- the process table, one process at a time ---------------------------------------------

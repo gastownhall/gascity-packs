@@ -25,7 +25,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Dict, Final, Mapping, Sequence, TextIO
+from typing import Callable, Dict, Final, Mapping, Optional, Sequence, TextIO
 
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcUnreachable
@@ -50,9 +50,10 @@ from .config import ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
 from .core import (
     CORE_START_WAIT_S,
+    Foreign,
     check_foreign,
     core_env,
-    foreign_core_reason,
+    foreign_core,
     record_started_core,
     run_starter,
     start_core,
@@ -153,8 +154,15 @@ def cmd_status(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     except ValueError:
         note = " (an unreadable version)"
     out(f"running:   herdr-core {hello.version}, pid {status.pid}, {status.live} live terminal(s){note}")
-    reason = foreign_core_reason(ctx, status, _driving_binary(ctx, pin))
-    out("started:   by the pack" if reason is None else f"started:   outside the pack ({reason}): run `gc herdr-core restart-core`")
+    out(_started_line(foreign_core(ctx, status, _driving_binary(ctx, pin))))
+
+
+def _started_line(found: Optional[Foreign]) -> str:
+    if found is None:
+        return "started:   by the pack"
+    if found.unknown:
+        return f"started:   cannot tell ({found.reason})"
+    return f"started:   outside the pack ({found.reason}): run `gc herdr-core restart-core`"
 
 
 def _driving_binary(ctx: OpContext, pin: HcPin) -> str:
@@ -251,10 +259,10 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     owner = ownership(ctx, status)
     if not owner.own:
         raise CommandError(f"refusing to restart the core at {ctx.paths.socket}: it is not this city's core ({owner.reason})")
-    reason = foreign_core_reason(ctx, status, hc_bin)
-    if reason is not None:
+    found = foreign_core(ctx, status, hc_bin)
+    if found is not None:
         raise CommandError(
-            f"the city's core was started outside the pack ({reason}); a planned "
+            f"the city's core was started outside the pack ({found.reason}); a planned "
             "restart would keep that environment: run `gc herdr-core restart-core` instead"
         )
     try:

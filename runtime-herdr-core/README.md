@@ -176,32 +176,44 @@ checked against the app yet, so the sessions may not appear there.
     `RUNTIME_DIRECTORY` ends in `hc-serve-<8 hex>` and its control group
     is that same unit, or, before systemd 244 (no `RUNTIME_DIRECTORY`),
     its control group is an `hc-serve-<8 hex>.service`. Otherwise its live
-    environment is judged. A holder that restarts a crashed core writes
+    environment is judged. A holder runs as a unit its core started, with
+    that core's environment, and when it restarts a crashed core it writes
     its own environment, manager's block included, into the new core's
-    file. So a file carrying names the pack never sets is accepted only
-    when a live holder of the city (this user's,
-    `hold --socket <city prefix>...`) has every name in it with the same
-    value; that holder's own environment is taken as the city's.
+    file. So when a `start` accepts a systemd core, the pack records the
+    core's environment less systemd's service variables, as a SHA-256
+    digest of each value by name (`core-lineage.json`, never a value),
+    and a file name the pack never sets passes only with the value
+    recorded for it. No live holder is asked, so a holder a foreign core
+    started never vouches for it. A core restarted by a holder of a core
+    no `start` accepted (or with names its manager's block gained since
+    that core started) is refused until `restart-core`.
   - **macOS launchd:** the core runs with launchd's environment, which
     never shows its starter's. Its command line names the process that
     asked launchd for it and when. Before the pack waits on its own
-    `herdr-core server start` (or `server restart`), it notes that hc's
-    pid and when it ran it, and when it ended; a core asked for by that
-    pid in that time is the pack's, even when the pack's hc timed out or
-    another start of the pack checks first. On first acceptance the pack
-    records the core's pid, process start time and hc's core id (private
-    files of the pack's state), and a live core matching all of it is the
-    pack's. A core a holder of the city restarted after a crash is judged
-    by that holder's environment (`ps -E`), and only when the holder
-    started no later than the core was asked for. Every other launchd core is
-    refused: one someone else's hc started, including one that came up
-    while the pack's own start ran, and one whose starter pid was reused.
+    `herdr-core server start` (or `server restart`), it adds that hc's
+    pid and when it ran it to its list of recent starts (`core-start.json`),
+    and when it ended; a core asked for by that pid in that time is the
+    pack's, even when the pack's hc timed out, or other starts of the pack
+    ran or checked since. An entry whose hc never ended (the pack was
+    killed waiting on it) counts for two minutes. When a `start` accepts a
+    launchd core, the pack records its pid, process start time and hc's
+    core id (`core-identity.json`), and a live core matching all of it is
+    the pack's. A core a holder of the city restarted after a crash is
+    judged by that holder's environment (`ps -E`), and only when the holder
+    started no later than the core was asked for; a `start` that accepts it
+    records it too, so it stays the pack's once that holder ends. Every
+    other launchd core is refused: one someone else's hc started,
+    including one that came up while the pack's own start ran, and one
+    whose starter pid was reused. Only `start` records: `status`, doctor
+    and `upgrade` only read. The records are private files of the pack's
+    state.
 
   Where an environment is judged, the discovery tuple is compared by
   value. Every other variable is judged by name only: it must be one the
   pack's allowlist sets, a locale variable, hc's own marks, the terminal
   settings `attach` passes, or, in a live environment, systemd's service
-  variables. Before its own `server start` the pack removes hc's restart
+  variables; in a unit's file, another name passes only with the value
+  the lineage records. Before its own `server start` the pack removes hc's restart
   handoff (`restart-env.json` in the city's state directory), so a
   restart someone else asked for does not hand its environment to the
   pack's core; upgrade's `server restart` keeps it.
