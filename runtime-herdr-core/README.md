@@ -685,6 +685,21 @@ goes to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
 default state root instead. Without `--json` it reads the text report, for a
 gc that cannot encode it.
 
+`tests/bench_ops.py` measures each op's CPU the way gc runs it: a fresh
+process per run, against fake-hc on a scratch state root it removes after.
+It prints the median and p90 CPU (user+sys) and the median wall time per op;
+`--compare` interleaves runs of a second entry, such as the runtime at an
+older commit, and prints before, after and the change:
+
+```bash
+mkdir /tmp/hcbase && git -C .. archive <commit> runtime-herdr-core | tar -x -C /tmp/hcbase
+tests/bench_ops.py --runs 30 --compare /tmp/hcbase/runtime-herdr-core/assets/bin/gc-runtime-herdr-core
+```
+
+The process-table ops (`observe` with names, `is-attached`, `inventory`,
+`process-alive`, `start`, `stop`) scale with the host's process count, which
+the bench prints.
+
 CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12,
 with gc pinned to a gascity commit, and the unit tier again in the shared
 pytest step.
