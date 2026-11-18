@@ -69,6 +69,8 @@ titled ``tmux: server``). Exact, path-stripped: a ``tmux-*`` wrapper may be
 an agent."""
 
 _PS_TIMEOUT_S: Final = 2.0
+_READ_CHUNK: Final = 1 << 16
+"""Bytes per read of a ``/proc`` file (each is read to its end)."""
 
 PS_ENV: Final[Mapping[str, str]] = {"PATH": "/usr/bin:/bin", "TZ": "UTC0", "LC_ALL": "C"}
 """The whole environment ``ps`` runs with. ``lstart`` is printed in the
@@ -184,8 +186,18 @@ class LinuxProcs(ProcSource):
         self._uid = os.getuid() if uid is None else uid
 
     def _read(self, pid: int, leaf: str) -> bytes:
-        with open(os.path.join(self._root, str(pid), leaf), "rb") as handle:
-            return handle.read()
+        # os.open/os.read rather than open(): the same bytes and OSErrors,
+        # without a file object per read (a scan reads every process).
+        fd = os.open(os.path.join(self._root, str(pid), leaf), os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            chunks: List[bytes] = []
+            while True:
+                chunk = os.read(fd, _READ_CHUNK)
+                if not chunk:
+                    return b"".join(chunks)
+                chunks.append(chunk)
+        finally:
+            os.close(fd)
 
     def _proc(self, pid: int) -> Optional[Proc]:
         try:
