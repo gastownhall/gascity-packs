@@ -95,8 +95,11 @@ Decided 2026-11-17 by the task owner; the rest of this runbook follows them.
    pack copy only, never a pin bump of the pack. F9, which runs next,
    restores the pinned 0.1.19 `hc-pin.json` from the pack commit and checks
    the copy against `runtime-herdr-core.SHA256SUMS`, and checks that the core
-   runs 0.1.19 again after `gc start`. If the drills stop between F8 and F9,
-   restore the pin by hand with F9's `git show` command before anything
+   runs 0.1.19 again after `gc start`. F8 saves the pack copy's pin to
+   `~/packs/runtime-herdr-core.hc-pin.json` before it writes the 0.1.20 one;
+   F9 restores from the `~/src/gascity-packs` clone when the VM has one, else
+   from that copy (the `SHA256SUMS` check holds either way). If the drills stop
+   between F8 and F9, restore the pin by hand the same way before anything
    else runs on the city.
 
 Accepted defaults:
@@ -960,7 +963,7 @@ Criteria every drill also checks (C1 to C6):
 | F6 `agent-kill` | `kill -KILL <agent pid>` (from its `boot` record) | C2 to C5 for that session |
 | F7 `hc-update` | `"${hcenv[@]}" "$HC" update; echo $?` | exits non-zero (the binary and its directory are read-only); `gc herdr-core status` still says `installed: ... (matches the pin)`; the core's version and pid unchanged; every box unchanged |
 | F8 `upgrade` | write the 0.1.20 pin (below) over `~/packs/runtime-herdr-core/assets/hc-pin.json`; `gc herdr-core upgrade` | prints `handed the city's core over from herdr-core 0.1.19 to 0.1.20; its sessions kept running`; every box unchanged; `gc herdr-core status` runs 0.1.20, `started: by the pack`; then F6 on one agent passes under 0.1.20 |
-| F9 `stop-wedged` | `kill -STOP <core pid>`; `timeout 900 gc stop ~/cities/hc-bringup; echo $?`; `kill -CONT <core pid>`; `gc stop ~/cities/hc-bringup; echo $?`; restore the pin: `git -C ~/src/gascity-packs show "$(cat ~/packs/runtime-herdr-core.COMMIT)":runtime-herdr-core/assets/hc-pin.json > ~/packs/runtime-herdr-core/assets/hc-pin.json`, then `(cd ~/packs/runtime-herdr-core && sha256sum --quiet -c ../runtime-herdr-core.SHA256SUMS)`; `gc start ~/cities/hc-bringup` | the first stop exits non-zero and names the server teardown failure; the second prints `City stopped.` and exits 0, after which no box, holder or core of the city runs; after `gc start` the core runs 0.1.19 and every session is back (C2 and C5 measured from the start) |
+| F9 `stop-wedged` | `kill -STOP <core pid>`; `timeout 900 gc stop ~/cities/hc-bringup; echo $?`; `kill -CONT <core pid>`; `gc stop ~/cities/hc-bringup; echo $?`; restore the pin: `git -C ~/src/gascity-packs show "$(cat ~/packs/runtime-herdr-core.COMMIT)":runtime-herdr-core/assets/hc-pin.json > ~/packs/runtime-herdr-core/assets/hc-pin.json`, then `(cd ~/packs/runtime-herdr-core && sha256sum --quiet -c ../runtime-herdr-core.SHA256SUMS)`; `gc start ~/cities/hc-bringup` | the first stop exits non-zero and names the wedged runtime (gc at the pinned commit says the runtime `did not answer a listing ... (a wedged runtime server?)`; a server teardown failure counts too); the second prints `City stopped.` and exits 0, after which no box, holder or core of the city runs; after `gc start` the core runs 0.1.19 and every session is back (C2 and C5 measured from the start) |
 | F10 `reboot` | as root: `systemctl reboot`; then as `soak`: `~/soak/bin/soak drill reboot-verify` | within 10 minutes of SSH answering: the supervisor, the city and every configured session run, each with a new incarnation and exactly one first turn; `gc beads health` passes; no orphan; doctor's `exec-runtime-identity` and `ownerless-runtimes` are clean; C6 |
 
 The 0.1.20 pin for F8, written over the pack copy's `assets/hc-pin.json`

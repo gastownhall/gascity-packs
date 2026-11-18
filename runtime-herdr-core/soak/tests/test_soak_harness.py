@@ -183,6 +183,23 @@ def test_a_new_dispatcher_box_counts_under_any_session_id(proc_tree: ProcTree, t
     assert new_dispatcher_box([snap[11], snap[12]], before) == 12
 
 
+def test_the_pin_restores_from_the_upgrade_drills_copy_without_a_clone(tmp_path: Path) -> None:
+    paths = SoakPaths(tmp_path)
+    pin = paths.pack / "assets" / "hc-pin.json"
+    pin.parent.mkdir(parents=True)
+    original = '{"version": "0.1.19"}\n'
+    pin.write_text(original, encoding="utf-8")
+    subprocess.run("sha256sum ./assets/hc-pin.json > ../runtime-herdr-core.SHA256SUMS", shell=True, cwd=str(paths.pack), check=True)
+    drill = Drill("stop-wedged", City("c", tmp_path / "city", tmp_path, "warn"), paths)
+    with pytest.raises(DrillError, match="cannot restore the pin"):
+        drill.restore_pin()
+    paths.pin_backup.write_text(original, encoding="utf-8")
+    pin.write_text(json.dumps(PIN_0_1_20), encoding="utf-8")
+    drill.restore_pin()
+    assert pin.read_text(encoding="utf-8") == original
+    assert [c.id for c in drill.criteria] == ["pack-restored"] and drill.criteria[0].passed
+
+
 def test_the_drill_lock_is_exclusive(tmp_path: Path) -> None:
     city = City("c", tmp_path / "city", tmp_path, "warn")
     lock = take_lock(city, "core-kill")

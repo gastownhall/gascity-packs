@@ -63,6 +63,10 @@ CORE_ANSWER_S = 30.0
 HC_VERSION = "0.1.19"
 UPGRADE_VERSION = "0.1.20"
 FOREIGN_REFUSAL = "started outside the pack"
+WEDGED_STOP_MARKERS = ("teardown", "wedged runtime")
+"""What a stop against a wedged core names: the server teardown failure, or
+(gc at the pinned commit) the runtime that did not answer its listing."""
+RECOVERY_STOP_WAIT_S = 30.0
 UPGRADE_LINE = f"handed the city's core over from herdr-core {HC_VERSION} to {UPGRADE_VERSION}; its sessions kept running"
 ALWAYS_ON_TEMPLATES = (STEADY,)
 DISPATCHER_TEMPLATE = "control-dispatcher"
@@ -663,6 +667,8 @@ class Drill:
         pin = self.paths.pack / "assets" / "hc-pin.json"
         self.t_inject = time.time()
         self.fault("drill-upgrade", ["core"])
+        if not self.paths.pin_backup.exists():
+            write_atomic(self.paths.pin_backup, pin.read_text(encoding="utf-8"), mode=0o644)
         write_atomic(pin, json.dumps(PIN_0_1_20, indent=2) + "\n", mode=0o644)
         res = self.gc_run(["herdr-core", "upgrade"], timeout=900.0)
         out = res.out + res.err
@@ -696,10 +702,27 @@ class Drill:
         self.kill(before.core.pid, info.start, signal.SIGSTOP, self.hc_owner("serve"))
         first = run([self.gc, "stop", city], timeout=900.0)
         self.kill(before.core.pid, info.start, signal.SIGCONT, self.hc_owner("serve"))
-        self.judge("F9-first-stop", "the first stop exits non-zero and names the server teardown failure", {"exit": first.code, "tail": (first.out + first.err)[-400:]}, first.code != 0 and "teardown" in (first.out + first.err).lower())
+        first_text = first.out + first.err
+        self.judge(
+            "F9-first-stop",
+            "the first stop exits non-zero and names the wedged runtime (server teardown or listing) failure",
+            {"exit": first.code, "tail": first_text[-600:]},
+            first.code != 0 and any(m in first_text.lower() for m in WEDGED_STOP_MARKERS),
+        )
         second = run([self.gc, "stop", city], timeout=900.0)
         left = remains(self.city, self.procfs, self.gc)
-        self.judge("F9-second-stop", "the second stop prints City stopped. and exits 0; nothing of the city runs", {"exit": second.code, "remains": left}, second.ok and "City stopped." in second.out and not left)
+        self.judge(
+            "F9-second-stop",
+            "the second stop prints City stopped. and exits 0; nothing of the city runs",
+            {"exit": second.code, "tail": (second.out + second.err)[-600:], "remains": left},
+            second.ok and "City stopped." in second.out and not left,
+        )
+        if not (second.ok and not left):
+            # Recorded only: stop the city so the restart below measures from a stopped city.
+            time.sleep(RECOVERY_STOP_WAIT_S)
+            third = run([self.gc, "stop", city], timeout=900.0)
+            left = remains(self.city, self.procfs, self.gc)
+            self.judge("F9-recovery-stop", "a further stop (recorded)", {"exit": third.code, "tail": (third.out + third.err)[-600:], "remains": left}, None)
         self.restore_pin()
         self.t_inject = time.time()
         start = run([self.gc, "start", city], timeout=900.0)
@@ -718,12 +741,21 @@ class Drill:
         self.c4()
         self.c5(before)
 
+    def pinned_pin(self) -> str:
+        """The pack commit's ``hc-pin.json``: from the gascity-packs clone when
+        the VM has one, else from the copy the upgrade drill saved."""
+        if (self.paths.live_src / ".git").exists():
+            commit = (self.paths.home / "packs" / "runtime-herdr-core.COMMIT").read_text(encoding="utf-8").strip()
+            res = run(["git", "-C", str(self.paths.live_src), "show", f"{commit}:runtime-herdr-core/assets/hc-pin.json"], timeout=60.0)
+            if not res.ok:
+                raise DrillError(f"cannot read the pinned hc-pin.json: {res.tail(300)}")
+            return str(res.out)
+        if self.paths.pin_backup.exists():
+            return self.paths.pin_backup.read_text(encoding="utf-8")
+        raise DrillError(f"cannot restore the pin: no {self.paths.live_src} clone and no {self.paths.pin_backup}")
+
     def restore_pin(self) -> None:
-        commit = (self.paths.home / "packs" / "runtime-herdr-core.COMMIT").read_text(encoding="utf-8").strip()
-        res = run(["git", "-C", str(self.paths.live_src), "show", f"{commit}:runtime-herdr-core/assets/hc-pin.json"], timeout=60.0)
-        if not res.ok:
-            raise DrillError(f"cannot read the pinned hc-pin.json: {res.tail(300)}")
-        write_atomic(self.paths.pack / "assets" / "hc-pin.json", res.out, mode=0o644)
+        write_atomic(self.paths.pack / "assets" / "hc-pin.json", self.pinned_pin(), mode=0o644)
         check = run(["sha256sum", "--quiet", "-c", "../runtime-herdr-core.SHA256SUMS"], cwd=str(self.paths.pack), timeout=120.0)
         self.judge("pack-restored", "the pack copy matches its SHA256SUMS again", {"exit": check.code, "tail": check.tail(300)}, check.ok)
 

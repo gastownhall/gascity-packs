@@ -188,6 +188,13 @@ class SoakPaths:
         return self.home / "src" / "gascity-packs"
 
     @property
+    def pin_backup(self) -> Path:
+        """The pack copy's pinned ``hc-pin.json``, saved by the upgrade drill
+        before it writes the upgrade pin (the restore's source when the VM has
+        no gascity-packs clone)."""
+        return self.home / "packs" / "runtime-herdr-core.hc-pin.json"
+
+    @property
     def state_root(self) -> Path:
         """``R``: the pack's and hc's state root (the default; never overridden for a city)."""
         return self.home / ".local" / "state" / "gc-runtime-herdr-core"
