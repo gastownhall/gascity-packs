@@ -126,6 +126,24 @@ def test_runtime_never_defines_a_named_tuple() -> None:
     assert offenders == []
 
 
+def test_only_the_entry_imports_the_op_table() -> None:
+    # The op table names every handler module; a handler-side module that
+    # imports it would turn a later module-level handler import in the
+    # table into a circular import.
+    importers = sorted(
+        str(path.relative_to(PACKAGE))
+        for path, tree in runtime_sources()
+        if path not in SCRIPTS
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and (
+            (node.module or "").split(".")[-1] == "ops_table"
+            or any(alias.name == "ops_table" for alias in node.names)
+        )
+    )
+    assert importers == ["main.py"]
+
+
 def test_runtime_parses_as_python_3_9() -> None:
     for path, _ in runtime_sources():
         ast.parse(source_text(path), filename=str(path), feature_version=(3, 9))

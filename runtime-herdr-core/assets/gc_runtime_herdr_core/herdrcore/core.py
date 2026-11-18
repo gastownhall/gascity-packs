@@ -75,7 +75,7 @@ from .command import Completed, run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
 from .corescan import holder_prefix, is_holder_of, listener_elsewhere, nothing_runs
-from .ops_table import KICK_OP
+from .naming import KICK_OP
 from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0

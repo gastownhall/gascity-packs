@@ -13,7 +13,8 @@ The table is data: each op names the module and function that handle it,
 and the handler's module is imported only when that op runs. gc runs every
 op as a fresh process, so an op pays for exactly the code it uses; a read
 never loads ``start``'s or the core's code. This module therefore imports
-none of the handler modules (nor :mod:`.core`) at module level.
+none of the handler modules (nor :mod:`.core`) at module level, and only
+the entry imports it.
 """
 
 from __future__ import annotations
@@ -40,12 +41,10 @@ from ..handshake import HANDSHAKE
 from .config import ConfigError
 from .context import Host, OpContext
 from .metastore import MetaError
+from .naming import KICK_OP
 from .spawnfile import sweep_spawn_files
 
 OpFn = Callable[[OpContext], OpResult]
-
-KICK_OP: Final = "x-kick-core"
-"""The pack's own detached core start (:func:`.core.kick`), never run by gc."""
 
 
 @frozen

@@ -27,6 +27,10 @@ LABEL_OBJ: Final = "gc.obj"
 LABEL_PID: Final = "gc.pid"
 LABEL_REFUSED: Final = "gc.refused_since_ms"
 
+KICK_OP: Final = "x-kick-core"
+"""The op name of the pack's own detached core start (:func:`.core.kick`),
+never run by gc."""
+
 CITY_LABEL_CHARS: Final = 12
 TERMINAL_NAME_CHARS: Final = 20
 
