@@ -367,6 +367,82 @@ def test_hc_core_warns_for_any_other_origin(dc: DoctorCity, origin: str) -> None
     assert f"the core's hc came from {expected}, which updates it outside the pin" in lines, lines
 
 
+@pytest.mark.parametrize("exe_seen", ["copy", "link"])
+def test_hc_core_refuses_a_symlink_at_the_pinned_path(dc: DoctorCity, exe_seen: str) -> None:
+    """A symlink at the pinned path to a byte-identical copy outside the
+    install root is not the pack's own build, though the copy's sha256 is the
+    pin's: the core runs a file the pack did not install."""
+    dc.install_pinned()
+    dc.run_city()
+    outside = dc.tmp / "elsewhere" / "herdr-core"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(STUB)
+    outside.chmod(0o555)
+    outside.parent.chmod(0o555)
+    dc.hc_bin.parent.chmod(0o755)
+    dc.hc_bin.chmod(0o755)
+    dc.hc_bin.unlink()
+    dc.hc_bin.symlink_to(outside)
+    dc.hc_bin.parent.chmod(0o555)
+    try:
+        # The kernel names the copy the link resolves to; a process table
+        # may also name the link.
+        dc.start_core(exe=str(outside) if exe_seen == "copy" else str(dc.hc_bin), installed_by="system package manager")
+        code, lines = dc.run("hc-core")
+        assert code >= 1, lines
+        assert "the core's hc came from system package manager, which updates it outside the pin" in lines, lines
+    finally:
+        outside.parent.chmod(0o755)
+
+
+def _install_older(dc: DoctorCity, version: str, *, record: bool = True) -> Path:
+    """Lay out ``version`` as an earlier ``gc herdr-core install`` left it, before the pin moved."""
+    binary = dc.install_root / version / "herdr-core"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(STUB)
+    if record:
+        doc = {
+            "version": version,
+            "target": host_target(),
+            "archive_sha256": "0" * 64,
+            "binary_sha256": hashlib.sha256(STUB).hexdigest(),
+            "installed_ms": 1,
+        }
+        (binary.parent / "install.json").write_text(json.dumps(doc))
+        (binary.parent / "install.json").chmod(0o444)
+    binary.chmod(0o555)
+    binary.parent.chmod(0o555)
+    return binary
+
+
+def test_hc_core_names_an_older_pack_install_and_upgrade(dc: DoctorCity) -> None:
+    """After the pin moved and before `gc herdr-core upgrade`, the core runs
+    a build the pack installed earlier: hc reports it as from a system
+    package manager, but it is the pack's own, and upgrade is the fix."""
+    dc.install_pinned()
+    dc.run_city()
+    older = _install_older(dc, "0.1.20")
+    dc.start_core(version="0.1.20", exe=str(older), installed_by="system package manager")
+    code, lines = dc.run("hc-core")
+    assert code == 1, lines
+    assert not any("package manager" in line for line in lines), lines
+    assert (
+        f"the core runs herdr-core 0.1.20 from an older install of the pack ({older}), not the pin's 0.1.19: run `gc herdr-core upgrade`"
+        in lines
+    ), lines
+
+
+def test_hc_core_does_not_take_an_unrecorded_older_directory_for_the_packs(dc: DoctorCity) -> None:
+    dc.install_pinned()
+    dc.run_city()
+    older = _install_older(dc, "0.1.20", record=False)
+    dc.start_core(version="0.1.20", exe=str(older), installed_by="system package manager")
+    code, lines = dc.run("hc-core")
+    assert code >= 1, lines
+    assert "the core's hc came from system package manager, which updates it outside the pin" in lines, lines
+    assert not any("older install of the pack" in line for line in lines), lines
+
+
 def test_hc_core_warns_when_an_operators_hc_bin_comes_from_a_package_manager(dc: DoctorCity) -> None:
     dc.install_pinned()
     dc.run_city()

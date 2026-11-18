@@ -16,12 +16,13 @@
 # home is ephemeral. --json reads `gc runtime conformance --json` instead of
 # the text report (needs a gc whose --json report encodes).
 #
-# The checks run in a scratch city (GC_EXEC_CITY_PATH under the scratch
-# directory): an op that names no city starts no core and refuses all but
-# observe and inventory. Teardown stops every core under the state root
+# The checks run in a scratch city (GC_EXEC_CITY_NAME and GC_EXEC_CITY_PATH
+# under the scratch directory): an op that names no city starts and reads no
+# core; protocol answers, observe answers unknown, inventory incomplete, and
+# every other op refuses. Teardown stops every core under the state root
 # (the scratch city and the conformance kit's own city keys each start
-# one), fails if fake-hc
-# saw a request or sent a result outside hc's schema, and removes the root.
+# one), fails if fake-hc saw a request or sent a result outside hc's schema,
+# and removes the root.
 #
 # PYTHON names the interpreter fake-hc runs under (it needs jsonschema, and
 # tomli below Python 3.11); default: python3.

@@ -264,10 +264,56 @@ def test_core_commands_refuse_a_command_that_names_no_city(fresh: City, command:
     assert fake.schema_violations == []
 
 
-def test_status_without_a_city_reports_the_pin_and_no_core(fresh: City) -> None:
-    env = {k: v for k, v in fresh.env.items() if k not in (OP_CITY_ENV, DOCTOR_CITY_ENV)}
+def command_without_city(city: City, value: Optional[str]) -> Dict[str, str]:
+    """A pack command's environment that names no city: ``GC_CITY_PATH`` unset, or empty."""
+    env = {k: v for k, v in city.env.items() if k not in (OP_CITY_ENV, DOCTOR_CITY_ENV)}
+    if value is not None:
+        env[DOCTOR_CITY_ENV] = value
+    return env
+
+
+@pytest.mark.parametrize("value", [None, ""], ids=["unset", "empty"])
+def test_status_without_a_city_reports_the_pin_and_no_core(fresh: City, value: Optional[str]) -> None:
     out: List[str] = []
     err: List[str] = []
-    assert run_command("status", [], env, fresh.host, out.append, err.append) == 0, err
-    assert out[0].startswith("pin:") and out[-1] == f"core:      no city ({DOCTOR_CITY_ENV} is unset)", out
+    assert run_command("status", [], command_without_city(fresh, value), fresh.host, out.append, err.append) == 0, err
+    assert out[0].startswith("pin:") and out[-1] == f"core:      no city ({DOCTOR_CITY_ENV} is unset or empty)", out
     assert not (fresh.root / "R" / "herdr-core").exists()
+
+
+@pytest.mark.parametrize("value", [None, ""], ids=["unset", "empty"])
+def test_status_env_refuses_a_command_that_names_no_city(fresh: City, value: Optional[str]) -> None:
+    """The fixed bucket's tuple would let hc's own CLI (``env $(gc herdr-core
+    status --env) herdr-app``) autostart a core for no city."""
+    out: List[str] = []
+    err: List[str] = []
+    code = run_command("status", ["--env"], command_without_city(fresh, value), fresh.host, out.append, err.append)
+    assert code == 1 and out == [], out
+    assert any(DOCTOR_CITY_ENV in line for line in err), err
+
+
+# --- the backup guards: each refuses on its own -----------------------------------------------
+
+
+def test_kick_due_refuses_no_city_whose_bucket_is_not_at_rest(fresh: City) -> None:
+    """The bucket's state directory exists and is not parked, so only the
+    no-city guard keeps a kick from starting a core for it."""
+    ctx = unscoped_context(fresh)
+    ensure_dirs(ctx.paths)
+    assert not core.at_rest(ctx)
+    assert core.kick_due(ctx) is False
+    core.run_kick(ctx)
+    assert no_core_started(dataclasses.replace(fresh, paths=ctx.paths), wait_s=2.0)
+    assert not os.path.exists(os.path.join(ctx.pack_state, core.KICK_FILE)), "no kick ran"
+
+
+def test_run_starter_refuses_no_city_on_its_own(fresh: City) -> None:
+    """``run_starter`` refuses a call that names no city even when its caller
+    did not: the starter it would run is never spawned."""
+    ctx = unscoped_context(fresh)
+    ensure_dirs(ctx.paths)
+    marker = fresh.root / "starter-ran"
+    with pytest.raises(OpError) as refused:
+        core.run_starter(ctx, ["/bin/sh", "-c", f"touch '{marker}'"], env={}, timeout_s=10.0)
+    assert OP_CITY_ENV in refused.value.message
+    assert not marker.exists(), "the starter never ran"

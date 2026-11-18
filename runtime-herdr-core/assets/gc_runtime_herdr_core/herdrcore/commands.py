@@ -23,7 +23,9 @@
 
 gc runs every pack command with ``GC_CITY_PATH``. ``restart-core`` and
 ``upgrade`` refuse a call without it, which names no city, before they
-touch any core; ``status`` then reports the pin and the install only.
+touch any core, and so does ``status --env`` (hc's own CLI, given the fixed
+bucket's tuple, would start a core for it); ``status`` then reports the pin
+and the install only.
 """
 
 from __future__ import annotations
@@ -118,6 +120,9 @@ def cmd_install(ctx: OpContext, args: Sequence[str], out: Out) -> None:
 
 def cmd_status(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     if args == ["--env"]:
+        if not ctx.paths.scoped:
+            # The fixed bucket's tuple would let hc's own CLI autostart a core for no city.
+            raise CommandError(ctx.no_city)
         for key, value in sorted(ctx.paths.discovery_env().items()):
             out(f"{key}={value}")
         return
@@ -141,7 +146,7 @@ def cmd_status(ctx: OpContext, args: Sequence[str], out: Out) -> None:
         binary = pinned_binary(ctx.host.home, str(pin.version))
         out(f"installed: {problem}" if problem else f"installed: {binary} (matches the pin)")
     if not ctx.paths.scoped:
-        out(f"core:      no city ({ctx.city_var} is unset)")
+        out(f"core:      no city ({ctx.city_var} is unset or empty)")
         return
     out(f"core:      session {ctx.paths.session}, socket {ctx.paths.socket}")
     client = client_for(ctx, ctx.paths.socket, any_version=True)
