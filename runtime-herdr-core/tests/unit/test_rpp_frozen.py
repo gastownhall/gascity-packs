@@ -209,6 +209,24 @@ def test_total_ordering() -> None:
     assert FOrdered(1) == FOrdered(1, 0)
 
 
+@pytest.mark.parametrize(
+    "use",
+    [
+        repr,
+        hash,
+        lambda made: made == object.__new__(type(made)),
+        lambda made: (dataclasses.replace if dataclasses.is_dataclass(made) else replace)(made),
+    ],
+    ids=["repr", "hash", "eq", "replace"],
+)
+def test_a_half_built_record_raises_as_dataclasses_do(use: Callable[[object], object]) -> None:
+    # A record whose __init__ never ran has no field values: reading them
+    # raises rather than treating a missing field as None.
+    for cls in (FPlain, DPlain):
+        with pytest.raises(AttributeError):
+            use(object.__new__(cls))
+
+
 # --- replace ------------------------------------------------------------------------------
 
 

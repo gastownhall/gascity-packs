@@ -30,7 +30,7 @@ constructor and ``replace`` calls are checked as a frozen dataclass's are.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, Final, List, Mapping, Optional, Tuple, TypeVar, cast
+from typing import TYPE_CHECKING, Dict, Final, List, Mapping, Optional, Tuple, TypeVar, cast
 
 _C = TypeVar("_C", bound=type)
 _T = TypeVar("_T")
@@ -78,6 +78,13 @@ def _fields(obj: object) -> Tuple[str, ...]:
 
 
 def _get(obj: object, name: str) -> object:
+    """Field ``name`` of record ``obj``; a field never set raises
+    :class:`AttributeError`, as in dataclasses."""
+    value: object = getattr(obj, name)
+    return value
+
+
+def _attr_or_none(obj: object, name: str) -> object:
     value: object = getattr(obj, name, None)
     return value
 
@@ -136,8 +143,8 @@ def _is_special(annotation: object) -> bool:
     if isinstance(annotation, str):
         head = annotation.split("[", 1)[0].strip()
         return head in _SPECIAL_ANNOTATIONS
-    origin = _get(annotation, "__origin__")
-    return any(_get(x, "_name") == "ClassVar" for x in (annotation, origin)) or type(annotation).__name__ == "InitVar"
+    origin = _attr_or_none(annotation, "__origin__")
+    return any(_attr_or_none(x, "_name") == "ClassVar" for x in (annotation, origin)) or type(annotation).__name__ == "InitVar"
 
 
 def _check_class(cls: type, own: Mapping[str, object]) -> Mapping[str, object]:
