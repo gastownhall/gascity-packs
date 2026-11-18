@@ -210,6 +210,23 @@ jobs:
           GC_HC_SCHEMA_FETCH: "1"
         run: python -m pytest tests/unit/test_fakehc_schema.py -q -k pinned_tags_released_schema
 
+      # What an op imports can change with the interpreter: on CPython 3.14
+      # defining a typing.NamedTuple imports ast. Run the op import guard on
+      # the newest Python too, once, after every step that uses the leg's own.
+      - name: Set up the newest Python
+        if: matrix.target == '3.12'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.14.4"
+
+      - name: Install pinned test tools on the newest Python
+        if: matrix.target == '3.12'
+        run: python -m pip install pytest==8.4.2 jsonschema==4.25.1 tomli==2.5.0
+
+      - name: Op import guard on the newest Python
+        if: matrix.target == '3.12'
+        run: python -m pytest tests/unit/test_op_imports.py -q
+
   # The one stable check name for the main ruleset to require: the matrix's
   # legs are named per Python version. It runs even when a leg fails or is
   # cancelled (a skipped required check can count as passing) and fails

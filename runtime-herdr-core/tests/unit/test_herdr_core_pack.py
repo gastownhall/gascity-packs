@@ -111,6 +111,21 @@ def test_runtime_never_imports_dataclasses() -> None:
     assert offenders == []
 
 
+def test_runtime_never_defines_a_named_tuple() -> None:
+    # On CPython 3.14, defining a typing.NamedTuple class imports
+    # annotationlib and with it ast, in every op process; records use
+    # rpp.frozen.
+    offenders = [
+        f"{path.relative_to(PACK_ROOT)}:{node.lineno}"
+        for path, tree in runtime_sources()
+        for node in ast.walk(tree)
+        if (isinstance(node, ast.Name) and node.id == "NamedTuple")
+        or (isinstance(node, ast.Attribute) and node.attr == "NamedTuple")
+        or (isinstance(node, ast.ImportFrom) and any(alias.name == "NamedTuple" for alias in node.names))
+    ]
+    assert offenders == []
+
+
 def test_runtime_parses_as_python_3_9() -> None:
     for path, _ in runtime_sources():
         ast.parse(source_text(path), filename=str(path), feature_version=(3, 9))

@@ -19,9 +19,10 @@ none of the handler modules (nor :mod:`.core`) at module level.
 from __future__ import annotations
 
 import importlib
-from typing import Callable, Dict, Final, Mapping, NamedTuple
+from typing import Callable, Dict, Final, Mapping
 
 from ..rpp.flock import LockFileError, LockTimeout
+from ..rpp.frozen import frozen
 from ..rpp.ops import (
     INVENTORY_STDOUT_CAP,
     OBSERVE_STDOUT_CAP,
@@ -47,7 +48,8 @@ KICK_OP: Final = "x-kick-core"
 """The pack's own detached core start (:func:`.core.kick`), never run by gc."""
 
 
-class OpDecl(NamedTuple):
+@frozen
+class OpDecl:
     """An op's handler, by module (under ``herdrcore``) and function, and
     the transport facts about it."""
 
