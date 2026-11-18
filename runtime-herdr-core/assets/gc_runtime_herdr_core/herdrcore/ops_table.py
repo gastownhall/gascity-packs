@@ -8,6 +8,12 @@ city key has its own core), ``conformance-faults``, ``server-lifecycle``
 ``input-fence``: under ``proc.exec`` gc would drive the box by piping tmux
 commands to ``exec``. ``exec``, ``provision`` and ``check-image`` are absent
 from the table, so they exit 2 without reading stdin.
+
+An op that names no city (``GC_EXEC_CITY_PATH`` unset or empty: ``gc
+runtime check`` or ``conformance`` run outside a city, or a direct call) is
+answered before anything is resolved, started, kicked or read: ``observe``
+answers unknown, ``inventory`` incomplete, and every other op but
+``protocol`` exits 1 naming the variable.
 """
 
 from __future__ import annotations
@@ -27,19 +33,27 @@ from ..rpp.ops import (
     OpTable,
     handshake_op,
 )
-from ..rpp.statedir import StateDirError
+from ..rpp.statedir import OP_CITY_ENV, StateDirError, city_named
 from ..handshake import HANDSHAKE
 from . import attach, inputs, lifecycle, reads, screen, server
 from .config import ConfigError
-from .context import Host, OpContext
+from .context import Host, OpContext, no_city_message
 from .core import KICK_OP, run_kick
 from .metastore import MetaError
 
 OpFn = Callable[[OpContext], OpResult]
+NoCityAnswer = Callable[[], OpResult]
+"""An op's answer when it names no city."""
 
 
-def _wrap(host: Host, fn: OpFn, *, housekeeping: bool = True) -> Callable[[OpRequest], OpResult]:
+def _refuse() -> OpResult:
+    raise OpError(no_city_message(OP_CITY_ENV))
+
+
+def _wrap(host: Host, fn: OpFn, *, housekeeping: bool = True, no_city: NoCityAnswer = _refuse) -> Callable[[OpRequest], OpResult]:
     def handle(request: OpRequest) -> OpResult:
+        if not city_named(request.env, OP_CITY_ENV):
+            return no_city()  # before any context: nothing is resolved, started, kicked or read
         try:
             ctx = OpContext(request, host)
             if housekeeping:
@@ -61,16 +75,26 @@ def _kick(ctx: OpContext) -> OpResult:
 def build_ops(host: Host) -> OpTable:
     """The op table for ``host``."""
 
-    def spec(fn: OpFn, *, stdin: bool = False, deadline: DeadlineClass = "default", cap: int = SMALL_STDOUT_CAP, housekeeping: bool = True) -> OpSpec:
-        return OpSpec(handler=_wrap(host, fn, housekeeping=housekeeping), reads_stdin=stdin, deadline=deadline, stdout_cap=cap)
+    def spec(
+        fn: OpFn,
+        *,
+        stdin: bool = False,
+        deadline: DeadlineClass = "default",
+        cap: int = SMALL_STDOUT_CAP,
+        housekeeping: bool = True,
+        no_city: NoCityAnswer = _refuse,
+    ) -> OpSpec:
+        return OpSpec(
+            handler=_wrap(host, fn, housekeeping=housekeeping, no_city=no_city), reads_stdin=stdin, deadline=deadline, stdout_cap=cap
+        )
 
     table: Dict[str, OpSpec] = {
         "protocol": handshake_op(HANDSHAKE),
         "start": spec(lifecycle.op_start, stdin=True, deadline="start"),
         "stop": spec(lifecycle.op_stop),
         "kill-object": spec(lifecycle.op_kill_object, stdin=True),
-        "observe": spec(reads.op_observe, stdin=True, deadline="probe", cap=OBSERVE_STDOUT_CAP),
-        "inventory": spec(reads.op_inventory, cap=INVENTORY_STDOUT_CAP),
+        "observe": spec(reads.op_observe, stdin=True, deadline="probe", cap=OBSERVE_STDOUT_CAP, no_city=reads.observe_unknown),
+        "inventory": spec(reads.op_inventory, cap=INVENTORY_STDOUT_CAP, no_city=reads.inventory_unknown),
         "is-running": spec(reads.op_is_running),
         "process-alive": spec(reads.op_process_alive, stdin=True),
         "list-running": spec(reads.op_list_running, cap=INVENTORY_STDOUT_CAP),

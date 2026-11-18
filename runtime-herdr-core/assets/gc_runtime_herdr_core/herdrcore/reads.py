@@ -128,6 +128,16 @@ def try_snapshot(host: Host) -> Optional[Snapshot]:
         return None
 
 
+def observe_unknown() -> OpResult:
+    """``observe``'s answer when it cannot be told (an op that names no city)."""
+    return OpResult.answer(ObserveAnswer(state="unknown").encode())
+
+
+def inventory_unknown() -> OpResult:
+    """``inventory``'s answer when it cannot be told (an op that names no city)."""
+    return OpResult.answer(InventoryAnswer(complete=False, sessions=()).encode())
+
+
 # --- observe ------------------------------------------------------------------------------
 
 
@@ -452,6 +462,8 @@ def op_remove_meta(ctx: OpContext) -> OpResult:
 
 
 __all__ = [
+    "inventory_unknown",
+    "observe_unknown",
     "op_get_last_activity",
     "op_get_meta",
     "op_inventory",

@@ -35,7 +35,9 @@ rest**: one ``server-stop`` parked, or one no core has ever run for
 session's state directory, which it creates before any core or holder of
 the session runs), while nothing of the core runs (:func:`at_rest`). Such a
 city reads empty, which is the truth, and its first session start brings
-the core up, so ``gc doctor`` before ``gc start`` starts nothing.
+the core up, so ``gc doctor`` before ``gc start`` starts nothing. No core
+is ever started for a call that names no city (the fixed bucket only
+identifies): :func:`run_starter` and :func:`kick_due` refuse it.
 
 A core ``server-stop`` stopped is **parked**: ``parked.json`` records that
 the pack ended every record of the city and then the core, on purpose. While
@@ -390,10 +392,18 @@ class StarterRun:
     """Wall clock before the pack ran it."""
 
 
+def require_city(ctx: OpContext) -> None:
+    """Refuse a call that names no city: no core is started for one."""
+    if not ctx.paths.scoped:
+        raise OpError(ctx.no_city)
+
+
 def run_starter(ctx: OpContext, argv: Sequence[str], *, env: Mapping[str, str], timeout_s: float) -> StarterRun:
     """Run the hc command ``argv`` that starts the core (``server start`` or
     ``server restart``), adding it to the pending starts before it is
-    waited on and closing its entry once it ends (:mod:`.coreid`)."""
+    waited on and closing its entry once it ends (:mod:`.coreid`). Refused
+    for a call that names no city."""
+    require_city(ctx)
     since_ms = coreid.wall_ms()
     noted: List[int] = []
 
@@ -438,7 +448,9 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
     """``hc server start`` under the allowlist, with hc's restart handoff
     cleared (:func:`clear_restart_env`), wait for the core's hello, then
     record the core that answers when that hc started it under launchd
-    (:mod:`.coreid`)."""
+    (:mod:`.coreid`). Refused for a call that names no city, before
+    anything is created."""
+    require_city(ctx)
     ensure_dirs(ctx.paths)
     write_hc_config(ctx.paths)
     budget = ctx.request.deadline.budget(CORE_START_WAIT_S)
@@ -683,12 +695,13 @@ def write_kick(ctx: OpContext, record: KickRecord) -> None:
 
 
 def kick_due(ctx: OpContext) -> bool:
-    """Whether a kick may start the core: never while the city is at rest (:func:`at_rest`), nor within the
+    """Whether a kick may start the core: never for a call that names no
+    city, never while the city is at rest (:func:`at_rest`), nor within the
     backoff after a failed one. A parked or never-started city whose holder
     or core still runs is kicked: gc reads unknown while it runs and never
     sends the start that unparks, so the core comes back to adopt what runs
     (``server-stop`` holds the kick lock, so none starts while it sweeps)."""
-    if at_rest(ctx):
+    if not ctx.paths.scoped or at_rest(ctx):
         return False
     record = read_kick(ctx)
     return record is None or record.ok or ctx.host.now_ms() - record.at_ms >= KICK_BACKOFF_MS

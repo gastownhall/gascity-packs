@@ -13,8 +13,8 @@ it declares `observe.v1`, `report-attachment`, `report-activity`,
 `city-scoped`, `conformance-faults`, `server-lifecycle`, `carrier.ops`,
 `idle-boundary`, `input-outcome` and `fs.host` (locality `local`; see
 [Host work](#how-sessions-run)), and passes
-`gc runtime check` and `gc runtime conformance` against fake-hc (see
-[Tests](#tests)). The pack is not in `registry.toml` yet: it is published
+`gc runtime check` and `gc runtime conformance` against fake-hc in a
+scratch city (see [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
 pinned herdr-core with `gc herdr-core install` (see
 [Install and commands](#install-and-commands)); `gc doctor` runs the
@@ -621,7 +621,15 @@ send held past the deadline) and `dead` (every record reads finished).
 - **Deterministic discovery.** Every gc process of a city (supervisor, CLI,
   cron, ssh, sudo) must find the same core. The city key is the raw
   `GC_EXEC_CITY_PATH` (`GC_CITY_PATH` for doctor and pack commands), or the
-  fixed bucket `unscoped` when it is unset: never the cwd. The city id is
+  fixed bucket `unscoped` when it is unset: never the cwd. That bucket only
+  identifies: an op whose `GC_EXEC_CITY_PATH` is unset or empty names no
+  city, and no core is started or read for it. `observe` answers unknown,
+  `inventory` incomplete, every other op but `protocol` exits 1 naming the
+  variable; `restart-core` and `upgrade` refuse without `GC_CITY_PATH`, and
+  `status` reports only the pin and the install. gc sets the variable on
+  every op of a city, so only a call from outside one is refused:
+  `gc runtime check` and `gc runtime conformance` need a scratch
+  `GC_EXEC_CITY_PATH`. The city id is
   `sha256(machine + "\0" + key)`, where `machine` is what herdr-core itself
   keys a machine on: `/etc/machine-id`, or on macOS the hardware UUID
   (IOPlatformUUID, read in process). Only when `/etc/machine-id` is missing,
@@ -690,9 +698,10 @@ build on `PATH` or in `GC_BIN`; `PYTHON` is an interpreter with
 GC_BIN=/path/to/gc PYTHON=python tests/conformance.sh --json
 ```
 
-It runs `gc runtime check` and `gc runtime conformance` and fails unless
-every requirement passes or is skipped and the report is v2-ready. All state
-goes to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
+It runs `gc runtime check` and `gc runtime conformance` in a scratch city
+(`GC_EXEC_CITY_PATH` under its scratch directory) and fails unless every
+requirement passes or is skipped and the report is v2-ready. All state goes
+to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
 default state root instead. Without `--json` it reads the text report, for a
 gc that cannot encode it.
 

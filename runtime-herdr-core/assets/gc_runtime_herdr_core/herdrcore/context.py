@@ -28,7 +28,7 @@ from ..hc.paths import HcPaths, resolve_paths
 from ..rpp.cancel import CancelToken, Deadline
 from ..rpp.flock import FileLock
 from ..rpp.ops import OpRequest
-from ..rpp.statedir import OP_CITY_ENV, ensure_private_dir, user_home
+from ..rpp.statedir import DOCTOR_CITY_ENV, OP_CITY_ENV, ensure_private_dir, user_home
 from .config import pin_policy, resolve_hc_binary, test_mode
 from .procs import ProcSource, default_source
 
@@ -50,6 +50,16 @@ MUTATION_LOCK_WAIT_S: Final = 30.0
 
 PACK_SUBDIR: Final = "pack"
 SHIM_SUBDIR: Final = os.path.join("shim", "bin")
+
+
+def no_city_message(var: str) -> str:
+    """Why a call whose ``var`` is unset or empty is refused: it names no
+    city, and the pack starts and reads no core without one."""
+    if var == DOCTOR_CITY_ENV:
+        how = "gc runs pack commands with it: run `gc herdr-core <command>` for a city"
+    else:
+        how = "gc sets it on every op of a city; give `gc runtime check` and `gc runtime conformance` a scratch one"
+    return f"{var} is unset or empty: the call names no city, and no core is started or read without one ({how})"
 
 
 def _pack_dir() -> str:
@@ -84,10 +94,16 @@ class OpContext:
         self.host = host
         self.env: Mapping[str, str] = request.env
         self.test = test_mode(self.env)
+        self.city_var = city_var
         self.paths: HcPaths = resolve_paths(self.env, machine=host.machine, home=host.home, city_var=city_var)
         self.pack_state = os.path.join(self.paths.state_root, PACK_SUBDIR, self.paths.city_id)
         self.fault: Optional[BackendFault] = FAULTS.get(self.env.get(FAULT_ENV, ""))
         self._endpoint = CoreEndpoint(self.paths.socket, policy=pin_policy())
+
+    @property
+    def no_city(self) -> str:
+        """The refusal of a call that names no city (:func:`no_city_message`)."""
+        return no_city_message(self.city_var)
 
     @property
     def backend_unavailable(self) -> bool:

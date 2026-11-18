@@ -12,20 +12,28 @@ names no city. fake-hc only.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import stat
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 import pytest
-from cityharness import City, make_city
+from cityharness import MACHINE, City, make_city
+from fakehc import FakeHc
 from conftest import teardown_cores
 from test_herdrcore_server import no_core_started, spawned, start_config, start_holder
 
+from gc_runtime_herdr_core.hc.paths import HcPaths, ensure_dirs, resolve_paths
 from gc_runtime_herdr_core.herdrcore import core
+from gc_runtime_herdr_core.herdrcore.commands import run_command
 from gc_runtime_herdr_core.herdrcore.context import OpContext
 from gc_runtime_herdr_core.herdrcore.ops_table import build_ops
+from gc_runtime_herdr_core.rpp.cancel import CancelToken, Deadline
+from gc_runtime_herdr_core.rpp.ops import OpError, OpRequest
+from gc_runtime_herdr_core.rpp.redact import Redactor
+from gc_runtime_herdr_core.rpp.statedir import DOCTOR_CITY_ENV, OP_CITY_ENV
 
 __all__ = ["spawned"]  # the fixture, imported for the tests below
 
@@ -150,3 +158,116 @@ def test_a_state_directory_that_cannot_be_examined_is_not_taken_for_never_starte
         assert not core.at_rest(ctx)
     finally:
         parent.chmod(stat.S_IRWXU)
+
+
+# --- an op that names no city ---------------------------------------------------------------
+
+
+def without_city(city: City, value: Optional[str]) -> City:
+    """``city`` run as an op that names no city: its city path unset, or empty."""
+    env = {k: v for k, v in city.env.items() if k != OP_CITY_ENV}
+    if value is not None:
+        env[OP_CITY_ENV] = value
+    return dataclasses.replace(city, env=env)
+
+
+def bucket_paths(city: City) -> HcPaths:
+    """The fixed bucket's core: where an op that names no city would look."""
+    env = {k: v for k, v in city.env.items() if k != OP_CITY_ENV}
+    paths = resolve_paths(env, machine=MACHINE, home=city.host.home)
+    assert paths.city_key == "unscoped" and not paths.scoped
+    return paths
+
+
+@pytest.mark.parametrize("value", [None, ""], ids=["unset", "empty"])
+def test_an_op_that_names_no_city_refuses_or_answers_unknown_and_starts_no_core(fresh: City, value: Optional[str]) -> None:
+    nowhere = without_city(fresh, value)
+    for op, (args, stdin) in OPS.items():
+        done = nowhere.run(op, *args, stdin=stdin)
+        if op == "observe":
+            assert (done.code, json.loads(done.stdout)) == (0, {"state": "unknown"}), done.stderr
+        elif op == "inventory":
+            assert (done.code, json.loads(done.stdout)) == (0, {"complete": False, "sessions": []}), done.stderr
+        else:
+            assert done.code == 1, (op, done.code, done.stderr)
+            assert OP_CITY_ENV in done.stderr, (op, done.stderr)
+    paths = bucket_paths(fresh)
+    assert no_core_started(dataclasses.replace(fresh, paths=paths), wait_s=2.0)
+    assert not (fresh.root / "R" / "herdr-core").exists(), "nothing created a core's state"
+
+
+def test_an_op_that_names_no_city_never_uses_a_core_already_running_for_none(fresh: City) -> None:
+    paths = bucket_paths(fresh)
+    ensure_dirs(paths)
+    fake = FakeHc(paths.socket)
+    fake.start()
+    try:
+        nowhere = without_city(fresh, None)
+        observed = nowhere.run("observe", "mc-a", stdin=b"cat\n")
+        assert json.loads(observed.stdout) == {"state": "unknown"}
+        started = nowhere.start("mc-a", start_config("exec cat"))
+        assert started.code == 1 and OP_CITY_ENV in started.stderr, started.stderr
+        assert fake.call_count("terminal.run") == 0 and fake.call_count("terminal.list") == 0
+    finally:
+        fake.close()
+    assert fake.schema_violations == []
+
+
+def unscoped_context(city: City) -> OpContext:
+    request = OpRequest(
+        op="test",
+        args=(),
+        stdin=b"",
+        env={k: v for k, v in city.env.items() if k != OP_CITY_ENV},
+        cancel=CancelToken(),
+        deadline=Deadline.after(30.0),
+        redactor=Redactor(),
+    )
+    return OpContext(request, city.host)
+
+
+def test_no_core_is_ever_started_or_kicked_for_no_city(fresh: City) -> None:
+    ctx = unscoped_context(fresh)
+    assert not ctx.paths.scoped
+    assert core.kick_due(ctx) is False
+    assert core.kick(ctx) is False
+    with pytest.raises(OpError) as refused:
+        core.start_core(ctx, fresh.env["GC_HC_TEST_BIN"])
+    assert OP_CITY_ENV in refused.value.message
+    core.run_kick(ctx)
+    paths = bucket_paths(fresh)
+    assert no_core_started(dataclasses.replace(fresh, paths=paths), wait_s=2.0)
+    assert not os.path.exists(paths.state_dir)
+
+
+@pytest.mark.parametrize("command", ["restart-core", "upgrade"])
+def test_core_commands_refuse_a_command_that_names_no_city(fresh: City, command: str) -> None:
+    """gc runs pack commands with GC_CITY_PATH; without it a command names no
+    city and touches no core, not even one serving the fixed bucket."""
+    paths = bucket_paths(fresh)
+    ensure_dirs(paths)
+    fake = FakeHc(paths.socket)
+    fake.start()
+    releases = fresh.root / "no-releases"
+    releases.mkdir()
+    env = {k: v for k, v in fresh.env.items() if k not in (OP_CITY_ENV, DOCTOR_CITY_ENV)}
+    env["GC_HC_TEST_RELEASES"] = str(releases)  # never the real release server
+    out: List[str] = []
+    err: List[str] = []
+    try:
+        code = run_command(command, [], env, fresh.host, out.append, err.append)
+        assert code == 1, (out, err)
+        assert any(DOCTOR_CITY_ENV in line for line in err), err
+        assert fake.call_count("server.stop") == 0 and fake.call_count("server.restart") == 0
+    finally:
+        fake.close()
+    assert fake.schema_violations == []
+
+
+def test_status_without_a_city_reports_the_pin_and_no_core(fresh: City) -> None:
+    env = {k: v for k, v in fresh.env.items() if k not in (OP_CITY_ENV, DOCTOR_CITY_ENV)}
+    out: List[str] = []
+    err: List[str] = []
+    assert run_command("status", [], env, fresh.host, out.append, err.append) == 0, err
+    assert out[0].startswith("pin:") and out[-1] == f"core:      no city ({DOCTOR_CITY_ENV} is unset)", out
+    assert not (fresh.root / "R" / "herdr-core").exists()
