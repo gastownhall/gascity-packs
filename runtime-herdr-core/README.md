@@ -655,6 +655,8 @@ send held past the deadline) and `dead` (every record reads finished).
   Value records use `rpp.frozen` rather than `dataclasses`: a frozen
   dataclass costs about a millisecond per class per process to define on
   CPython 3.9-3.14, which a one-process-per-op runtime pays on every op.
+  Nor do they use `typing.NamedTuple`, which on CPython 3.14 imports
+  `annotationlib` and `ast`.
   `tests/bench_ops.py` measures each op's CPU (see Tests).
 
 ## Tests
@@ -711,7 +713,8 @@ the bench prints.
 
 CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12,
 with gc pinned to a gascity commit, and the unit tier again in the shared
-pytest step.
+pytest step. The 3.12 leg also runs `tests/unit/test_op_imports.py` on
+Python 3.14, since what an op imports can change with the interpreter.
 
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.
