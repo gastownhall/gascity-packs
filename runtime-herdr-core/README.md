@@ -175,7 +175,13 @@ checked against the app yet, so the sessions may not appear there.
   most one at a time and none for five minutes after a failed start, and
   none while `server-stop` has parked the city (below).
 - **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
-  typed notes into agents, 16 MB history, nothing from `~/.config/herdr-core`.
+  typed notes into agents (`notes = false`), 16 MB history
+  (`history_mb = 16.0`), nothing from `~/.config/herdr-core`. hc reads it
+  into the typed `Config` of its `config.rs` and refuses every
+  `terminal.run` when a key has the wrong type, so the unit tier checks the
+  file against that table. Every `start` rewrites the file where it
+  differs, so a core an earlier release started reads the current one at
+  its next `terminal.run`, without a restart.
 - **Names and identity.** A session is the newest terminal labelled with its
   exact gc name (`gc.session`), in its city (`gc.city`); each start gets a new
   incarnation nonce (`gc.obj`). The hc terminal name is a digest of the city
@@ -598,12 +604,15 @@ with fake-hc: a stdlib JSON-RPC server on a real Unix socket whose programs
 are real child processes in their own sessions. Every reply it sends and
 every request the client makes is checked against `hc.openrpc.json`,
 vendored at the pinned tag (`tests/fakehc/hc.openrpc.provenance.json`).
+fake-hc also reads the core's `config.toml` as hc does
+(`tests/fakehc/hcconfig.py`): a known key of the wrong type fails
+`terminal.run` with an error of kind `config`.
 
 From this directory, with the CI tool pins in any Python 3.9+ environment
 kept outside the repository:
 
 ```bash
-python -m pip install mypy==1.19.1 pytest==8.4.2 jsonschema==4.25.1 types-jsonschema==4.25.1.20251009
+python -m pip install mypy==1.19.1 pytest==8.4.2 jsonschema==4.25.1 types-jsonschema==4.25.1.20251009 tomli==2.5.0
 python -m pytest tests/unit -q
 python -m mypy --config-file mypy.ini                       # the 3.9 floor
 python -m mypy --config-file mypy.ini --python-version 3.12
@@ -612,7 +621,7 @@ GC_HC_SCHEMA_FETCH=1 python -m pytest tests/unit/test_fakehc_schema.py -q   # ne
 
 gc's own checks of the runtime, against fake-hc run as the hc binary (a gc
 build on `PATH` or in `GC_BIN`; `PYTHON` is an interpreter with
-`jsonschema`, for fake-hc):
+`jsonschema`, and `tomli` below Python 3.11, for fake-hc):
 
 ```bash
 GC_BIN=/path/to/gc PYTHON=python tests/conformance.sh --json
@@ -630,3 +639,5 @@ pytest step.
 
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.
+Check the tag's `crates/herdr-core/src/config.rs` against `HC_CONFIG_KEYS` in
+`tests/fakehc/hcconfig.py` too.

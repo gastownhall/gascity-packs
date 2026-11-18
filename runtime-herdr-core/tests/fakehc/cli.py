@@ -255,7 +255,16 @@ def _flush_violations(fake: Any, state: str) -> None:
 
 
 def attach(env: Dict[str, str], terminal: str) -> int:
+    from fakehc.hcconfig import HcConfigError, config_path, load_hc_config
+
     paths = _paths(env)
+    path = config_path(env)
+    try:
+        if path is not None:
+            load_hc_config(path)  # hc attach.rs reads its detach_key, and fails on a bad file
+    except HcConfigError as err:
+        print(json.dumps({"code": -32000, "message": str(err), "data": {"kind": "config", "hint": ""}}), file=sys.stderr)
+        return 1
     reply = raw_call(paths["socket"], "terminal.get", {"terminal": terminal}, timeout=5.0)
     if "error" in reply:
         print(json.dumps(reply["error"]), file=sys.stderr)
