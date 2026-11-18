@@ -17,10 +17,8 @@ began to be refused over them, when its metadata cannot record it.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import os
-import uuid
 from typing import Dict, Final
 
 LABEL_CITY: Final = "gc.city"
@@ -35,6 +33,8 @@ TERMINAL_NAME_CHARS: Final = 20
 
 def terminal_name(city_id: str, gc_name: str) -> str:
     """The hc terminal name of gc session ``gc_name`` in city ``city_id``."""
+    import base64
+
     digest = hashlib.sha256(os.fsencode(city_id) + b"\0" + os.fsencode(gc_name)).digest()
     return "g" + base64.b32encode(digest).decode("ascii").lower()[:TERMINAL_NAME_CHARS]
 
@@ -46,6 +46,8 @@ def city_label(city_id: str) -> str:
 
 def new_object_nonce() -> str:
     """A fresh incarnation nonce (``gc.obj``)."""
+    import uuid
+
     return uuid.uuid4().hex
 
 

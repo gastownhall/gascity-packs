@@ -693,7 +693,7 @@ older commit, and prints before, after and the change:
 
 ```bash
 mkdir /tmp/hcbase && git -C .. archive <commit> runtime-herdr-core | tar -x -C /tmp/hcbase
-tests/bench_ops.py --runs 30 --compare /tmp/hcbase/runtime-herdr-core/assets/bin/gc-runtime-herdr-core
+python tests/bench_ops.py --runs 30 --compare /tmp/hcbase/runtime-herdr-core/assets/bin/gc-runtime-herdr-core
 ```
 
 The process-table ops (`observe` with names, `is-attached`, `inventory`,

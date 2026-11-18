@@ -50,10 +50,7 @@ the session's stop.
 
 from __future__ import annotations
 
-import calendar
 import os
-import signal
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, replace
@@ -375,6 +372,8 @@ class PsProcs(ProcSource):
     lossy_environ = True
 
     def _ps(self, *args: str) -> str:
+        import subprocess  # only macOS reads processes through ps
+
         try:
             done = subprocess.run(
                 ["ps", *args],
@@ -425,6 +424,8 @@ class PsProcs(ProcSource):
 
     def started_ms(self, proc: Proc) -> Optional[int]:
         """``lstart`` ("Mon Nov 9 08:00:00 2026", UTC: :data:`PS_ENV`), to the second."""
+        import calendar
+
         try:
             return calendar.timegm(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y")) * 1000
         except (ValueError, OverflowError):
@@ -696,6 +697,8 @@ def kill_captured(
     still the captured process: when the table cannot be re-read, every
     target not yet known to have ended is reported as surviving and none is
     signalled."""
+    import signal
+
     unsure: List[Proc] = []
 
     def alive(targets: Sequence[Proc]) -> Optional[List[Proc]]:

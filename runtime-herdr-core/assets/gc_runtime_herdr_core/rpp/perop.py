@@ -20,7 +20,6 @@ import re
 import select
 import signal
 import time
-import traceback
 from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO
 
 from .cancel import POLL_INTERVAL_S, CancelToken, Cancelled, Clock, Deadline
@@ -153,6 +152,8 @@ def run_per_op(
     except Exception as err:  # the op boundary: every failure becomes exit 1
         result = OpResult.fail(f"internal error: {type(err).__name__}: {err}")
         if debug:
+            import traceback
+
             trace = traceback.format_exc()
 
     if len(result.stdout) > spec.stdout_cap:

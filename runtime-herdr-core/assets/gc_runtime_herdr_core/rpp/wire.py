@@ -14,8 +14,6 @@ with a message saying why, instead of reaching gc as an unexplained unknown.
 
 from __future__ import annotations
 
-import datetime
-import unicodedata
 from dataclasses import dataclass
 from typing import Dict, Final, Literal, Mapping, Optional, Tuple
 
@@ -193,6 +191,8 @@ class ObserveAnswer:
 
 def readable_name(name: str) -> bool:
     """A name gc can list: non-empty, untrimmed, no control character."""
+    import unicodedata
+
     return name != "" and name == name.strip() and not any(unicodedata.category(ch) == "Cc" for ch in name)
 
 
@@ -300,6 +300,8 @@ def rfc3339_ms(epoch_ms: int) -> str:
     if epoch_ms < 0:
         raise ValueError("epoch milliseconds must not be negative")
     seconds, millis = divmod(epoch_ms, 1000)
+    import datetime
+
     stamp = datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc)
     return stamp.strftime("%Y-%m-%dT%H:%M:%S") + f".{millis:03d}Z"
 

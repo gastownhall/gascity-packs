@@ -36,9 +36,9 @@ per line; hc ``schema/README.md`` "Connecting").
 
 from __future__ import annotations
 
+import _thread
 import itertools
 import socket
-import threading
 import time
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Literal, Mapping, Optional, Sequence, Tuple, TypeVar
@@ -160,7 +160,7 @@ class CoreEndpoint:
     def __init__(self, socket_path: str, *, policy: VersionPolicy) -> None:
         self.socket_path = socket_path
         self.policy = policy
-        self._lock = threading.Lock()
+        self._lock = _thread.allocate_lock()  # threading.Lock, without importing threading
         self._ids = itertools.count(1)
 
     def next_id(self) -> int:

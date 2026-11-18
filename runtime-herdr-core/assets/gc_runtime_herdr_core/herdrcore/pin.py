@@ -10,7 +10,6 @@ never "whatever hc is on PATH". Moving the pin is a pack release.
 from __future__ import annotations
 
 import os
-import platform
 import re
 from dataclasses import dataclass
 from typing import Dict, Final, Mapping, Optional, Tuple
@@ -149,6 +148,8 @@ def host_target(system: Optional[str] = None, machine: Optional[str] = None) -> 
     """This host's release target name (``linux-x86_64``, ``macos-aarch64``, ...),
     spelled as hc's release manifest spells it; :class:`PinError` for a host hc
     has no build for."""
+    import platform
+
     sys_name = platform.system() if system is None else system
     arch = platform.machine() if machine is None else machine
     os_part = _SYSTEMS.get(sys_name)

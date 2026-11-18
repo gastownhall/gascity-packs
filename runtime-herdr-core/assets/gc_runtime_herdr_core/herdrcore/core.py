@@ -75,6 +75,7 @@ from .command import Completed, run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
 from .corescan import holder_prefix, is_holder_of, listener_elsewhere, nothing_runs
+from .ops_table import KICK_OP
 from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0
@@ -83,7 +84,6 @@ CORE_START_WAIT_S: Final = 15.0
 KICK_FILE: Final = "kick.json"
 PARK_FILE: Final = "parked.json"
 KICK_BACKOFF_MS: Final = 5 * 60 * 1000
-KICK_OP: Final = "x-kick-core"
 KICK_LOCK: Final = "kick"
 """Held by a kick while it starts the core, and by ``server-stop`` throughout."""
 

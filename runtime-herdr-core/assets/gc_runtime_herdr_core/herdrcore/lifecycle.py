@@ -733,19 +733,6 @@ def _user_scope(
     return scope
 
 
-def _spawn_dir(ctx: OpContext) -> str:
-    override = ctx.env.get(spawnfile.ROOT_ENV, "") if ctx.test else ""
-    return spawnfile.directory(ctx.paths.city_id, override=override or None)
-
-
-def sweep_spawn_files(ctx: OpContext) -> None:
-    """Every op's housekeeping: spawn files a killed start left behind."""
-    try:
-        spawnfile.sweep(_spawn_dir(ctx))
-    except (OSError, StateDirError):
-        pass
-
-
 def _launcher_argv(ctx: OpContext, spawn_path: str) -> List[str]:
     launcher = os.path.join(ctx.host.pack_dir, "assets", "bin", "gc-herdr-core-launch")
     return [ctx.host.python, "-I", "-S", launcher, spawn_path]
@@ -854,7 +841,7 @@ def _create(
                 shim_dir=ctx.shim_dir,
                 scope=scope,
             )
-            spawn_path = spawnfile.create(_spawn_dir(ctx), obj, spawn)
+            spawn_path = spawnfile.create(spawnfile.spawn_dir(ctx), obj, spawn)
             spec = RunSpec(
                 argv=tuple(_launcher_argv(ctx, spawn_path)),
                 cwd=cfg.work_dir or ctx.host.home(),
