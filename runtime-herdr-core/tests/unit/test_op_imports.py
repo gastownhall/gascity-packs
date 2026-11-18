@@ -24,11 +24,6 @@ from cityharness import City
 from gc_runtime_herdr_core.herdrcore.context import Host
 from gc_runtime_herdr_core.herdrcore.ops_table import OP_SPECS, build_ops
 
-pytestmark = pytest.mark.skipif(
-    not sys.platform.startswith("linux"),
-    reason="the scan ops read /proc on Linux; elsewhere they run ps, through subprocess",
-)
-
 PACK_ROOT = Path(__file__).resolve().parents[2]
 ENTRY = PACK_ROOT / "assets" / "bin" / "gc-runtime-herdr-core"
 PACKAGE = "gc_runtime_herdr_core"
@@ -65,6 +60,7 @@ HEAVY_STDLIB: FrozenSet[str] = frozenset(
         "urllib.request",
         "http.client",
         "dataclasses",
+        "annotationlib",
         "inspect",
         "ast",
         "dis",
@@ -73,7 +69,8 @@ HEAVY_STDLIB: FrozenSet[str] = frozenset(
 )
 """Standard library modules no hot op needs: process spawning, archives,
 the network stack, modules that only cold paths use, and dataclasses with
-what it imports (records use :mod:`gc_runtime_herdr_core.rpp.frozen`)."""
+what it and, on CPython 3.14, typing.NamedTuple import (records use
+:mod:`gc_runtime_herdr_core.rpp.frozen`)."""
 
 NEVER: FrozenSet[str] = frozenset(
     {
@@ -166,6 +163,10 @@ def _loaded(city: City, tmp_path: Path, case: Case) -> List[str]:
     return modules
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="the scan ops read /proc on Linux; elsewhere they run ps, through subprocess",
+)
 @pytest.mark.parametrize("label", sorted(CASES))
 def test_op_loads_only_its_own_code(city: City, tmp_path: Path, label: str) -> None:
     case = CASES[label]
