@@ -207,6 +207,36 @@ def test_start_starts_the_core_with_the_allowlist_and_the_packs_config(short_tmp
         teardown_cores(Path(paths.state_root))
 
 
+PREVIOUS_HC_CONFIG_TOML = """\
+# Written by the runtime-herdr-core pack for this city's herdr-core.
+# The core reads this file instead of ~/.config/herdr-core, so personal
+# settings never change how the city's agents run. Edits are overwritten.
+notes = false
+notes_quiet = true
+history_mb = 16
+"""
+"""The config earlier releases wrote: hc refuses every ``terminal.run`` on it
+(``notes_quiet`` is an f64), yet a core still starts on it."""
+
+
+def test_start_rewrites_the_hc_config_under_a_core_already_running(short_tmp: Path, home_dir: Path) -> None:
+    # A city upgraded from such a release keeps the core that release
+    # started, and that core keeps answering: the next start must fix the
+    # file, which hc reads on every terminal.run, without restarting the core.
+    env = entry_env(short_tmp, home_dir)
+    paths = resolve_paths(env)
+    try:
+        assert invoke(env, "start", "mc-a", stdin=b'{"command":"cat"}').returncode == 0
+        pid = raw_call(paths.socket, "server.status", {})["result"]["pid"]
+        Path(paths.config_file).write_text(PREVIOUS_HC_CONFIG_TOML)
+        done = invoke(env, "start", "mc-b", stdin=b'{"command":"cat"}')
+        assert done.returncode == 0, done.stderr
+        assert Path(paths.config_file).read_text() == HC_CONFIG_TOML
+        assert raw_call(paths.socket, "server.status", {})["result"]["pid"] == pid
+    finally:
+        teardown_cores(Path(paths.state_root))
+
+
 def test_unscoped_ops_use_the_unscoped_bucket_never_the_cwd(short_tmp: Path, home_dir: Path) -> None:
     env = entry_env(short_tmp, home_dir)
     del env["GC_EXEC_CITY_PATH"]

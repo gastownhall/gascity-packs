@@ -179,7 +179,9 @@ checked against the app yet, so the sessions may not appear there.
   (`history_mb = 16.0`), nothing from `~/.config/herdr-core`. hc reads it
   into the typed `Config` of its `config.rs` and refuses every
   `terminal.run` when a key has the wrong type, so the unit tier checks the
-  file against that table.
+  file against that table. Every `start` rewrites the file where it
+  differs, so a core an earlier release started reads the current one at
+  its next `terminal.run`, without a restart.
 - **Names and identity.** A session is the newest terminal labelled with its
   exact gc name (`gc.session`), in its city (`gc.city`); each start gets a new
   incarnation nonce (`gc.obj`). The hc terminal name is a digest of the city

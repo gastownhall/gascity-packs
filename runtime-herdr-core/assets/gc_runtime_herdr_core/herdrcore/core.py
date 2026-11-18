@@ -347,7 +347,10 @@ def check_foreign(ctx: OpContext, hc_bin: str) -> None:
 def ensure_core(ctx: OpContext) -> str:
     """The city's core, started if down and checked as the pack's own.
     Returns the hc binary. It clears the stopped mark first, whatever then
-    becomes of the start: a start is the way out of a parked city."""
+    becomes of the start: a start is the way out of a parked city. Once the
+    core is the pack's own, it rewrites the pack-owned hc config where it
+    differs: hc reads that file on every ``terminal.run``, so the start runs
+    on the current file even under a core an earlier release started."""
     unpark(ctx)  # before any record: a parked city holds none
     try:
         hc_bin = ctx.hc_binary()
@@ -362,6 +365,7 @@ def ensure_core(ctx: OpContext) -> str:
             raise OpError("the backend is unavailable (GC_RPP_FAULT=unavailable)") from None
         start_core(ctx, hc_bin)
     check_foreign(ctx, hc_bin)
+    write_hc_config(ctx.paths)
     return hc_bin
 
 
