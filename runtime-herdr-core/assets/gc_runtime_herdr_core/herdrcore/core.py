@@ -29,7 +29,13 @@ server start`` the pack removes hc's restart handoff
 A read that finds the core down answers unknown and **kicks** a detached
 start, at most one at a time per city and none for five minutes after a
 failed one; ``kick.json`` records the last attempt and its outcome, never
-liveness (always probed live).
+liveness (always probed live). No read kicks a start for a city **at
+rest**: one ``server-stop`` parked, or one no core has ever run for
+(:func:`never_started`: hc keeps every record, live or finished, under the
+session's state directory, which it creates before any core or holder of
+the session runs), while nothing of the core runs (:func:`at_rest`). Such a
+city reads empty, which is the truth, and its first session start brings
+the core up, so ``gc doctor`` before ``gc start`` starts nothing.
 
 A core ``server-stop`` stopped is **parked**: ``parked.json`` records that
 the pack ended every record of the city and then the core, on purpose. While
@@ -485,6 +491,27 @@ def parked(ctx: OpContext) -> bool:
         return False
 
 
+def never_started(ctx: OpContext) -> bool:
+    """Whether no core or holder has ever run for the city's session: hc's
+    state directory for it does not exist. hc creates it before either runs
+    (``Paths::create_dirs``), and the pack before its own first ``hc server
+    start``. False when it cannot be told (an lstat that fails otherwise)."""
+    try:
+        os.lstat(ctx.paths.state_dir)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def at_rest(ctx: OpContext) -> bool:
+    """Whether the city holds no session and nothing of its core runs: it
+    is parked or never started, and :func:`.corescan.nothing_runs`. Such a
+    city reads empty, and no read kicks its core."""
+    return (parked(ctx) or never_started(ctx)) and nothing_runs(ctx)
+
+
 def park(ctx: OpContext) -> None:
     """Mark the city's core as stopped on purpose (raises StateDirError or OSError)."""
     doc = {"at_ms": ctx.host.now_ms()}
@@ -656,13 +683,12 @@ def write_kick(ctx: OpContext, record: KickRecord) -> None:
 
 
 def kick_due(ctx: OpContext) -> bool:
-    """Whether a kick may start the core: never while it is parked and
-    nothing of it runs, nor within the backoff after a failed one. A parked
-    city whose holder or core still runs is kicked: gc reads unknown while
-    it runs and never sends the start that unparks, so the core comes back
-    to adopt what runs (``server-stop`` holds the kick lock, so none starts
-    while it sweeps)."""
-    if parked(ctx) and nothing_runs(ctx):
+    """Whether a kick may start the core: never while the city is at rest (:func:`at_rest`), nor within the
+    backoff after a failed one. A parked or never-started city whose holder
+    or core still runs is kicked: gc reads unknown while it runs and never
+    sends the start that unparks, so the core comes back to adopt what runs
+    (``server-stop`` holds the kick lock, so none starts while it sweeps)."""
+    if at_rest(ctx):
         return False
     record = read_kick(ctx)
     return record is None or record.ok or ctx.host.now_ms() - record.at_ms >= KICK_BACKOFF_MS

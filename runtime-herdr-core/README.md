@@ -224,7 +224,8 @@ checked against the app yet, so the sessions may not appear there.
   with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
   most one at a time and none for five minutes after a failed start, and
-  none while `server-stop` has parked the city (below).
+  none for a city at rest: one `server-stop` parked, or one no core has
+  ever run for (below).
 - **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
   typed notes into agents (`notes = false`), 16 MB history
   (`history_mb = 16.0`), nothing from `~/.config/herdr-core`. hc reads it
@@ -549,6 +550,16 @@ checked against the app yet, so the sessions may not appear there.
   With the core down and nothing of it running, `is-running` and
   `process-alive` answer `false` and `stop` ends what the metadata still
   names, parked or not, without starting a core.
+- **A city that never started reads empty.** hc keeps every record of a
+  session, live or finished, under `$XDG_STATE_HOME/herdr-core/<session>`,
+  which it creates before any core or holder of the session runs. While
+  that directory does not exist and nothing of the core runs, the city is
+  at rest like a parked one: every read answers an empty city and none
+  starts a core, so `gc doctor` before `gc start` starts nothing. Its first
+  session start brings the core up. A directory that cannot be examined,
+  or a holder of the session still running, is not taken for a city that
+  never started: reads answer unknown and kick, as for any core that is
+  down.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
   reading stdin), `program-status` and session events.
 
@@ -692,4 +703,6 @@ pytest step.
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.
 Check the tag's `crates/herdr-core/src/config.rs` against `HC_CONFIG_KEYS` in
-`tests/fakehc/hcconfig.py` too.
+`tests/fakehc/hcconfig.py` too, and that hc still keeps its records under
+`$XDG_STATE_HOME/herdr-core/<session>` (`paths.rs`) and creates that directory
+before any core or holder runs: a city without it reads empty.
