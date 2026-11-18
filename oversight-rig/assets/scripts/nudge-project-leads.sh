@@ -9,12 +9,18 @@
 
 set -euo pipefail
 
-# Session template for this pack's project-lead.
+# Session template for this pack's project-lead. Rig-scoped sessions carry a
+# rig-qualified template (`<rig>/oversight-rig.project-lead`), so match both.
 template="oversight-rig.project-lead"
 
+# `gc session list --json` returns an object; the sessions are under `.sessions`.
 mapfile -t session_ids < <(
   gc session list --json \
-    | jq -r --arg t "$template" '.[] | select(.template == $t and .state == "active") | .id'
+    | jq -r --arg t "$template" '
+        .sessions[]
+        | select(.state == "active")
+        | select((.template // "") as $tpl | $tpl == $t or ($tpl | endswith("/" + $t)))
+        | .id'
 )
 
 if [[ ${#session_ids[@]} -eq 0 ]]; then
