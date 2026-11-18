@@ -137,15 +137,17 @@ class FakeHc:
         kept_restart_s: float = KEPT_RESTART_S,
         base_env: Optional[Mapping[str, str]] = None,
         next_version_file: Optional[str] = None,
+        core_id: Optional[str] = None,
     ) -> None:
         """``next_version_file``: where ``hc server restart`` from another
         build leaves that build's version, which the core runs after a
-        planned restart (a real core is replaced by the new binary)."""
+        planned restart (a real core is replaced by the new binary).
+        ``core_id``: the core's permanent id (a new one when None)."""
         self.socket_path = socket_path
         self._next_version_file = next_version_file
         self._version = version
         self._generation = generation
-        self._core = {"id": uuid.uuid4().hex, "name": core_name}
+        self._core = {"id": core_id or uuid.uuid4().hex, "name": core_name}
         self._started_window_s = started_window_s
         self._kill_grace_s = kill_grace_s
         self._kept_restart_s = kept_restart_s

@@ -50,6 +50,7 @@ the session's stop.
 
 from __future__ import annotations
 
+import calendar
 import os
 import signal
 import subprocess
@@ -71,6 +72,12 @@ titled ``tmux: server``). Exact, path-stripped: a ``tmux-*`` wrapper may be
 an agent."""
 
 _PS_TIMEOUT_S: Final = 2.0
+
+PS_ENV: Final[Mapping[str, str]] = {"PATH": "/usr/bin:/bin", "TZ": "UTC0", "LC_ALL": "C"}
+"""The whole environment ``ps`` runs with. ``lstart`` is printed in the
+reading process's time zone and locale, so every reader prints it in UTC
+and English: a start token then reads the same in every process, whatever
+its zone or locale, and across a change of the host's zone."""
 
 
 class ProcError(Exception):
@@ -110,6 +117,11 @@ class ProcSource:
 
     def snapshot(self) -> Dict[int, Proc]:
         raise NotImplementedError
+
+    def process(self, pid: int) -> Optional[Proc]:
+        """``pid`` as a snapshot would see it; None when it is gone. Raises
+        :class:`ProcError` when the process table cannot be read."""
+        return self.snapshot().get(pid)
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         """``pid``'s environment; None when the process is gone.
@@ -274,6 +286,11 @@ class LinuxProcs(ProcSource):
             if proc.pid in parents:
                 out[proc.pid] = replace(proc, ppid=parents[proc.pid])
 
+    def process(self, pid: int) -> Optional[Proc]:
+        """``pid`` alone, without listing the table. An opaque process is
+        returned unplaced (parent 0)."""
+        return self._proc(pid)
+
     def exe(self, pid: int) -> Optional[str]:
         try:
             return os.readlink(os.path.join(self._root, str(pid), "exe"))
@@ -353,7 +370,7 @@ class LinuxProcs(ProcSource):
 
 
 class PsProcs(ProcSource):
-    """``ps`` on hosts without ``/proc`` (macOS)."""
+    """``ps`` on hosts without ``/proc`` (macOS), run under :data:`PS_ENV`."""
 
     lossy_environ = True
 
@@ -361,6 +378,7 @@ class PsProcs(ProcSource):
         try:
             done = subprocess.run(
                 ["ps", *args],
+                env=dict(PS_ENV),
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 timeout=_PS_TIMEOUT_S,
@@ -372,6 +390,24 @@ class PsProcs(ProcSource):
             raise ProcError(f"ps exited {done.returncode}")
         return done.stdout.decode("utf-8", "surrogateescape")
 
+    def process(self, pid: int) -> Optional[Proc]:
+        """``pid`` alone, read as :meth:`snapshot` reads every process."""
+        try:
+            text = self._ps("-ww", "-o", "pid=,ppid=,uid=,stat=,lstart=,args=", "-p", str(pid))
+        except ProcError:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return None  # ps exits 1 for a pid that is gone
+            except PermissionError:
+                pass
+            raise
+        for line in text.splitlines():
+            proc = _ps_proc(line, {})
+            if proc is not None and proc.pid == pid:
+                return proc
+        return None
+
     def snapshot(self) -> Dict[int, Proc]:
         out: Dict[int, Proc] = {}
         comms: Dict[int, str] = {}
@@ -380,28 +416,17 @@ class PsProcs(ProcSource):
             if len(parts) == 2 and parts[0].isdigit():
                 comms[int(parts[0])] = parts[1]
         for line in self._ps("-ww", "-axo", "pid=,ppid=,uid=,stat=,lstart=,args=").splitlines():
-            parts = line.split()
-            # lstart is five words: "Mon Nov  9 08:00:00 2026".
-            if len(parts) < 10 or not (parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit()):
-                continue
-            pid = int(parts[0])
-            out[pid] = Proc(
-                pid=pid,
-                ppid=int(parts[1]),
-                uid=int(parts[2]),
-                start=" ".join(parts[4:9]),
-                comm=comms.get(pid, ""),
-                argv=tuple(parts[9:]),
-                state=parts[3],
-            )
+            proc = _ps_proc(line, comms)
+            if proc is not None:
+                out[proc.pid] = proc
         if not out:
             raise ProcError("ps lists no process")
         return out
 
     def started_ms(self, proc: Proc) -> Optional[int]:
-        """``lstart`` ("Mon Nov 9 08:00:00 2026", local time), to the second."""
+        """``lstart`` ("Mon Nov 9 08:00:00 2026", UTC: :data:`PS_ENV`), to the second."""
         try:
-            return int(time.mktime(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y"))) * 1000
+            return calendar.timegm(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y")) * 1000
         except (ValueError, OverflowError):
             return None
 
@@ -442,6 +467,24 @@ class PsProcs(ProcSource):
             if words and words[0].isdigit() and int(words[0]) in wanted:
                 out[int(words[0])] = _ps_environ(words[1:])
         return out
+
+
+def _ps_proc(line: str, comms: Mapping[int, str]) -> Optional[Proc]:
+    """One ``pid ppid uid stat lstart args`` line of ``ps``; None when it is not one."""
+    parts = line.split()
+    # lstart is five words: "Mon Nov  9 08:00:00 2026".
+    if len(parts) < 10 or not (parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit()):
+        return None
+    pid = int(parts[0])
+    return Proc(
+        pid=pid,
+        ppid=int(parts[1]),
+        uid=int(parts[2]),
+        start=" ".join(parts[4:9]),
+        comm=comms.get(pid, ""),
+        argv=tuple(parts[9:]),
+        state=parts[3],
+    )
 
 
 def _ps_environ(words: Iterable[str]) -> Dict[str, str]:

@@ -25,7 +25,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Dict, Final, Mapping, Sequence, TextIO
+from typing import Callable, Dict, Final, Mapping, Optional, Sequence, TextIO
 
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcUnreachable
@@ -46,10 +46,19 @@ from .admin import (
     lock_socket,
     ownership,
 )
-from .command import run_bounded
 from .config import ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
-from .core import CORE_START_WAIT_S, check_foreign, core_env, foreign_reason, start_core, unpark
+from .core import (
+    CORE_START_WAIT_S,
+    Foreign,
+    check_foreign,
+    core_env,
+    foreign_core,
+    record_started_core,
+    run_starter,
+    start_core,
+    unpark,
+)
 from .install import InstallError, fetch_for, install, verify_installed
 from .pin import HcPin, PinError, host_target, load_pin
 from .procs import ProcError
@@ -145,16 +154,15 @@ def cmd_status(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     except ValueError:
         note = " (an unreadable version)"
     out(f"running:   herdr-core {hello.version}, pid {status.pid}, {status.live} live terminal(s){note}")
-    try:
-        env = ctx.host.procs.environ(status.pid)
-    except ProcError:
-        env = None
-    if env is None:
-        out("started:   cannot tell (its environment cannot be read)")
-    else:
-        hc_bin = _driving_binary(ctx, pin)
-        reason = foreign_reason(env, core_env(ctx, hc_bin))
-        out("started:   by the pack" if reason is None else f"started:   outside the pack ({reason}): run `gc herdr-core restart-core`")
+    out(_started_line(foreign_core(ctx, status, _driving_binary(ctx, pin))))
+
+
+def _started_line(found: Optional[Foreign]) -> str:
+    if found is None:
+        return "started:   by the pack"
+    if found.unknown:
+        return f"started:   cannot tell ({found.reason})"
+    return f"started:   outside the pack ({found.reason}): run `gc herdr-core restart-core`"
 
 
 def _driving_binary(ctx: OpContext, pin: HcPin) -> str:
@@ -251,24 +259,22 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     owner = ownership(ctx, status)
     if not owner.own:
         raise CommandError(f"refusing to restart the core at {ctx.paths.socket}: it is not this city's core ({owner.reason})")
-    try:
-        env = ctx.host.procs.environ(status.pid)
-    except ProcError as err:
-        raise CommandError(f"cannot read the core's environment ({err}): run `gc herdr-core restart-core`") from None
-    expected = core_env(ctx, hc_bin)
-    reason = None if env is None else foreign_reason(env, expected)
-    if env is None or reason is not None:
+    found = foreign_core(ctx, status, hc_bin)
+    if found is not None:
         raise CommandError(
-            f"the city's core was started outside the pack ({reason or 'its environment cannot be read'}); a planned "
+            f"the city's core was started outside the pack ({found.reason}); a planned "
             "restart would keep that environment: run `gc herdr-core restart-core` instead"
         )
-    done = run_bounded(
-        [hc_bin, "server", "restart"],
-        env=expected,
-        cwd=ctx.paths.state_root,
-        timeout_s=ctx.request.deadline.budget(CORE_START_WAIT_S + STOP_WAIT_S),
-        cancel=ctx.request.cancel,
-    )
+    try:
+        run = run_starter(
+            ctx,
+            [hc_bin, "server", "restart"],
+            env=core_env(ctx, hc_bin),
+            timeout_s=ctx.request.deadline.budget(CORE_START_WAIT_S + STOP_WAIT_S),
+        )
+    except OpError as err:
+        raise CommandError(err.message) from None
+    done = run.done
     if not done.ok:
         detail = done.output.splitlines()[-1] if done.output else "no output"
         raise CommandError(f"hc server restart failed ({detail}); herdr-core {hello.version} stays installed to roll back to")
@@ -283,6 +289,10 @@ def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
         if time.monotonic() >= end:
             raise CommandError(f"the city's core does not run herdr-core {pin.version} after the restart")
         ctx.request.cancel.pause(0.1)
+    try:
+        record_started_core(ctx, run)  # hc server restart starts the new core
+    except OpError as err:
+        raise CommandError(err.message) from None
     out(f"handed the city's core over from herdr-core {hello.version} to {pin.version}; its sessions kept running")
 
 

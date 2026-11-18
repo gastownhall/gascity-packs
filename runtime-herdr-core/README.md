@@ -62,7 +62,7 @@ runtime-herdr-core/
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
         lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
-        inputs.py screen.py readiness.py server.py corescan.py
+        inputs.py screen.py readiness.py server.py corescan.py coreid.py
         pin.py install.py admin.py commands.py doctor.py appvis.py infra_argv.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
@@ -115,7 +115,9 @@ source = "<this pack>"
   fresh one under the allowlist: the fix for a core started outside the
   pack. Stopping a core ends its programs, so it refuses while the city
   runs or any terminal runs there (`gc stop` first). It refuses a core that is not the city's
-  (another user's, or one with another hc session or state root). Its
+  (another user's, or one whose core id is not the one hc keeps in the
+  city's state directory; where that id cannot be read, one with another
+  hc session or state root). Its
   start clears `server-stop`'s stopped mark, as a session start does.
 - **The binary.** The pinned install, unless the city's pack config
   (`<R>/pack/<city id>/config.json`) sets `hc_bin` and
@@ -163,14 +165,63 @@ checked against the app yet, so the sessions may not appear there.
   user, a fixed `PATH` (the hc binary's directory, then the system's), the
   locale, the discovery tuple, the pack-owned hc config, and the user
   manager's runtime directory and bus when they exist. No gc token or
-  provider credential reaches the core. `start` refuses a core whose
-  environment differs (someone else started it) and names the fix; a core
-  listening on another socket for this session is refused too. A core hc
-  placed under the systemd user manager is judged by its unit's environment
-  file (hc writes the starter's environment to
-  `$RUNTIME_DIRECTORY/environment`), not by the manager's own environment
-  block. On macOS, where a process's environment is read cut at
-  whitespace, a state root with whitespace is refused. A read that
+  provider credential reaches the core. A running core is judged by how
+  it was started: `start` refuses one someone else started and names the
+  fix, and refuses a core listening on another socket for this session
+  too. What is judged depends on where hc placed the core:
+  - **No service manager:** the core's live environment.
+  - **systemd user manager:** the unit's environment file, where hc
+    writes the starter's environment, never the manager's own block. The
+    file is read only when the core runs as an hc core unit: its
+    `RUNTIME_DIRECTORY` ends in `hc-serve-<8 hex>` and its control group
+    is that same unit, or, before systemd 244 (no `RUNTIME_DIRECTORY`),
+    its control group is an `hc-serve-<8 hex>.service`. Otherwise its live
+    environment is judged. A holder runs as a unit its core started, with
+    that core's environment, and when it restarts a crashed core it writes
+    its own environment, manager's block included, into the new core's
+    file. So when a `start` accepts a systemd core, the pack records the
+    core's environment less systemd's service variables, as a SHA-256
+    digest of each value by name (`core-lineage.json`, never a value),
+    and a file name the pack never sets passes only with the value
+    recorded for it. No live holder is asked, so a holder a foreign core
+    started never vouches for it. A core restarted by a holder of a core
+    no `start` accepted (or with names its manager's block gained since
+    that core started) is refused until `restart-core`.
+  - **macOS launchd:** the core runs with launchd's environment, which
+    never shows its starter's. Its command line names the process that
+    asked launchd for it and when. Before the pack waits on its own
+    `herdr-core server start` (or `server restart`), it adds that hc's
+    pid and when it ran it to its list of recent starts (`core-start.json`),
+    and when it ended; a core asked for by that pid in that time is the
+    pack's, even when the pack's hc timed out, or other starts of the pack
+    ran or checked since. An entry whose hc never ended (the pack was
+    killed waiting on it) counts for two minutes. When a `start` accepts a
+    launchd core, the pack records its pid, process start time and hc's
+    core id (`core-identity.json`), and a live core matching all of it is
+    the pack's. A core a holder of the city restarted after a crash is
+    judged by that holder's environment (`ps -E`), and only when the holder
+    started no later than the core was asked for; a `start` that accepts it
+    records it too, so it stays the pack's once that holder ends. Every
+    other launchd core is refused: one someone else's hc started,
+    including one that came up while the pack's own start ran, and one
+    whose starter pid was reused. Only `start` records: `status`, doctor
+    and `upgrade` only read. The records are private files of the pack's
+    state.
+
+  Where an environment is judged, the discovery tuple is compared by
+  value. Every other variable is judged by name only: it must be one the
+  pack's allowlist sets, a locale variable, hc's own marks, the terminal
+  settings `attach` passes, or, in a live environment, systemd's service
+  variables; in a unit's file, another name passes only with the value
+  the lineage records. Before its own `server start` the pack removes hc's restart
+  handoff (`restart-env.json` in the city's state directory), so a
+  restart someone else asked for does not hand its environment to the
+  pack's core; upgrade's `server restart` keeps it.
+  `restart-core` replaces a refused core with one the pack starts; it
+  knows the city's core by the core id hc keeps in the city's state
+  directory, so it needs no process environment. Where a
+  process's environment is read cut at whitespace (`ps -E`), a state root
+  with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
   most one at a time and none for five minutes after a failed start, and
   none while `server-stop` has parked the city (below).
@@ -357,8 +408,9 @@ checked against the app yet, so the sessions may not appear there.
 - **Activity.** A program that never reported OSC 7501 status is active
   when its screen changes: `inventory` and `get-last-activity` read the
   screen of each such running agent (hc keeps no output time). `inventory`
-  reads within its deadline, and a box whose screen it did not read on that
-  pass reads as active now, never at an old time.
+  reads within its deadline and stops when canceled, and reports no last
+  activity (`null`) for a box whose screen it did not read on that pass (a
+  failed read, the deadline), never an old time.
 - **Stop and kill-object** end the whole process tree: descendants captured
   before hc's kill, the incarnation's re-parented processes (a daemon a
   live agent started, every child of one already gone) found by its

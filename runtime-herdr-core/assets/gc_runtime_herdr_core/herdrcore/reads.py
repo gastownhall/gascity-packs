@@ -21,7 +21,7 @@ start, which clears the mark first, creates one.
 
 from __future__ import annotations
 
-from typing import Dict, Final, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcRpcError, HcUnreachable
@@ -175,22 +175,29 @@ SCREEN_READ_RESERVE_S: Final = 2.0
 def refresh_screens(ctx: OpContext, client: HcClient, records: Sequence[Terminal]) -> Dict[str, activity.Seen]:
     """Read the screen of every running agent that has never reported OSC 7501
     status (its only activity signal) and update the activity cache, one read
-    per such box while the op's deadline allows. Returns the cache without
-    the boxes this pass did not read, so they read as active now, never at a
-    stale time; their stored entries stay for the next comparison."""
-    seen = activity.cached(ctx)
+    per such box while the op's deadline allows, and one load and store of
+    the cache for them all. Returns the cache without the boxes this pass did
+    not read, so they report no last activity, never a stale time; their
+    stored entries stay for the next comparison. Raises
+    :class:`~..rpp.cancel.Cancelled` once the op is canceled."""
+    screens: Dict[str, str] = {}
+    unread: List[str] = []
     for record in records:
         obj = object_of(record)
         if obj is None or record.reported or not is_intact(record):
             continue
-        seen.pop(obj, None)
+        ctx.request.cancel.check()
         if ctx.request.deadline.remaining() <= SCREEN_READ_RESERVE_S:
+            unread.append(obj)
             continue
         try:
-            screen = client.read_screen(record.address).text
+            screens[obj] = client.read_screen(record.address).text
         except HcError:
-            continue
-        seen[obj] = activity.note_screen(ctx, obj, screen)
+            unread.append(obj)
+    ctx.request.cancel.check()
+    seen = activity.note_screens(ctx, screens)
+    for obj in unread:
+        seen.pop(obj, None)
     return seen
 
 
@@ -244,7 +251,7 @@ def _inventory_entry(
             is_attached = attached(ctx, record, viewers, object_of(record))
         except LockFileError:
             is_attached = None
-    last = rfc3339_ms(activity.last_activity_ms(ctx, record, activity.object_seen(record, seen))) if running else None
+    last = _last_activity(ctx, record, seen) if running else None
     return InventoryEntry(
         name=name,
         state="running" if running else "dead",
@@ -255,6 +262,15 @@ def _inventory_entry(
         restart_requested=None if not readable else bool(meta is not None and meta.values.get("GC_RESTART_REQUESTED")),
         identity=None if not readable else ({} if meta is None else meta.identity()),
     )
+
+
+def _last_activity(ctx: OpContext, record: Terminal, seen: Mapping[str, activity.Seen]) -> Optional[str]:
+    """A running box's last activity; None (unknown) for one that never
+    reported whose screen this pass did not read."""
+    entry = activity.object_seen(record, seen)
+    if not record.reported and (entry is None or not entry.changed_ms):
+        return None
+    return rfc3339_ms(activity.last_activity_ms(ctx, record, entry))
 
 
 # --- liveness --------------------------------------------------------------------------------

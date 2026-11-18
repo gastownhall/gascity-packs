@@ -10,7 +10,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 from cityharness import City, make_city
@@ -357,7 +357,7 @@ def test_inventory_refreshes_activity_of_agents_that_never_report(city: City) ->
 
 
 @pytest.mark.parametrize("miss", ["failed", "deadline"])
-def test_inventory_reads_a_screen_it_did_not_read_as_active_now(
+def test_inventory_reports_unknown_activity_for_a_screen_it_did_not_read(
     city: City, monkeypatch: pytest.MonkeyPatch, miss: str
 ) -> None:
     from gc_runtime_herdr_core.herdrcore import reads
@@ -368,9 +368,9 @@ def test_inventory_reads_a_screen_it_did_not_read_as_active_now(
     assert city.start("mc-a", start_config()).code == 0
     assert city.start("mc-b", start_config()).code == 0
 
-    def last() -> Dict[str, str]:
+    def last() -> Dict[str, Any]:
         doc = json.loads(city.run("inventory").stdout)
-        return {entry["name"]: str(entry["last_activity"]) for entry in doc["sessions"]}
+        return {entry["name"]: entry["last_activity"] for entry in doc["sessions"]}
 
     still = last()  # cat's screens stay as they are from here on
     assert still == {"mc-a": rfc3339_ms(clock[0]), "mc-b": rfc3339_ms(clock[0])}
@@ -381,11 +381,92 @@ def test_inventory_reads_a_screen_it_did_not_read_as_active_now(
             city.fake.fail_next("terminal.read", "unavailable", count=2)  # type: ignore[union-attr]
         else:
             patch.setattr(reads, "SCREEN_READ_RESERVE_S", 1e9)  # no time left for any read
-        now = rfc3339_ms(clock[0])
-        assert last() == {"mc-a": now, "mc-b": now}, "an hour-old time could let gc's idle arm stop a busy box"
+        # Neither the hour-old cached time (gc's idle arm could stop a busy
+        # box) nor "now" (a guess): the pass could not tell.
+        assert last() == {"mc-a": None, "mc-b": None}
     assert city.fake.call_count("terminal.read") == read_before + (2 if miss == "failed" else 0)  # type: ignore[union-attr]
     # The stored entries stay: reading the same screens again gives back their time.
     assert last() == still
+    # One failed read leaves only its own box unknown.
+    city.fake.fail_next("terminal.read", "unavailable", count=1)  # type: ignore[union-attr]
+    assert sorted(last().values(), key=str) == sorted([None, still["mc-a"]], key=str)
+
+
+def test_inventory_stops_reading_screens_once_canceled(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    from gc_runtime_herdr_core.hc.types import ReadResult
+    from gc_runtime_herdr_core.herdrcore import reads
+    from gc_runtime_herdr_core.rpp.cancel import Cancelled
+
+    for name in ("mc-a", "mc-b", "mc-c"):
+        assert city.start(name, start_config()).code == 0
+    ctx = city.context()
+    client = ctx.client(read=True)
+    records = reads.list_city(client, ctx)
+    original = client.read_screen
+
+    def read_then_cancel(address: str) -> ReadResult:
+        screen = original(address)
+        ctx.request.cancel.cancel("SIGTERM")  # gc cancels while the first read is out
+        return screen
+
+    monkeypatch.setattr(client, "read_screen", read_then_cancel)
+    before = city.fake.call_count("terminal.read")  # type: ignore[union-attr]
+    with pytest.raises(Cancelled):
+        reads.refresh_screens(ctx, client, records)
+    assert city.fake.call_count("terminal.read") == before + 1  # type: ignore[union-attr]
+
+
+def test_inventory_loads_and_stores_the_activity_cache_once_per_pass(
+    city: City, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gc_runtime_herdr_core.herdrcore import activity
+
+    names = [f"mc-{n}" for n in range(6)]
+    for name in names:
+        assert city.start(name, start_config()).code == 0
+    calls = {"load": 0, "store": 0}
+    load, store = activity._load, activity._store
+
+    def counted_load(ctx: Any) -> Any:
+        calls["load"] += 1
+        return load(ctx)
+
+    def counted_store(ctx: Any, seen: Any) -> None:
+        calls["store"] += 1
+        store(ctx, seen)
+
+    monkeypatch.setattr(activity, "_load", counted_load)
+    monkeypatch.setattr(activity, "_store", counted_store)
+    first = json.loads(city.run("inventory").stdout)
+    assert all(entry["last_activity"] for entry in first["sessions"])
+    assert calls == {"load": 1, "store": 1}, "every new screen goes in one store"
+    calls.update(load=0, store=0)
+    city.run("inventory")
+    assert calls == {"load": 1, "store": 0}, "nothing changed: nothing stored"
+
+
+def test_a_pass_with_no_screen_to_note_takes_no_activity_lock(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every box reported its own status (or none runs): the pass only reads
+    the cache, and never waits on the lock that input notes and other
+    inventories take."""
+    from gc_runtime_herdr_core.herdrcore import activity
+    from gc_runtime_herdr_core.herdrcore.context import OpContext
+
+    ctx = city.context()
+    locked: List[str] = []
+    real_lock = OpContext.lock
+
+    def counted_lock(self: OpContext, name: str, **kwargs: Any) -> Any:
+        locked.append(name)
+        return real_lock(self, name, **kwargs)
+
+    monkeypatch.setattr(OpContext, "lock", counted_lock)
+    assert activity.note_screens(ctx, {}) == {}
+    assert locked == []
+    activity.note_screens(ctx, {"obj-1": "screen"})
+    assert locked == ["activity"]
+    assert set(activity.note_screens(ctx, {})) == {"obj-1"}
+    assert locked == ["activity"]
 
 
 def test_a_lost_run_reply_is_found_by_its_object_never_sent_again(city: City) -> None:
