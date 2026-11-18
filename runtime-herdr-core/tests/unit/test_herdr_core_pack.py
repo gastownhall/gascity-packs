@@ -135,11 +135,14 @@ def test_only_the_entry_imports_the_op_table() -> None:
         for path, tree in runtime_sources()
         if path not in SCRIPTS
         for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        and (
-            (node.module or "").split(".")[-1] == "ops_table"
-            or any(alias.name == "ops_table" for alias in node.names)
+        if (
+            isinstance(node, ast.ImportFrom)
+            and (
+                (node.module or "").split(".")[-1] == "ops_table"
+                or any(alias.name == "ops_table" for alias in node.names)
+            )
         )
+        or (isinstance(node, ast.Import) and any(alias.name.split(".")[-1] == "ops_table" for alias in node.names))
     )
     assert importers == ["main.py"]
 
