@@ -601,7 +601,16 @@ within two minutes; if none do, the city execs another path: read it from
   `outcome.result.delivery.ack` containing `unconfirmed`.
 - **Op trace**: pairs `E`/`X` by pid, maps `mono_ns` to wall time with the
   samples' pairs, and gives per-minute spawns (all, controller-spawned, by
-  op = `argv[1]`), wall latency and CPU per op, and ops ended by a signal.
+  op = `argv[1]`), wall latency and CPU per op, and ops ended by a signal,
+  classed by who ended them. *closed*: `watch-startup` ended by SIGKILL (gc
+  ends every startup watch that way, one per start of an agent whose
+  provider lists `process_names` or sets `accept_startup_dialogs`).
+  *canceled*: SIGTERM before gc's timeout for the op less 1 s (a caller
+  stopped waiting, or a session's `stop` ended an op its own gc command
+  started). *overrun*: SIGTERM at or past that point. *killed*: SIGKILL on
+  any other op (it outlived gc's 2 s grace, or something else killed it).
+  *other*: any other signal. gc's timeouts: 30 s; 120 s for start and
+  provision; 4 s for observe and is-attached.
 - **Orphans**: a process of this user whose environment carries
   `GC_INSTANCE_TOKEN=T` and the city's `GC_CITY_PATH`, older than the
   window asked for, where no live box carries `T` (a box is a process whose
@@ -1053,8 +1062,9 @@ Soak pass criteria (both halves unless stated):
 
 Also reported with target 0, as warnings, not abort predicates: nudges lost
 or typed twice, orphans at the hourly scans, short-lived incarnations,
-unexplained core restarts or holder losses, ops ended by a signal, spawn
-files older than 5 minutes, workflows open after 30 minutes.
+unexplained core restarts or holder losses, ops killed, ended by another
+signal or overrun (a `watch-startup` closed by gc and a canceled op are
+expected), spawn files older than 5 minutes, workflows open after 30 minutes.
 
 ## 13. Abort predicates and the abort procedure
 
@@ -1093,7 +1103,9 @@ Warnings (logged and in the digest, never an abort): orphans older than 10
 minutes; any tmux server of this user; outside phase 1 to 3, fewer than 10
 or more than 20 live boxes for 15 minutes; no workflow root closed in 20
 minutes while load runs; nudges lost or duplicated; an unexplained core
-restart or holder loss; an op ended by a signal; a spawn file older than 5
+restart or holder loss; an op ended by a signal gc does not send by design
+(killed, other or overrun; closed and canceled are expected, see the op
+trace below), naming the ops; a spawn file older than 5
 minutes in `/run/user/<uid>/gc-herdr-core/`; memory available under 1 GiB;
 free disk under 10 GiB.
 
@@ -1134,7 +1146,7 @@ Every number in the report comes from one of these, for each phase window
 | sessions | starts, restarts by cause (probe, drill, unexplained), quarantines, controller starts, core restarts, holder losses | agent logs, events mirror, samples |
 | workflows | slung, closed, open after 30 minutes; sling → root closed p50/p95/max | `load.jsonl`, `gc bd show <id> --json` |
 | orphans | count at each hourly scan | `soak orphans` |
-| pack ops | per second: all, controller-spawned, per session, by op; wall latency p50/p95/p99 and CPU per op; ops ended by a signal | op trace |
+| pack ops | per second: all, controller-spawned, per session, by op; wall latency p50/p95/p99 and CPU per op; ops ended by a signal, by class (watch-startup closed by gc, canceled, killed, other, overrun) | op trace |
 | CPU | controller tree (supervisor incl. reaped children), controller-spawned op CPU, all of this user's CPU (`user@<uid>.service`) | samples, op trace |
 | core RSS | hour 2 median (reference), hourly medians, largest deviation; holder RSS | samples |
 | sizes | `R`, the city's hc state directory, `.gc`, `.beads`, events mirror | samples |
@@ -1234,7 +1246,7 @@ Disclosed doctor warnings:
 | S7 | no abort | yes | | | |
 
 Warnings (target 0): nudges lost or duplicated <...>; orphans <...>; short-lived incarnations <...>;
-unexplained core restarts / holder losses <...>; ops ended by a signal <...>; stale spawn files <...>;
+unexplained core restarts / holder losses <...>; ops killed, ended by another signal or overrun <...>; stale spawn files <...>;
 workflows open after 30 min <...>.
 
 ## Measurements

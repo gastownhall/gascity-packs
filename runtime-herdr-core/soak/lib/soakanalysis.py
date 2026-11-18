@@ -14,7 +14,7 @@ import math
 import re
 import statistics
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Final, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from soaklib import ProcInfo, Rec, descendants, is_infra, obj
 
@@ -368,6 +368,37 @@ def message_ops(events: Iterable[Rec], since: Optional[float] = None, until: Opt
 # --- the per-op trace ----------------------------------------------------------------------
 
 
+SIGKILL: Final = 9
+SIGTERM: Final = 15
+
+ENDED_CLOSED: Final = "closed"
+"""``watch-startup`` ended by SIGKILL: gc closes every startup watch that way."""
+ENDED_CANCELED: Final = "canceled"
+"""Ended by SIGTERM well inside gc's timeout: a caller stopped waiting, or a
+session stop ended an op the session's own gc command started."""
+ENDED_OVERRUN: Final = "overrun"
+"""Ended by SIGTERM at or past gc's timeout less the pack's 1 s margin."""
+ENDED_KILLED: Final = "killed"
+"""Any op but ``watch-startup`` ended by SIGKILL: it outlived gc's 2 s grace,
+or something else killed it."""
+ENDED_OTHER: Final = "other"
+"""Ended by any other signal."""
+ENDED_CLASSES: Final = (ENDED_CLOSED, ENDED_CANCELED, ENDED_KILLED, ENDED_OTHER, ENDED_OVERRUN)
+ENDED_UNEXPECTED: Final = (ENDED_KILLED, ENDED_OTHER, ENDED_OVERRUN)
+"""The classes gc does not produce by design."""
+
+GC_OP_TIMEOUT_MS: Final = 30_000
+"""gc's own timeout for an op it names no other for."""
+GC_OP_TIMEOUTS_MS: Final[Mapping[str, int]] = {"start": 120_000, "provision": 120_000, "observe": 4_000, "is-attached": 4_000}
+PACK_DEADLINE_MARGIN_MS: Final = 1_000
+"""The pack ends every inner wait this long before the op's deadline."""
+
+
+def gc_timeout_ms(op: str) -> int:
+    """gc's own timeout for ``op``."""
+    return GC_OP_TIMEOUTS_MS.get(op, GC_OP_TIMEOUT_MS)
+
+
 @dataclass
 class OpRun:
     pid: int
@@ -394,6 +425,20 @@ class OpRun:
     @property
     def status(self) -> Optional[int]:
         return None if self.exit_code is None else (self.exit_code >> 8) & 0xFF
+
+    @property
+    def ended_by(self) -> Optional[str]:
+        """Who ended the op, for an op ended by a signal (one of ``ENDED_CLASSES``); else None."""
+        sig = self.signal
+        if sig is None:
+            return None
+        if sig == SIGKILL:
+            return ENDED_CLOSED if self.op == "watch-startup" else ENDED_KILLED
+        if sig == SIGTERM:
+            if self.wall_ms is not None and self.wall_ms >= gc_timeout_ms(self.op) - PACK_DEADLINE_MARGIN_MS:
+                return ENDED_OVERRUN
+            return ENDED_CANCELED
+        return ENDED_OTHER
 
 
 def parse_optrace(lines: Iterable[str]) -> Tuple[List[OpRun], List[int]]:
@@ -481,6 +526,12 @@ class OpStats:
     latency_ms: Dict[str, List[int]] = field(default_factory=dict)
     cpu_us: Dict[str, List[int]] = field(default_factory=dict)
     signaled: int = 0
+    ended_by: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    """Ops ended by a signal: class (``ENDED_CLASSES``) -> op -> count."""
+
+    def ended_count(self, cls: str) -> int:
+        """How many ops ended by a signal of class ``cls``."""
+        return sum(self.ended_by.get(cls, {}).values())
 
     @property
     def rate_all(self) -> float:
@@ -524,8 +575,11 @@ def op_stats(
             stats.latency_ms.setdefault(run.op, []).append(run.wall_ms)
         if run.cpu_us is not None:
             stats.cpu_us.setdefault(run.op, []).append(run.cpu_us)
-        if run.signal is not None:
+        ended = run.ended_by
+        if ended is not None:
             stats.signaled += 1
+            per_op = stats.ended_by.setdefault(ended, {})
+            per_op[run.op] = per_op.get(run.op, 0) + 1
     return stats
 
 

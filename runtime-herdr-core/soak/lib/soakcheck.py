@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from soakanalysis import (
+    ENDED_UNEXPECTED,
     FT_DUPLICATED,
     FT_LOST,
     FirstTurn,
@@ -381,8 +382,12 @@ def evaluate(inp: Inputs, state: State, mode: str) -> Outcome:
         state.holders = list(inp.holders)
     if inp.core_pid:
         state.core_pid = inp.core_pid
-    if inp.ops is not None and inp.ops.signaled:
-        warn(Finding("W-op-signal", f"{inp.ops.signaled} op(s) ended by a signal in 15 minutes"))
+    if inp.ops is not None:
+        unexpected = [(cls, op, n) for cls in ENDED_UNEXPECTED for op, n in sorted(inp.ops.ended_by.get(cls, {}).items())]
+        if unexpected:
+            total = sum(n for _cls, _op, n in unexpected)
+            named = ", ".join(f"{cls} {op} x{n}" for cls, op, n in unexpected)
+            warn(Finding("W-op-signal", f"{total} op(s) ended by a signal gc does not send by design in 15 minutes: {named}"))
     if inp.stale_spawn_files:
         warn(Finding("W-spawn-files", f"{len(inp.stale_spawn_files)} spawn file(s) older than 5 minutes"))
     if inp.mem_avail_kib is not None and inp.mem_avail_kib < (1 << 20):

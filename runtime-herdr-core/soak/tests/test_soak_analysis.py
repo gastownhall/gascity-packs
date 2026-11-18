@@ -5,6 +5,11 @@ from typing import Dict, List
 from .soaktestkit import ProcTree, rec
 
 from soakanalysis import (
+    ENDED_CANCELED,
+    ENDED_CLOSED,
+    ENDED_KILLED,
+    ENDED_OTHER,
+    ENDED_OVERRUN,
     FT_DUPLICATED,
     FT_EXACT,
     FT_FAULTED,
@@ -263,3 +268,67 @@ def test_store_procs(proc_tree: ProcTree) -> None:
     proc_tree.add(43, "dolt", ppid=1, argv=["dolt", "sql-server"])
     snap = ProcFS(str(proc_tree.root)).snapshot()
     assert [p.pid for p in store_procs(snap, __import__("os").getuid())] == [40, 41]
+
+
+def test_an_op_ended_by_a_signal_is_classed_by_who_ended_it() -> None:
+    runs, _ = parse_optrace(
+        [
+            "E 1000000000 11 77 gc /p/gc-runtime-herdr-core watch-startup soak-1",
+            "X 1241000000 11 9 241 122000",
+            "E 2000000000 12 900 gc /p/gc-runtime-herdr-core set-meta soak-1 GC_DRAIN_ACK_SOURCE",
+            "X 2069000000 12 15 69 61000",
+            "E 3000000000 13 77 gc /p/gc-runtime-herdr-core is-running soak-1",
+            "X 3300000000 13 9 300 50000",
+            "E 4000000000 14 77 gc /p/gc-runtime-herdr-core observe",
+            "X 7990000000 14 15 3990 90000",
+            "E 8000000000 15 77 gc /p/gc-runtime-herdr-core peek soak-1 120",
+            "X 8010000000 15 11 10 5000",
+            "E 9000000000 16 77 gc /p/gc-runtime-herdr-core observe",
+            "X 9050000000 16 0 50 15000",
+            "E 10000000000 17 77 gc /p/gc-runtime-herdr-core observe",
+            "X 12999000000 17 15 2999 15000",
+            "E 13000000000 18 77 gc /p/gc-runtime-herdr-core start soak-2",
+            "X 13000000000 18 15 119000 15000",
+            "E 14000000000 19 77 gc /p/gc-runtime-herdr-core get-meta soak-2 X",
+            "X 14000000000 19 15 29000 15000",
+            "E 15000000000 20 77 gc /p/gc-runtime-herdr-core get-meta soak-2 X",
+            "X 15000000000 20 15 28999 15000",
+        ]
+    )
+    assert [r.ended_by for r in runs] == [
+        ENDED_CLOSED,
+        ENDED_CANCELED,
+        ENDED_KILLED,
+        ENDED_OVERRUN,
+        ENDED_OTHER,
+        None,
+        ENDED_CANCELED,
+        ENDED_OVERRUN,
+        ENDED_OVERRUN,
+        ENDED_CANCELED,
+    ]
+
+
+def test_op_stats_count_signaled_ops_per_class_and_name_them() -> None:
+    runs, _ = parse_optrace(
+        [
+            "E 1000000000 11 77 gc /e watch-startup a",
+            "X 1241000000 11 9 241 1",
+            "E 2000000000 12 77 gc /e watch-startup b",
+            "X 2241000000 12 9 241 1",
+            "E 3000000000 13 900 gc /e set-meta a K",
+            "X 3069000000 13 15 69 1",
+            "E 4000000000 14 77 gc /e is-running a",
+            "X 4300000000 14 9 300 1",
+            "E 5000000000 15 77 gc /e observe",
+            "X 5050000000 15 0 50 1",
+        ]
+    )
+    stats = op_stats(runs, 0.0, 0.0, 100.0, [], 1.0)
+    assert stats.signaled == 4
+    assert stats.ended_by == {
+        ENDED_CLOSED: {"watch-startup": 2},
+        ENDED_CANCELED: {"set-meta": 1},
+        ENDED_KILLED: {"is-running": 1},
+    }
+    assert stats.ended_count(ENDED_CLOSED) == 2 and stats.ended_count(ENDED_OVERRUN) == 0

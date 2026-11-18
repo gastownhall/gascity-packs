@@ -150,6 +150,30 @@ def test_render_markdown_has_the_soak_table_and_drills() -> None:
     assert summary.startswith("incarnations 3: exact 2, lost 0, duplicated 1")
 
 
+def test_render_markdown_counts_ops_ended_by_a_signal_by_who_ended_them() -> None:
+    src = inputs()
+    src.optrace = src.optrace + [
+        "E 5000000000 9001 77 gc /p/gc-runtime-herdr-core watch-startup s1",
+        "X 5241000000 9001 9 241 122000",
+        "E 6000000000 9002 77 gc /p/gc-runtime-herdr-core watch-startup s2",
+        "X 6300000000 9002 9 300 122000",
+        "E 7000000000 9003 900 gc /p/gc-runtime-herdr-core set-meta s1 K",
+        "X 7069000000 9003 15 69 61000",
+        "E 8000000000 9004 77 gc /p/gc-runtime-herdr-core is-running s1",
+        "X 8100000000 9004 9 100 1000",
+        "E 9000000000 9005 77 gc /p/gc-runtime-herdr-core observe",
+        "X 12990000000 9005 15 3990 1000",
+        "E 13000000000 9006 77 gc /p/gc-runtime-herdr-core peek s1 120",
+        "X 13010000000 9006 11 10 1000",
+    ]
+    text = render_markdown(compute(src))
+    assert (
+        "ops ended by a signal: 6 (watch-startup closed by gc 2; canceled 1; killed 1; other 1; overrun 1)" in text
+    )
+    clean = render_markdown(compute(inputs()))
+    assert "ops ended by a signal: 0 (watch-startup closed by gc 0; canceled 0; killed 0; other 0; overrun 0)" in clean
+
+
 def test_load_inputs_reads_a_data_directory(tmp_path: Path) -> None:
     data = tmp_path / "hc-soak"
     (data / "agents").mkdir(parents=True)

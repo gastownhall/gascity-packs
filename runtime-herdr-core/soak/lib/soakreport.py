@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from soakanalysis import (
+    ENDED_CANCELED,
+    ENDED_CLOSED,
+    ENDED_KILLED,
+    ENDED_OTHER,
+    ENDED_OVERRUN,
     FT_DUPLICATED,
     FT_EXACT,
     FT_LOST,
@@ -345,7 +350,9 @@ def _ops_lines(ops: Optional[OpStats], budget: Optional[float]) -> List[str]:
         f"per session {_f(ops.rate_ctl_per_session, 4)} (n = {ops.sessions:.1f}"
         + (f", budget {budget}" if budget is not None else "")
         + ")",
-        f"- controller-spawned op CPU: {_f(ops.ctl_cpu_cores, 4)} cores; ops ended by a signal: {ops.signaled}",
+        f"- controller-spawned op CPU: {_f(ops.ctl_cpu_cores, 4)} cores; ops ended by a signal: {ops.signaled} "
+        f"(watch-startup closed by gc {ops.ended_count(ENDED_CLOSED)}; canceled {ops.ended_count(ENDED_CANCELED)}; "
+        f"killed {ops.ended_count(ENDED_KILLED)}; other {ops.ended_count(ENDED_OTHER)}; overrun {ops.ended_count(ENDED_OVERRUN)})",
     ]
     top = sorted(ops.by_op.items(), key=lambda kv: -kv[1])[:8]
     if top and ops.seconds > 0:

@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, List
+from typing import Any, Dict, List
 
 import pytest
 
 from soaklib import City
-from soakanalysis import FT_DUPLICATED, FT_EXACT, FT_LOST, FirstTurn, HcProc, NudgeVerdict, OpStats
+from soakanalysis import (
+    ENDED_CANCELED,
+    ENDED_CLOSED,
+    ENDED_KILLED,
+    ENDED_OTHER,
+    ENDED_OVERRUN,
+    FT_DUPLICATED,
+    FT_EXACT,
+    FT_LOST,
+    FirstTurn,
+    HcProc,
+    NudgeVerdict,
+    OpStats,
+)
 from soakcheck import (
     HIT,
     OK,
@@ -307,3 +320,33 @@ def test_read_new_and_tail_lines(tmp_path: Path) -> None:
 @pytest.mark.parametrize("mode", ["warn", "abort"])
 def test_mode_is_recorded(mode: str) -> None:
     assert evaluate(healthy(), primed(), mode).as_rec()["mode"] == mode
+
+
+def signaled_ops(ended_by: Dict[str, Dict[str, int]]) -> OpStats:
+    return OpStats(
+        seconds=900.0,
+        sessions=12.0,
+        ops=900,
+        ctl_ops=800,
+        ctl_cpu_us=0,
+        signaled=sum(sum(per_op.values()) for per_op in ended_by.values()),
+        ended_by=ended_by,
+    )
+
+
+def test_gcs_designed_ends_raise_no_op_signal_warning() -> None:
+    designed = signaled_ops({ENDED_CLOSED: {"watch-startup": 14}, ENDED_CANCELED: {"set-meta": 1}})
+    out = evaluate(healthy(ops=designed), primed(), "abort")
+    assert out.status == OK and "W-op-signal" not in warning_ids(out)
+
+
+@pytest.mark.parametrize(
+    "cls, op, word",
+    [(ENDED_KILLED, "is-running", "killed"), (ENDED_OTHER, "peek", "other"), (ENDED_OVERRUN, "observe", "overrun")],
+)
+def test_an_op_signal_warning_names_the_unexpected_ends(cls: str, op: str, word: str) -> None:
+    ops = signaled_ops({ENDED_CLOSED: {"watch-startup": 14}, ENDED_CANCELED: {"set-meta": 1}, cls: {op: 2}})
+    out = evaluate(healthy(ops=ops), primed(), "abort")
+    found = [w for w in out.warnings if w.id == "W-op-signal"]
+    assert ids(out) == [] and len(found) == 1
+    assert found[0].reason == f"2 op(s) ended by a signal gc does not send by design in 15 minutes: {word} {op} x2"
