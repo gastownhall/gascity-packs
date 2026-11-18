@@ -24,6 +24,11 @@ from cityharness import City
 from gc_runtime_herdr_core.herdrcore.context import Host
 from gc_runtime_herdr_core.herdrcore.ops_table import OP_SPECS, build_ops
 
+pytestmark = pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="the scan ops read /proc on Linux; elsewhere they run ps, through subprocess",
+)
+
 PACK_ROOT = Path(__file__).resolve().parents[2]
 ENTRY = PACK_ROOT / "assets" / "bin" / "gc-runtime-herdr-core"
 PACKAGE = "gc_runtime_herdr_core"
