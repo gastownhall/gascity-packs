@@ -42,6 +42,10 @@ def session_list_payload(sessions: list[dict[str, object]]) -> dict[str, object]
 
 def run_nudge(tmp_path: Path, payload: dict[str, object]) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     if shutil.which("jq") is None:
+        # A skip in CI would let the suite go green without exercising the
+        # script, so only local runs may skip.
+        if os.environ.get("CI"):
+            pytest.fail("jq is required to run nudge-project-leads.sh and CI is set")
         pytest.skip("jq is required to run nudge-project-leads.sh")
 
     bin_dir = tmp_path / "bin"
