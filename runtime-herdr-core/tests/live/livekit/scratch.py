@@ -44,6 +44,8 @@ AGENT = LIVE_DIR / "agent.py"
 STANDIN = LIVE_DIR / "standin.py"
 STANDIN_NAMES = ("__gc-managed-dolt-scope-watchdog", "db-proxy-child", "dolt")
 STOP_TIMEOUT_S = 60.0
+CITY_NAME = "hclive"
+"""The scratch city's name, as gc names a city to its runtime."""
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,16 @@ class Scratch:
             env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={self.runtime_dir}/bus"
             if rescope:
                 env["GC_HC_TEST_USERSCOPE"] = "1"
+        return env
+
+    def gc_env(self, *, rescope: bool = False) -> Dict[str, str]:
+        """The environment gc's own checks (``gc runtime check`` and
+        ``gc runtime conformance``) run with: the pack's, in the scratch city
+        named as gc names a city. The pack starts no core for an op that
+        names no city; gc's kit names its own cities only for the checks
+        that compare two."""
+        env = self.pack_env(rescope=rescope)
+        env["GC_EXEC_CITY_NAME"] = CITY_NAME
         return env
 
     def paths(self) -> HcPaths:

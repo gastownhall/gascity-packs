@@ -819,8 +819,10 @@ Suites (each in its own scratch `GC_EXEC_STATE_DIR`; teardown stops every
 core under it and fails if any hc process or unit of the run is left):
 
 - `gc runtime check` and `gc runtime conformance --json` against the real hc
-  (gc at the same pinned gascity commit as the fake-hc job): v2-ready, no
-  failed requirement;
+  (gc at the same pinned gascity commit as the fake-hc job), in a named
+  scratch city (`GC_EXEC_CITY_NAME` and `GC_EXEC_CITY_PATH`), since the pack
+  starts no session for an op that names no city: v2-ready, no failed
+  requirement;
 - each lane really is its placement;
 - holder crashes: infrastructure stand-ins with gc's and bd's infrastructure
   argv, started detached from an agent's shell, under a holder SIGKILL (K1)

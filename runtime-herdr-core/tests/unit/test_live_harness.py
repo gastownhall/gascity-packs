@@ -31,7 +31,7 @@ from livekit.fetch import FetchError, fetch_pinned, unverified
 from livekit.hcrpc import HcRpc
 from livekit.owned import NotOwned, Ownership
 from livekit.pack import Pack
-from livekit.scratch import Scratch, open_scratch
+from livekit.scratch import CITY_NAME, Scratch, open_scratch
 
 PACK_ROOT = Path(__file__).resolve().parents[2]
 LIVE_DIR = PACK_ROOT / "tests" / "live"
@@ -458,6 +458,19 @@ def test_the_pack_env_carries_the_lane_and_never_the_callers_state(scratch: Scra
     assert "GC_HC_TEST_USERSCOPE" not in env  # nothing to re-scope out of without one
     assert env["GC_HC_TEST_SPAWN_ROOT"] == scratch.spawn_root
     assert env["GC_EXEC_CITY_PATH"] == scratch.city_path
+
+
+def test_gcs_own_checks_run_in_the_scratch_city(scratch: Scratch) -> None:
+    # The pack starts no core for an op that names no city, so gc runtime
+    # check and conformance must run in one: the scratch city, named.
+    import importlib
+
+    gc_env = importlib.import_module("test_live_conformance")._gc_env
+    for env in (scratch.gc_env(), gc_env(scratch)):
+        assert env["GC_EXEC_CITY_PATH"] == scratch.city_path
+        assert env["GC_EXEC_CITY_NAME"] == CITY_NAME
+        assert env["GC_EXEC_STATE_DIR"] == scratch.state_root
+    assert os.path.isdir(scratch.city_path)
 
 
 def test_the_systemd_lane_leaves_spawn_files_at_their_production_location(fake_bin: Path) -> None:

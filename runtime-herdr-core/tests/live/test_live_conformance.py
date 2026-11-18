@@ -16,9 +16,7 @@ TIMEOUT_S = 900
 
 
 def _gc_env(scratch: Scratch) -> Dict[str, str]:
-    env = scratch.pack_env(rescope=scratch.lane == "systemd")
-    del env["GC_EXEC_CITY_PATH"]  # the kit names its own cities
-    return env
+    return scratch.gc_env(rescope=scratch.lane == "systemd")
 
 
 def test_gc_runtime_check_passes(scratch: Scratch, gc_bin: str) -> None:
