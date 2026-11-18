@@ -170,4 +170,5 @@ def test_runtime_herdr_core_runs_its_op_import_guard_on_the_newest_python() -> N
         step = steps[names.index(name)]
         assert step.get("if") == "matrix.target == '3.12'", f"{name!r} runs once, on the 3.12 leg"
         assert "continue-on-error" not in step, f"{name!r} must block merges"
-    assert "python -m pytest tests/unit/test_op_imports.py" in steps[-1]["run"]
+    # The whole command, so "|| true" or a "-k" filter cannot switch it off.
+    assert steps[-1]["run"].strip() == "python -m pytest tests/unit/test_op_imports.py -q", steps[-1]["run"]
