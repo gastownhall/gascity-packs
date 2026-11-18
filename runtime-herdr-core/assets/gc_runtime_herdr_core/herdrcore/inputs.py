@@ -43,12 +43,12 @@ types, so ``observe`` keeps answering within its 4 s.
 from __future__ import annotations
 
 import string
-from dataclasses import dataclass
 from typing import Final, List, Mapping, Optional, Sequence, Tuple, Union
 
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcGateError, HcRpcError, HcUnreachable
 from ..hc.types import SendResult, Terminal
+from ..rpp.frozen import frozen
 from ..rpp.ops import OpResult
 from ..rpp.outcome import InputOp, InputOutcome, OutcomeWord, outcome_result
 from . import activity
@@ -167,7 +167,7 @@ by gc's own kill reads as a failure, and the queue would resend the text."""
 UNSUPPORTED_CORE: Final = "hc version unsupported: run gc doctor"
 
 
-@dataclass(frozen=True)
+@frozen
 class Unknown:
     """An answer gc reads as untyped (exit 1): the outcome is unknown, or the
     failure is no outcome gc acts on."""

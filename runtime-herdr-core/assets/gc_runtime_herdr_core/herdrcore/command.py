@@ -12,15 +12,15 @@ import os
 import signal
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from typing import Callable, Final, Mapping, Optional, Sequence
 
 from ..rpp.cancel import POLL_INTERVAL_S, CancelToken
+from ..rpp.frozen import frozen
 
 OUTPUT_TAIL_BYTES: Final = 4 << 10
 
 
-@dataclass(frozen=True)
+@frozen
 class Completed:
     returncode: Optional[int]
     """None when the command was killed at its timeout."""

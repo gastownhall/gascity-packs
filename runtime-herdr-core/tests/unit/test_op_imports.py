@@ -59,10 +59,16 @@ HEAVY_STDLIB: FrozenSet[str] = frozenset(
         "ssl",
         "urllib.request",
         "http.client",
+        "dataclasses",
+        "inspect",
+        "ast",
+        "dis",
+        "tokenize",
     }
 )
 """Standard library modules no hot op needs: process spawning, archives,
-the network stack, and modules that only cold paths use."""
+the network stack, modules that only cold paths use, and dataclasses with
+what it imports (records use :mod:`gc_runtime_herdr_core.rpp.frozen`)."""
 
 NEVER: FrozenSet[str] = frozenset(
     {

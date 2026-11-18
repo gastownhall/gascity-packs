@@ -53,9 +53,9 @@ from __future__ import annotations
 import os
 import sys
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Collection, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from ..rpp.frozen import frozen, replace
 from .infra_argv import is_infrastructure_argv
 
 INTERPRETERS: Final = frozenset({"node", "bun", "npx", "deno"})
@@ -81,7 +81,7 @@ class ProcError(Exception):
     """The process table cannot be read."""
 
 
-@dataclass(frozen=True)
+@frozen
 class Proc:
     """One process as the snapshot saw it."""
 

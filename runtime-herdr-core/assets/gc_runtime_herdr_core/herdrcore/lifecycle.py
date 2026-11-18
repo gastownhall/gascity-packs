@@ -108,7 +108,6 @@ import os
 import shutil
 import sys
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from ..hc.client import HcClient
@@ -117,6 +116,7 @@ from ..hc.types import RunSpec, Terminal
 from ..rpp.cancel import Cancelled
 from ..rpp.exitcodes import ExitCode
 from ..rpp.flock import LockTimeout
+from ..rpp.frozen import frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError, OpResult
 from ..rpp.outcome import InputOutcome
@@ -407,7 +407,7 @@ def _read_meta(ctx: OpContext, record: Terminal) -> Optional[Meta]:
         return None
 
 
-@dataclass
+@frozen
 class _Refusals:
     """A start's recycle: what may survive a record the start goes ahead
     beside, and when each record still refused stops being refused (ms),
@@ -636,7 +636,7 @@ def _systemd_run(ctx: OpContext) -> Optional[str]:
     return shutil.which("systemd-run", path="/usr/bin:/bin:/usr/local/bin")
 
 
-@dataclass(frozen=True)
+@frozen
 class CoreProcess:
     """The core process a probe ran under: its pid and start time."""
 
@@ -1026,7 +1026,7 @@ def _fail_if_ended(client: HcClient, record: Terminal, cfg: StartConfig) -> None
 # --- the first turn ----------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@frozen
 class _Unready:
     """A wait that ended without readiness: the terminal to type the first
     turn into all the same, and why it was not seen ready."""

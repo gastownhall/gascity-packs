@@ -647,6 +647,15 @@ send held past the deadline) and `dead` (every record reads finished).
   (UTF-8) or more, `GC_INSTANCE_TOKEN` always, and secret-looking
   assignments. Tracebacks appear only under `GC_HERDR_CORE_DEBUG=1`,
   redacted too.
+- **Per-op cost.** gc runs every op as a fresh process, so every import is
+  paid on every call. Each op loads only its own modules: the op table names
+  each handler by module and imports it when the op runs, and the modules
+  and standard library that only cold paths need are imported where they
+  are used (`tests/unit/test_op_imports.py` fails when a hot op loads one).
+  Value records use `rpp.frozen` rather than `dataclasses`: a frozen
+  dataclass costs about a millisecond per class per process to define on
+  CPython 3.9-3.14, which a one-process-per-op runtime pays on every op.
+  `tests/bench_ops.py` measures each op's CPU (see Tests).
 
 ## Tests
 

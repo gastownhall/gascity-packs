@@ -7,7 +7,6 @@ stand-in holder processes."""
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import os
 import socket as unix_socket
@@ -39,6 +38,7 @@ from gc_runtime_herdr_core.herdrcore.procs import (
     ProcSource,
 )
 from gc_runtime_herdr_core.herdrcore.server import sweep_without_core
+from gc_runtime_herdr_core.rpp import frozen
 from gc_runtime_herdr_core.rpp.ops import OpError
 
 FAKE_BOOT = "00000000-0000-4000-8000-000000000001"
@@ -654,7 +654,7 @@ class MarkOpaque(ProcSource):
 
     def snapshot(self) -> Dict[int, Proc]:
         table = self.inner.snapshot()
-        return {pid: dataclasses.replace(p, opaque=True) if pid in self.hidden else p for pid, p in table.items()}
+        return {pid: frozen.replace(p, opaque=True) if pid in self.hidden else p for pid, p in table.items()}
 
     def environ(self, pid: int) -> Optional[Dict[str, str]]:
         return None if pid in self.hidden else self.inner.environ(pid)

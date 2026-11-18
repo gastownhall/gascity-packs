@@ -21,11 +21,11 @@ a busy box. Its stored entry stays for the next comparison.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 from typing import Callable, Dict, Final, Iterable, Mapping, Optional
 
 from ..hc.types import Terminal
 from ..rpp.flock import LockFileError, LockTimeout
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError
 from .config import read_private_file, write_private_file
@@ -37,7 +37,7 @@ ACTIVE_WORDS: Final = frozenset({"working", "blocked"})
 _LOCK_WAIT_S: Final = 0.5
 
 
-@dataclass(frozen=True)
+@frozen
 class Seen:
     screen_hash: str = ""
     changed_ms: int = 0

@@ -40,10 +40,10 @@ import _thread
 import itertools
 import socket
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Literal, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from ..rpp.cancel import DEADLINE_MARGIN_S, POLL_INTERVAL_S, CancelToken, Deadline
+from ..rpp.frozen import frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from .errors import (
     HcCancelled,
@@ -106,7 +106,7 @@ MAX_REPLY_BYTES: Final = 16 << 20
 _RECV_BYTES: Final = 1 << 16
 
 
-@dataclass(frozen=True)
+@frozen
 class _Budget:
     """A call's timeout rule: at most ``cap``, ending ``margin`` before the op's deadline."""
 
@@ -114,7 +114,7 @@ class _Budget:
     margin: float = DEADLINE_MARGIN_S
 
 
-@dataclass(frozen=True)
+@frozen
 class CallTimeouts:
     """Per-call timeout caps, before the deadline cut.
 

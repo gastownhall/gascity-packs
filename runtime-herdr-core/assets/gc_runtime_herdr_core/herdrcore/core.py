@@ -59,13 +59,13 @@ import os
 import pwd
 import subprocess
 import time
-from dataclasses import dataclass
 from typing import Callable, Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Set
 
 from ..hc.errors import HcError, HcUnreachable
 from ..hc.paths import ensure_dirs
 from ..hc.types import StatusResult
 from ..rpp.flock import LockTimeout
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError
 from ..rpp.statedir import StateDirError
@@ -375,7 +375,7 @@ def check_core_lock(ctx: OpContext) -> None:
     )
 
 
-@dataclass(frozen=True)
+@frozen
 class StarterRun:
     """An hc the pack ran to start the core (:func:`run_starter`)."""
 
@@ -501,7 +501,7 @@ def unpark(ctx: OpContext) -> None:
         raise OpError(f"cannot clear the city's stopped mark: {err}") from None
 
 
-@dataclass(frozen=True)
+@frozen
 class Foreign:
     """Why the city's core is not taken as the pack's (:func:`foreign_core`)."""
 
@@ -632,7 +632,7 @@ def ensure_core(ctx: OpContext) -> str:
 # --- kick ------------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@frozen
 class KickRecord:
     at_ms: int
     ok: bool

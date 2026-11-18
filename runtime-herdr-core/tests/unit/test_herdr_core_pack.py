@@ -55,6 +55,28 @@ def test_no_top_level_scripts_dir() -> None:
     assert not (PACK_ROOT / "scripts").exists()
 
 
+def _is_type_checking(test: ast.expr) -> bool:
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+
+def runtime_imports(tree: ast.Module) -> Iterator[str]:
+    """The absolute modules ``tree`` imports when it runs: everything but
+    the bodies of ``if TYPE_CHECKING:`` blocks (their ``else`` runs)."""
+    stack: List[ast.AST] = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.If) and _is_type_checking(node.test):
+            stack.extend(node.orelse)
+            continue
+        if isinstance(node, ast.Import):
+            yield from (alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            yield node.module
+        stack.extend(ast.iter_child_nodes(node))
+
+
 def test_runtime_imports_only_the_standard_library() -> None:
     names = getattr(sys, "stdlib_module_names", None)  # 3.10+
     if names is None:
@@ -62,17 +84,30 @@ def test_runtime_imports_only_the_standard_library() -> None:
     stdlib = set(names)
     offenders = []
     for path, tree in runtime_sources():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                names = [node.module]
-            else:
-                continue
-            for name in names:
-                top = name.split(".")[0]
-                if top not in stdlib and top != "gc_runtime_herdr_core":
-                    offenders.append(f"{path.relative_to(PACK_ROOT)}: {name}")
+        for name in runtime_imports(tree):
+            top = name.split(".")[0]
+            if top not in stdlib and top != "gc_runtime_herdr_core":
+                offenders.append(f"{path.relative_to(PACK_ROOT)}: {name}")
+    assert offenders == []
+
+
+def test_runtime_imports_follow_type_checking_blocks() -> None:
+    tree = ast.parse(
+        "import a\nif TYPE_CHECKING:\n    import b\nelse:\n    import c\nif typing.TYPE_CHECKING:\n    import d\n"
+        "def f():\n    import e\n"
+    )
+    assert sorted(runtime_imports(tree)) == ["a", "c", "e"]
+
+
+def test_runtime_never_imports_dataclasses() -> None:
+    # A frozen dataclass costs about a millisecond per class to define, in
+    # every op process; records use rpp.frozen (see the README's Foundations).
+    offenders = [
+        f"{path.relative_to(PACK_ROOT)}: {name}"
+        for path, tree in runtime_sources()
+        for name in runtime_imports(tree)
+        if name.split(".")[0] == "dataclasses"
+    ]
     assert offenders == []
 
 

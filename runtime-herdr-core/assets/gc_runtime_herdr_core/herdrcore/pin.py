@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
 from typing import Dict, Final, Mapping, Optional, Tuple
 
 from ..hc.version import GENERATION, Version, VersionPolicy
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, loads
 
 PIN_FILE: Final = "hc-pin.json"
@@ -27,7 +27,7 @@ class PinError(Exception):
     """The pin is missing or malformed: the pack has no hc build to drive."""
 
 
-@dataclass(frozen=True)
+@frozen
 class PinTarget:
     """One platform's release asset (a ``.tar.gz`` holding the binary) and its sha256."""
 
@@ -35,7 +35,7 @@ class PinTarget:
     sha256: str
 
 
-@dataclass(frozen=True)
+@frozen
 class HcPin:
     """``hc-pin.json``."""
 
