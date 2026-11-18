@@ -628,10 +628,36 @@ send held past the deadline) and `dead` (every record reads finished).
   `<session>.holder.<8hex>.sock` sockets hc binds beside it
   (herdr-core `crates/herdr-core/src/paths.rs`), moves to
   `/tmp/gc-herdr-core-<uid>/`.
-- **Deadlines.** An op's deadline is `GC_EXEC_DEADLINE_MS` when gc sends it
-  (no gc release does yet), else gc's own timeout for the op (30 s; 120 s for
-  start; 4 s for observe and is-attached). Every inner wait ends at least
-  1 s before it.
+- **Deadlines.** An op's deadline is `GC_EXEC_DEADLINE_MS` when gc sends it,
+  else gc's own timeout for the op (30 s; 120 s for start; 4 s for observe
+  and is-attached). gc sends it (gastownhall/gascity#9012) on every op but
+  `attach`, and on `watch-startup` only when its start has a deadline
+  (`[session] startup_timeout`, 60 s by default). Every inner wait ends at
+  least 1 s before it.
+- **How ops end.** When gc cancels an op (its deadline passed, or the caller
+  stopped waiting) it sends SIGTERM to the op's process group and SIGKILL
+  2 s later, and reports the op canceled whatever it exits with. The runner
+  turns SIGTERM into exit 1 (`<op>: canceled (terminated)`); a SIGTERM that
+  arrives while Python is still loading the pack, before anything is read or
+  written, ends the process by the signal instead.
+
+  `watch-startup` is different. It streams the screen until gc stops
+  reading, and gc then ends it with SIGKILL to the process, with no SIGTERM
+  first. Every `watch-startup` ends that way: one per start of an agent
+  whose provider lists `process_names` or sets `accept_startup_dialogs`,
+  usually within a second. It ends itself (exit 0) only 1 s before its
+  deadline. It only reads the name's records and the box's screen over hc's
+  socket. It starts no process, and it writes nothing to stderr while it
+  streams (gc would read stderr as the stream failing and recheck the screen
+  with `peek`). So the kill leaves nothing behind.
+
+  A session's `stop` ends its whole process tree, so an op started by a gc
+  command inside the session (an agent acknowledging a drain, say) can also
+  end by SIGTERM.
+
+  In an op trace, then, `watch-startup` ending by signal 9 and an occasional
+  op ending by signal 15 are expected. Any other op ending by signal 9
+  outlived gc's 2 s grace, or something else killed it.
 - **The hc client.** One plain-mode connection per call, and every
   connection opens with the core's hello, gated (generation 1, at least the
   policy's minimum version) before the call is written on it: a core

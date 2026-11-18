@@ -29,8 +29,8 @@ from .ops import OpError, OpRequest, OpResult, OpTable, deadline_for
 from .redact import Redactor
 
 DEADLINE_ENV: Final = "GC_EXEC_DEADLINE_MS"
-"""Milliseconds left before gc stops waiting for the op, when gc says so. No
-gc release sends it yet; the op then has gc's own timeout for it."""
+"""Milliseconds left before gc stops waiting for the op, when gc says so. gc
+sends it (gastownhall/gascity#9012); without it the op has gc's own timeout."""
 
 _DEADLINE_MS: Final = re.compile(r"[0-9]{1,12}")
 _STDIN_CHUNK: Final = 1 << 16
