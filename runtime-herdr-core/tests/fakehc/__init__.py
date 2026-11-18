@@ -6,6 +6,6 @@ can kill unrelated processes on the host.
 
 from __future__ import annotations
 
-from .server import Call, FakeHc
+from .server import Call, FakeHc, hc_installed_by
 
-__all__ = ["Call", "FakeHc"]
+__all__ = ["Call", "FakeHc", "hc_installed_by"]

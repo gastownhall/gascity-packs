@@ -9,9 +9,12 @@ reports a warning) and 1 to 1.5 s per hc call.
 
 * ``hc-binary``: the pinned build is installed and matches the pin.
 * ``hc-core``: the running core's version gate, the foreign-core check, the
-  core's binary, a crash-looping start, a core down while the city runs
-  (unless ``server-stop`` parked it), and the user-manager and lingering
-  hints that apply to a running core.
+  core's binary and where it came from, a crash-looping start, a core down
+  while the city runs (unless ``server-stop`` parked it), and the
+  user-manager and lingering hints that apply to a running core. hc names
+  any binary in a folder it cannot write as from a ``system package
+  manager``, so the pack's own read-only install of the pinned build is
+  recognised first, by its path and the pin's sha256 (:func:`_pinned_build`).
 * ``hc-scope-hygiene``: no city infrastructure runs under herdr-core.
 * ``hc-state-perms``: hc's state for the city is private.
 
@@ -40,7 +43,7 @@ from .context import Host, OpContext
 from .core import FOREIGN_FIX, KICK_BACKOFF_MS, core_env, foreign_core, parked, read_kick
 from .infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB, infrastructure_prefix
 from .install import verify_installed, writable
-from .pin import PinError, host_target, load_pin
+from .pin import HcPin, PinError, host_target, load_pin
 from .procs import Proc, ProcError, ProcSource, Snapshot
 
 CHECK_BUDGET_S: Final = 10.0
@@ -179,6 +182,20 @@ def _exe_problem(exe: str, root: str, operator_bin: Optional[str]) -> Optional[s
     return f"the core runs {exe}, not the pack's build under {root} (updated or started outside the pack): {RESTART_FIX}"
 
 
+def _pinned_build(exe: Optional[str], pin: HcPin, root: str, pinned: str) -> bool:
+    """Whether the core's executable ``exe`` is the pack's own install of the
+    pin, unchanged since it was installed: the pinned path, whose
+    ``install.json`` records the pin's sha256 for this platform and the
+    file's own. hc reports that install as from a ``system package
+    manager`` (it is read-only, so ``hc update`` cannot replace it)."""
+    if not exe or exe.endswith(DELETED_SUFFIX) or os.path.realpath(exe) != os.path.realpath(pinned):
+        return False
+    try:
+        return verify_installed(pin, root, host_target()) is None
+    except PinError:
+        return False
+
+
 def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR, platform: str = sys.platform) -> Report:
     """The city's core: reachable while the city runs, gated, the pack's own."""
     report = Report()
@@ -237,14 +254,14 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR, platform: str = 
     except HcError as err:
         report.note(Status.WARNING, f"cannot read the core's status: {err}")
         return report
-    if status.installed_by:
+    exe = ctx.host.procs.exe(status.pid)
+    if status.installed_by and (operator_bin is not None or not _pinned_build(exe, pin, root, pinned)):
         report.note(Status.WARNING, f"the core's hc came from {status.installed_by}, which updates it outside the pin")
     expected = core_env(ctx, hc_bin or pinned)
     procs = ctx.host.procs
     found = foreign_core(ctx, status, hc_bin or pinned)
     if found is not None:
         report.note(Status.ERROR, f"{FOREIGN_FIX} ({found.reason})")
-    exe = procs.exe(status.pid)
     problem = _exe_problem(exe, root, operator_bin) if exe else None
     if problem is not None:
         report.note(Status.ERROR, problem)
@@ -261,8 +278,7 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR, platform: str = 
     if not running:
         report.note(
             Status.WARNING,
-            f"the city is stopped but its core still runs (pid {status.pid}, {status.live} live terminal(s)): "
-            "a read of one of the city's sessions starts it again after `gc stop`",
+            f"the city is stopped but its core still runs (pid {status.pid}, {status.live} live terminal(s))",
         )
     return report
 

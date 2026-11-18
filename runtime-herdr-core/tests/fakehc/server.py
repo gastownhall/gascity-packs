@@ -56,6 +56,26 @@ METHODS: Tuple[str, ...] = (
 FEATURES: Tuple[str, ...] = ("framed", "attach", "events", "status", "shell", "resize_notifications", "automatic_input")
 """hello's ``features`` at v0.1.19 (hc ``src/api.rs``)."""
 
+PACKAGE_MANAGER_MARKS: Tuple[Tuple[str, str], ...] = (("/Cellar/", "homebrew"), ("/nix/store/", "nix"), ("/mise/installs/", "mise"))
+"""hc ``client.rs`` ``manager_of``: a path mark and the manager it names."""
+
+SYSTEM_PACKAGE_MANAGER = "system package manager"
+
+
+def hc_installed_by(exe: str) -> Optional[str]:
+    """What hc v0.1.19 reports as ``installed_by`` for a core running ``exe``
+    (``client.rs`` ``installed_by_path``): the manager a path mark names,
+    else ``system package manager`` when the binary's folder is not one this
+    user may write and search (``platform/unix.rs`` ``can_replace``), else None."""
+    path = os.path.realpath(exe)
+    for mark, manager in PACKAGE_MANAGER_MARKS:
+        if mark in path:
+            return manager
+    if os.access(os.path.dirname(path), os.W_OK | os.X_OK):
+        return None
+    return SYSTEM_PACKAGE_MANAGER
+
+
 _NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,31}")
 _ID_SHAPED = re.compile(r"t[1-9][0-9bcdfghjkmnpqrstvwxyz]*")
 _SYMBOLS = "0123456789bcdfghjkmnpqrstvwxyz"
@@ -138,11 +158,15 @@ class FakeHc:
         base_env: Optional[Mapping[str, str]] = None,
         next_version_file: Optional[str] = None,
         core_id: Optional[str] = None,
+        installed_by: Optional[str] = None,
     ) -> None:
         """``next_version_file``: where ``hc server restart`` from another
         build leaves that build's version, which the core runs after a
         planned restart (a real core is replaced by the new binary).
-        ``core_id``: the core's permanent id (a new one when None)."""
+        ``core_id``: the core's permanent id (a new one when None).
+        ``installed_by``: what ``server.status`` reports as the binary's
+        origin (:func:`hc_installed_by` computes what hc would)."""
+        self._installed_by = installed_by
         self.socket_path = socket_path
         self._next_version_file = next_version_file
         self._version = version
@@ -537,7 +561,7 @@ class FakeHc:
             "holders": [holder],
             "live": live,
             "finished": len(terminals) - live,
-            "installed_by": None,
+            "installed_by": self._installed_by,
         }
 
     def _server_stop(self, params: Params) -> Dict[str, Any]:

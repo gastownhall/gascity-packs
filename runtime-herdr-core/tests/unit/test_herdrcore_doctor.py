@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import pytest
-from fakehc import FakeHc
+from fakehc import FakeHc, hc_installed_by
 from fakehc.procfs import add_proc, add_unix_socket
 
 from gc_runtime_herdr_core.hc.paths import HcPaths, ensure_dirs, resolve_paths
@@ -34,6 +34,8 @@ PACK = Path(__file__).resolve().parents[2]
 STUB = b"#!/bin/sh\nexit 0\n"
 CORE_PID = os.getpid()
 """The in-process fake core's pid, as ``server.status`` reports it."""
+AS_HC_REPORTS = "as hc reports it"
+"""``start_core``'s default ``installed_by``: what hc reports for the core's executable."""
 
 
 def pack_script_env(city: Path, extra: Mapping[str, str]) -> Dict[str, str]:
@@ -121,11 +123,16 @@ class DoctorCity:
         exe: Optional[str] = None,
         cgroup: Optional[str] = None,
         argv: Optional[List[str]] = None,
+        installed_by: Optional[str] = AS_HC_REPORTS,
     ) -> FakeHc:
         """Serve the city's socket with a core of ``version`` that runs, by
-        default, the pack's install of that version."""
+        default, the pack's install of that version, and reports its origin
+        as hc would for that executable (:func:`fakehc.hc_installed_by`)."""
         ensure_dirs(self.paths)
-        self.fake = FakeHc(self.paths.socket, version=version)
+        exe = exe or str(self.install_root / version / "herdr-core")
+        if installed_by == AS_HC_REPORTS:
+            installed_by = hc_installed_by(exe[: -len(doctor.DELETED_SUFFIX)] if exe.endswith(doctor.DELETED_SUFFIX) else exe)
+        self.fake = FakeHc(self.paths.socket, version=version, installed_by=installed_by)
         self.fake.start()
         add_proc(
             self.proc,
@@ -133,7 +140,7 @@ class DoctorCity:
             ppid=1,
             argv=argv or [str(self.hc_bin), "serve"],
             env=self.expected_core_env() if environ is None else environ,
-            exe=exe or str(self.install_root / version / "herdr-core"),
+            exe=exe,
             cgroup=cgroup,
         )
         return self.fake
@@ -309,6 +316,73 @@ def test_hc_core_passes_for_the_packs_own_pinned_core(dc: DoctorCity) -> None:
     dc.start_core()
     code, lines = dc.run("hc-core")
     assert (code, lines[0]) == (0, "the city's core runs herdr-core 0.1.19"), lines
+
+
+def test_hc_reports_the_packs_read_only_install_as_a_system_package_managers(dc: DoctorCity) -> None:
+    """The premise: the pack installs the pinned build read-only so that ``hc
+    update`` cannot replace it, and hc names any binary in a folder it cannot
+    write as from a ``system package manager``."""
+    if os.getuid() == 0:
+        pytest.skip("root may write any folder")
+    dc.install_pinned()
+    assert hc_installed_by(str(dc.hc_bin)) == "system package manager"
+
+
+def test_hc_core_takes_the_packs_own_pinned_build_for_what_it_is(dc: DoctorCity) -> None:
+    dc.install_pinned()
+    dc.run_city()
+    dc.start_core(installed_by="system package manager")
+    code, lines = dc.run("hc-core")
+    assert (code, lines[0]) == (0, "the city's core runs herdr-core 0.1.19"), lines
+    assert not any("package manager" in line for line in lines), lines
+
+
+def _change_pinned(dc: DoctorCity) -> None:
+    dc.hc_bin.parent.chmod(0o755)
+    dc.hc_bin.chmod(0o755)
+    dc.hc_bin.write_bytes(STUB + b"# changed\n")
+    dc.hc_bin.chmod(0o555)
+    dc.hc_bin.parent.chmod(0o555)
+
+
+@pytest.mark.parametrize("origin", ["homebrew", "changed-since-install", "replaced-under-the-core", "unreadable-executable"])
+def test_hc_core_warns_for_any_other_origin(dc: DoctorCity, origin: str) -> None:
+    """Only the pack's own pinned build, unchanged since its install, is
+    recognised; ``installed_by`` is trusted for every other origin."""
+    dc.install_pinned()
+    dc.run_city()
+    exe: Optional[str] = None
+    if origin == "homebrew":
+        exe = "/opt/homebrew/Cellar/herdr-core/0.1.19/bin/herdr-core"
+    elif origin == "replaced-under-the-core":
+        exe = str(dc.hc_bin) + doctor.DELETED_SUFFIX
+    expected = "homebrew" if origin == "homebrew" else "system package manager"
+    dc.start_core(exe=exe, installed_by=expected)
+    if origin == "changed-since-install":
+        _change_pinned(dc)
+    elif origin == "unreadable-executable":
+        (dc.proc / str(CORE_PID) / "exe").unlink()
+    code, lines = dc.run("hc-core")
+    assert code >= 1, lines
+    assert f"the core's hc came from {expected}, which updates it outside the pin" in lines, lines
+
+
+def test_hc_core_warns_when_an_operators_hc_bin_comes_from_a_package_manager(dc: DoctorCity) -> None:
+    dc.install_pinned()
+    dc.run_city()
+    operator = dc.tmp / "opt" / "bin" / "herdr-core"
+    operator.parent.mkdir(parents=True)
+    operator.write_bytes(STUB)
+    operator.chmod(0o555)
+    operator.parent.chmod(0o555)
+    try:
+        pack_config(dc, {"hc_bin": str(operator), "allow_unpinned": True})
+        dc.start_core(exe=str(operator), installed_by="system package manager")
+        code, lines = dc.run("hc-core")
+        assert code >= 1, lines
+        assert "the core's hc came from system package manager, which updates it outside the pin" in lines, lines
+    finally:
+        operator.parent.chmod(0o755)
 
 
 def test_hc_core_warns_when_the_core_differs_from_the_pin(dc: DoctorCity) -> None:
