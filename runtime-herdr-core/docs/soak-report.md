@@ -93,7 +93,7 @@ Disclosed doctor warnings (bring-up and every later doctor run):
 | `runtime-herdr-core:hc-core` | the core's herdr-core "came from the system package manager" | a misreading of the pack's own install; gastownhall/gascity-packs#656 |
 | `fork-rate` | about 250 forks/s | the per-command data plane plus the pack's per-op processes (see Measurements) |
 | `conversation-lanes` | no lane-status reply | pre-start runs only: the controller was not running yet; ok once it ran |
-| `proxied-backup-coverage` | no bd backup destination is configured | pre-start runs only: the city's backup order had not run yet; ok once it ran |
+| `proxied-backup-coverage` | the store has no backup destination configured | pre-start runs only: the city's backup order had not run yet; ok once it ran |
 | `order-tracking-retention` | 501 or more closed order-tracking beads | the A1 v2 doctor and the final doctor: stock order intervals over hours of running; advisory, and gc's retention watchdog prunes them |
 
 ## Switch to v2
