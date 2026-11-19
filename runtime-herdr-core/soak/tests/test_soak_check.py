@@ -255,6 +255,8 @@ def test_ap5_over_budget_never_aborts_while_a_correctness_predicate_still_does(t
 
 
 INTEGRITY_HIT = [(False, "error: checksum mismatch in chunk")]
+ABORT_TIMERS = ("soak-hc-soak-v2-switch.timer", "soak-hc-soak-end.timer")
+"""The scheduled switch and end of the rig's city, which the abort stops."""
 
 
 class AbortRig:
@@ -336,7 +338,7 @@ def test_an_abort_whose_capture_fails_still_stops_the_city(tmp_path: Path, monke
     rig = AbortRig(tmp_path, monkeypatch, stop_codes=[0], capture_error=OSError(errno.ENOSPC, "No space left on device"))
     assert rig.check(health=INTEGRITY_HIT) == 0
     assert rig.calls == [
-        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"),
+        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer", *ABORT_TIMERS),
         ("gc", "stop", str(tmp_path)),
     ]
     assert rig.aborted().splitlines()[1:] == [
@@ -432,7 +434,7 @@ def test_the_abort_is_on_disk_before_its_first_step(tmp_path: Path, monkeypatch:
     rig.check(health=INTEGRITY_HIT)
     assert on_disk == [True]
     assert rig.calls == [
-        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"),
+        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer", *ABORT_TIMERS),
         ("capture",),
         ("gc", "stop", str(tmp_path)),
     ]
@@ -469,7 +471,7 @@ def test_an_abort_whose_records_cannot_be_written_still_stops_the_city(full: str
     with pytest.raises(OSError, match="No space left on device"):
         rig.check(health=INTEGRITY_HIT)
     assert rig.calls == [
-        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"),
+        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer", *ABORT_TIMERS),
         ("gc", "stop", str(tmp_path)),
     ]
     assert rig.state().aborted and rig.state().stopped

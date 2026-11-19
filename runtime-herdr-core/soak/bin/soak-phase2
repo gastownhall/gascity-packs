@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Phase 2 of the soak runbook (and the scheduled switch at T0 + 12 h of the
-# soak): drop session_reconciler so the controller boots v2 by default,
+# Phase 2 of the soak runbook (and a soak's scheduled switch at the end of
+# its legacy half): drop session_reconciler so the controller boots v2 by default,
 # restart the supervisor, and check what v2 adopted and restarted.
 #
 #   soak-phase2 hc-bringup v2-switch --drill   (phase 2: ends with an agent-kill drill)
-#   soak-phase2 hc-soak soak-v2                (the soak's switch: no drill)
+#   soak-phase2 hc-soak soak-v2                (Soak 1's switch: no drill)
+#   soak-phase2 hc-soak2 soak-v2               (Soak 2's, from its VM timer)
 set -euo pipefail
 
 CITY_NAME="${1:?usage: soak-phase2 <city> <phase> [--drill]}"
@@ -17,6 +18,11 @@ SETTLE_S="${SOAK_V2_SETTLE_S:-1800}"
 CHECKS=(--check exec-runtime-identity --check ownerless-runtimes --check daemon-session-reconciler)
 
 "$SOAK" guard
+# The soak's switch runs from a VM timer (`soak schedule`): never on an aborted city.
+if [ -e "$DATA/ABORTED" ]; then
+  echo "soak-phase2: $CITY_NAME was aborted; no switch (see $DATA/ABORTED)" >&2
+  exit 1
+fi
 cd "$CITY"
 "$SOAK" phase "$PHASE"
 gc doctor "${CHECKS[@]}" --json > "$DATA/v2-before.json" || true

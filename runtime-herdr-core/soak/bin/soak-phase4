@@ -1,25 +1,42 @@
 #!/usr/bin/env bash
-# Phase 4 of the soak runbook: start the 24-hour soak (`soak-phase4 start`)
-# or end it (`soak-phase4 end`, at T0 + 24 h). The switch at T0 + 12 h is
-# `soak-phase2 hc-soak soak-v2`.
+# Phase 4 of the soak runbook: start a soak (`soak-phase4 start [profile]`)
+# or end it (`soak-phase4 end [profile]`). The profile (`soak profile`, default
+# soak1) names the city, its shape, its load and the length of each half.
+# `start` schedules the switch to v2 (`soak-phase2 <city> soak-v2`) at the end
+# of the legacy half and `soak-phase4 end <profile>` at the end of the v2
+# half as transient VM timers (`soak schedule`).
 set -euo pipefail
 
+ACTION="${1:-}"
+PROFILE="${2:-soak1}"
 SOAK="$HOME/soak/bin/soak"
-CITY_NAME=hc-soak
-CITY="$HOME/cities/$CITY_NAME"
-DATA="$HOME/soak-data/$CITY_NAME"
 
 "$SOAK" guard
-case "${1:-}" in
+prof=$("$SOAK" profile "$PROFILE")
+CITY_NAME=$(jq -r .city <<<"$prof")
+STEADY=$(jq -r .steady <<<"$prof")
+BURST=$(jq -r .burst <<<"$prof")
+LOAD=$(jq -r .load <<<"$prof")
+MODE=$(jq -r .mode <<<"$prof")
+CITY="$HOME/cities/$CITY_NAME"
+DATA=$(jq -r .data <<<"$prof")
+
+case "$ACTION" in
   start)
-    "$SOAK" city-init "$CITY_NAME" --steady 6 --burst 10 --mode abort --load soak
+    "$SOAK" city-init "$CITY_NAME" --steady "$STEADY" --burst "$BURST" --mode "$MODE" --load "$LOAD"
     gc start "$CITY"
-    "$SOAK" wait --steady 6 --first-turns --timeout 900
+    "$SOAK" wait --steady "$STEADY" --first-turns --timeout 900
     "$SOAK" phase soak-legacy
     systemctl --user enable --now soak-sample.service soak-load.service soak-check.timer soak-probe.timer
     "$SOAK" note operator soak-start "T0"
+    "$SOAK" schedule "$PROFILE"
+    "$SOAK" note operator soak-schedule "$(jq -c '{legacy_s, v2_s}' <<<"$prof")"
     ;;
   end)
+    if [ -e "$DATA/ABORTED" ]; then
+      echo "soak-phase4 end: $CITY_NAME was aborted; nothing runs (see $DATA/ABORTED)" >&2
+      exit 1
+    fi
     "$SOAK" phase soak-end
     systemctl --user stop soak-load.service soak-probe.timer
     echo "waiting 15 minutes for the last turns and nudges to settle"
@@ -43,7 +60,7 @@ case "${1:-}" in
     echo "final check exit $final; final scan exit $scan; report: $DATA/report.md"
     ;;
   *)
-    echo "usage: soak-phase4 start|end" >&2
+    echo "usage: soak-phase4 start|end [profile]" >&2
     exit 2
     ;;
 esac

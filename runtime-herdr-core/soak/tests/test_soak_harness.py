@@ -51,7 +51,7 @@ def test_bash_phase_scripts_refuse_off_the_soak_vm(tmp_path: Path) -> None:
 def test_the_parser_knows_every_runbook_subcommand() -> None:
     wanted = (
         "city-init toml-set toml-del phase note wait snapshot hc-status store placement load probe sample check "
-        "capture conf-teardown orphans drill report guard final-scan"
+        "capture conf-teardown conf-run profile schedule orphans drill report guard final-scan"
     ).split()
     sub = next(a for a in parser()._actions if a.dest == "cmd")
     assert sorted(sub.choices) == sorted(wanted)  # type: ignore[arg-type]

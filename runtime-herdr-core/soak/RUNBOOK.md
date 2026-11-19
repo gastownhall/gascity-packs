@@ -11,7 +11,7 @@ logs and fake-hc only. Results go to `runtime-herdr-core/docs/soak-report.md`
 Contents: 0 what a pass shows · 1 ground rules (1.1 decisions for Soak 1) · 2 pinned versions · 3 VM
 layout · 4 provision the VM · 5 toolchain · 6 pack, live tier, harness ·
 7 the harness · 8 the city · 9 phase 1 bring-up · 10 phase 2 v2 switch ·
-11 phase 3 fault drills · 12 phase 4 the 24-hour soak · 13 abort predicates
+11 phase 3 fault drills · 12 phase 4 the 24-hour soak (12.1 Soak 2) · 13 abort predicates
 and the abort procedure · 14 metrics · 15 report template · 16 teardown.
 
 ## 0. What a pass shows
@@ -151,6 +151,7 @@ Accepted defaults:
 | `~/venv` | pytest for the live tier |
 | `~/cities/hc-bringup` | the city of phases 1 to 3 |
 | `~/cities/hc-soak` | the city of phase 4 (fresh, same configuration, larger) |
+| `~/cities/hc-soak2` | the city of Soak 2 (section 12.1; fresh, the same as `hc-soak`) |
 | `~/soak-data/<city>/` | everything the harness writes for one city (below) |
 | `~/soak-data/current` | symlink to the active city's data directory |
 | `~/soak-data/optrace/optrace.log` | the per-op trace (root's bpftrace unit) |
@@ -370,10 +371,11 @@ soak/
   bin/soak-agent                  the scripted agent (7.1)
   bin/soak                        city-init, toml-set, toml-del, phase, note, wait, snapshot,
                                   hc-status, store, placement, load, probe, sample, check,
-                                  capture, conf-teardown, orphans, drill, report, final-scan, guard
+                                  capture, conf-teardown, conf-run, profile, schedule, orphans,
+                                  drill, report, final-scan, guard
   bin/soak-phase1                 phase 1 end to end (section 9)
   bin/soak-phase2                 the switch to v2 (section 10, and the soak's switch at T0 + 12 h)
-  bin/soak-phase4                 `start` and `end` of the 24-hour soak (section 12)
+  bin/soak-phase4                 `start` and `end` of a soak, by profile (section 12, 12.1)
   bin/soak-optrace.bt             per-op exec/exit trace (7.5)
   lib/soaklib.py                  shared: guard, paths, /proc, JSON lines, commands, pidfd signals
   lib/soakanalysis.py             the analyses of 7.6 (pure)
@@ -385,6 +387,8 @@ soak/
   lib/soakcapture.py              evidence bundles; what of a stopped city remains
   lib/soakhc.py                   the core tuple, server.status, the conformance teardown
   lib/soakdrill.py                the fault drills (section 11)
+  lib/soakconf.py                 gc's runtime check and conformance in a scratch city (section 9)
+  lib/soakprofile.py              the soak profiles and their VM timers (section 12.1)
   lib/soakreport.py               metrics and the Markdown report (section 14)
   lib/soakcli.py                  the subcommands
   city/                           templates rendered by `soak city-init` (section 8)
@@ -862,17 +866,26 @@ systemctl --user enable --now soak-sample.service soak-load.service soak-check.t
 sleep 1800                                                          # 30 minutes of bring-up load
 ```
 
-Then the conformance run, against a scratch state root while the city runs:
+Then the conformance run, in a scratch city and state root while the city
+runs. The pack starts no session or core for an op that names no city
+(`GC_EXEC_CITY_PATH` unset), and the pinned gc gives `gc runtime check` and
+`gc runtime conformance` no city of their own, so both run with
+`GC_EXEC_CITY_NAME`, `GC_EXEC_CITY_PATH` and `GC_EXEC_STATE_DIR` under one
+fresh scratch directory (never a live city's path: the conformance kit
+starts and ends sessions in the city it is given). `soak-phase1` runs it as
+`soak conf-run "$E" ~/soak-data/hc-bringup`, which writes the four files
+below and `conf-run.json` (`check`, `conformance`, `teardown`,
+`scratch_removed`) and removes the scratch directory whatever failed; by hand:
 
 ```bash
 snap=$(~/soak/bin/soak snapshot)                 # core pid, holders, every box's pid and start ticks
 S=$(mktemp -d /tmp/hcconf.XXXXXX) && install -d -m 0700 "$S/state" && cd "$S"
 touch ~/soak-data/hc-bringup/CONFORMANCE         # soak check skips the foreign-core predicate meanwhile
 E=~/packs/runtime-herdr-core/assets/bin/gc-runtime-herdr-core
-GC_EXEC_STATE_DIR="$S/state" gc runtime check "$E" > ~/soak-data/hc-bringup/runtime-check.txt 2>&1; echo "check=$?"
-GC_EXEC_STATE_DIR="$S/state" gc runtime conformance --json "$E" \
+GC_EXEC_CITY_NAME=soak-conf-scratch GC_EXEC_CITY_PATH="$S/city" GC_EXEC_STATE_DIR="$S/state" gc runtime check "$E" > ~/soak-data/hc-bringup/runtime-check.txt 2>&1; echo "check=$?"
+GC_EXEC_CITY_NAME=soak-conf-scratch GC_EXEC_CITY_PATH="$S/city" GC_EXEC_STATE_DIR="$S/state" gc runtime conformance --json "$E" \
   > ~/soak-data/hc-bringup/conformance.json 2> ~/soak-data/hc-bringup/conformance.err; echo "conformance=$?"
-~/soak/bin/soak conf-teardown "$S/state"
+~/soak/bin/soak conf-teardown "$S/state" > ~/soak-data/hc-bringup/conf-teardown.json
 cd ~ && rm -rf "$S" && rm -f ~/soak-data/hc-bringup/CONFORMANCE
 ~/soak/bin/soak snapshot --compare "$snap"
 jq '{ok, v2_ready, failed: [.results[] | select((.status|ascii_downcase) == "fail") | .code]}' \
@@ -1101,11 +1114,44 @@ unexplained core restarts or holder losses, ops killed, ended by another
 signal or overrun (a `watch-startup` closed by gc and a canceled op are
 expected), spawn files older than 5 minutes, workflows open after 30 minutes.
 
+### 12.1 Soak 2: a shorter repeat on the pack that skips needless cores
+
+Soak 2 runs the same procedure on a fresh city, `hc-soak2`, on the same VM
+and the same pinned gc (`6cf1cccd640df81542d19b3a9270fdfc8c296a5b`), with
+the pack at a commit that has the per-op CPU cut (#657) and the core-start
+discipline (#656). Its profile (`soak profile soak2`) keeps Soak 1's city
+shape (6 always-on and 0 to 10 burst scripted agents), its load rate
+(`--load soak`) and abort mode, and halves each phase: 6 hours legacy, then
+6 hours v2. Its data goes to `~/soak-data/hc-soak2`; Soak 1's
+`~/soak-data/hc-soak` is left as it is, as the reference. The decisions of
+section 1.1 hold unchanged (AP5 record-only, the default bd-proxied store
+only, scripted agents, no model credential).
+
+```bash
+~/soak/bin/soak-phase4 start soak2
+```
+
+runs the setup above for `hc-soak2` and then `soak schedule soak2`, which
+creates two transient timers in the soak user's manager (`systemd-run
+--user --on-active=…`, the caller's `PATH` passed on):
+
+| Timer | Fires | Runs |
+|---|---|---|
+| `soak-hc-soak2-v2-switch.timer` | T0 + 6 h | `soak-phase2 hc-soak2 soak-v2` |
+| `soak-hc-soak2-end.timer` | T0 + 12 h | `soak-phase4 end soak2` |
+
+`systemctl --user list-timers 'soak-hc-soak2-*'` shows them;
+`journalctl --user -u soak-hc-soak2-v2-switch.service` (and `-end`) shows
+what each ran. Both scripts refuse when `ABORTED` exists, and the abort
+procedure stops both timers. `soak report --city hc-soak2` and `soak check`
+read the data directory as for Soak 1; the halves are the `soak-legacy` and
+`soak-v2` phases whatever their length. Watching is as for Soak 1.
+
 ## 13. Abort predicates and the abort procedure
 
 `soak check` evaluates every predicate every 5 minutes. In `abort` mode
 (phase 4) any hit aborts at once; in `warn` mode it is logged. AP5 is
-record-only for Soak 1 (section 1.1): it never hits, warns with its numbers
+record-only for Soak 1 and Soak 2 (section 1.1): it never hits, warns with its numbers
 when over its limit, and its unreadable inputs do not count towards AP9. Each run
 appends one record to `check.jsonl` and one line to `check.log`
 (`<time> <phase> OK|WARN|HIT <ids> <reason>`). Budgets use `n`, the mean
@@ -1151,8 +1197,9 @@ free disk under 10 GiB.
 
 **The abort procedure** (`soak check`, on the first hit in `abort` mode):
 
-1. Write `ABORTED` (time, phase, hits). Stop `soak-load` and
-   `soak-probe.timer`.
+1. Write `ABORTED` (time, phase, hits). Stop `soak-load`,
+   `soak-probe.timer` and the city's scheduled switch and end timers
+   (`soak schedule`, section 12.1).
 2. Capture first (`soak capture`), into `captures/<time>.tar.gz`:
    `gc trace status`; `gc trace reasons --since 30m`;
    `gc trace show --since 30m --type cycle_result --json`;
