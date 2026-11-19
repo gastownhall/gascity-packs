@@ -346,3 +346,39 @@ def test_a_core_restart_keeps_a_holder_only_while_programs_remain(fake_hc: FakeH
     run(fake_hc, short_tmp, "exec cat")
     fake_hc.restart_core()
     assert raw_call(fake_hc.socket_path, "server.status", {})["result"]["holders"] != []
+
+
+def test_send_settle_refuses_a_young_terminals_send(short_tmp: Path) -> None:
+    # hc refuses terminal.send "unavailable" in a terminal's first seconds,
+    # typing nothing; keys are not held back.
+    fake = FakeHc(str(short_tmp / "hc.sock"), send_settle_s=0.6)
+    fake.start()
+    try:
+        address = str(run(fake, short_tmp, "exec cat")["address"])
+        reply = raw_call(fake.socket_path, "terminal.send", {"terminal": address, "text": "early"})
+        assert reply["error"]["data"]["kind"] == "unavailable"
+        assert fake.input_log(address) == []
+        time.sleep(0.7)
+        assert "result" in raw_call(fake.socket_path, "terminal.send", {"terminal": address, "text": "late"})
+        assert fake.input_log(address) == ["late"]
+    finally:
+        fake.close()
+    assert fake.schema_violations == []
+
+
+def test_a_send_gate_refuses_every_send_while_its_file_exists(short_tmp: Path) -> None:
+    gate = short_tmp / "send-gate"
+    gate.write_text("")
+    fake = FakeHc(str(short_tmp / "hc.sock"), send_gate=str(gate))
+    fake.start()
+    try:
+        address = str(run(fake, short_tmp, "exec cat")["address"])
+        reply = raw_call(fake.socket_path, "terminal.send", {"terminal": address, "text": "held"})
+        assert reply["error"]["data"]["kind"] == "unavailable"
+        assert fake.input_log(address) == []
+        gate.unlink()
+        assert "result" in raw_call(fake.socket_path, "terminal.send", {"terminal": address, "text": "taken"})
+        assert fake.input_log(address) == ["taken"]
+    finally:
+        fake.close()
+    assert fake.schema_violations == []

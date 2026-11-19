@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, cas
 
 from .hcconfig import HcConfigError, config_path, load_hc_config
 from .schema import SchemaGuard
-from .terminal import KEPT_RESTART_S, FakeTerminal, key_bytes
+from .terminal import KEPT_RESTART_S, FakeTerminal, key_bytes, now_ms
 
 METHODS: Tuple[str, ...] = (
     "hello",
@@ -159,14 +159,22 @@ class FakeHc:
         next_version_file: Optional[str] = None,
         core_id: Optional[str] = None,
         installed_by: Optional[str] = None,
+        send_settle_s: float = 0.0,
+        send_gate: Optional[str] = None,
     ) -> None:
         """``next_version_file``: where ``hc server restart`` from another
         build leaves that build's version, which the core runs after a
         planned restart (a real core is replaced by the new binary).
         ``core_id``: the core's permanent id (a new one when None).
         ``installed_by``: what ``server.status`` reports as the binary's
-        origin (:func:`hc_installed_by` computes what hc would)."""
+        origin (:func:`hc_installed_by` computes what hc would).
+        ``send_settle_s``: hc's send-settle rule, a terminal's sends in its
+        first seconds refused ``unavailable`` with nothing typed (0: off).
+        ``send_gate``: a file while which exists every send is refused so
+        (a test's on-demand refusal, released by removing it)."""
         self._installed_by = installed_by
+        self._send_settle_s = send_settle_s
+        self._send_gate = send_gate
         self.socket_path = socket_path
         self._next_version_file = next_version_file
         self._version = version
@@ -694,6 +702,12 @@ class FakeHc:
         self._check_program(terminal)
         return terminal
 
+    def _check_settled(self, terminal: FakeTerminal) -> None:
+        if (self._send_settle_s > 0 and now_ms() - terminal.created_ms < self._send_settle_s * 1000) or (
+            self._send_gate is not None and os.path.exists(self._send_gate)
+        ):
+            raise RpcFailure("unavailable", f"{terminal.address} is still settling; nothing was typed")
+
     @staticmethod
     def _check_program(terminal: FakeTerminal) -> None:
         # hc input.rs / terminals.rs check_program: input needs a live record
@@ -710,6 +724,7 @@ class FakeHc:
 
     def _send(self, params: Params) -> Dict[str, Any]:
         terminal = self._live(params)
+        self._check_settled(terminal)
         text = str(params.get("text", ""))
         with terminal.input_lock:
             self._wait_quiet(terminal)

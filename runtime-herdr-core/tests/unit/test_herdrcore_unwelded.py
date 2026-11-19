@@ -20,10 +20,14 @@ from typing import Any, Dict, Iterator, List
 
 import pytest
 from cityharness import City, in_thread, make_city
+from fakehc.cli import SEND_GATE_ENV, write_launcher
 from conftest import teardown_cores
 from fakehc.rawclient import raw_call
+from test_herdrcore_core import core_environ, entry_env, invoke
+from test_herdrcore_inputs import answer
 from test_herdrcore_server import no_core_started
 
+from gc_runtime_herdr_core.hc.paths import resolve_paths
 from gc_runtime_herdr_core.herdrcore import provisioned
 from gc_runtime_herdr_core.herdrcore.lifecycle import STARTUP_UNCONFIRMED_KEY
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, scan_environ
@@ -370,6 +374,63 @@ def test_stop_drops_the_record_with_the_core_down(city: City) -> None:
     done = city.run("stop", "mc-a")
     assert done.code == 0, done.stderr
     assert not record_path(city, "mc-a").exists()
+
+
+@pytest.fixture
+def settling(short_tmp: Path, home_dir: Path) -> Iterator[City]:
+    """A city whose core refuses a terminal's sends in its first seconds, as hc does."""
+    made = make_city(short_tmp, home_dir)
+    made.start_core(send_settle_s=4.0)
+    try:
+        yield made
+    finally:
+        teardown_cores(made.root / "R")
+        if made.fake is not None:
+            made.fake.close()
+            assert made.fake.schema_violations == []
+
+
+def test_a_first_turn_sent_while_the_terminal_settles_is_not_sent(settling: City) -> None:
+    # gc's queue may deliver the first turn early in the terminal's life:
+    # hc's settle refusal is not_sent, nothing typed, and the retry lands once.
+    assert provision(settling, fresh_only=True).code == 0
+    assert launch(settling, fresh_only=True).code == 0
+    [record] = settling.terminals()
+    early = settling.run("nudge", "mc-a", stdin=b"first turn")
+    assert answer(early) == (80, "not_sent"), early.stderr
+    assert settling.fake.input_log(str(record["address"])) == []  # type: ignore[union-attr]
+    deadline = time.monotonic() + 10.0
+    while True:
+        done = settling.run("nudge", "mc-a", stdin=b"first turn")
+        if done.code == 0:
+            break
+        assert answer(done) == (80, "not_sent") and time.monotonic() < deadline, done.stderr
+        time.sleep(0.5)
+    assert settling.fake.input_log(str(record["address"])) == ["first turn"]  # type: ignore[union-attr]
+
+
+def test_a_launchers_send_gate_refuses_the_first_turn_until_removed(short_tmp: Path, home_dir: Path) -> None:
+    # What gc's own contract harness uses: a fake-hc launcher whose core
+    # refuses every send while a file exists, so a nudge answers not_sent.
+    gate = short_tmp / "send-gate"
+    gate.write_text("")
+    env = entry_env(short_tmp, home_dir)
+    write_launcher(env["GC_HC_TEST_BIN"], send_gate=str(gate))
+    paths = resolve_paths(env)
+    try:
+        start = config(fresh_only=True)
+        for op in ("provision", "launch"):
+            done = invoke(env, op, "mc-a", stdin=start)
+            assert done.returncode == 0, done.stderr
+        assert SEND_GATE_ENV not in core_environ(paths.socket), "the gate is fake-hc's, never the core's env"
+        refused = invoke(env, "nudge", "mc-a", stdin=b"first turn")
+        assert refused.returncode == 80 and json.loads(refused.stdout)["outcome"] == "not_sent", refused.stderr
+        gate.unlink()
+        taken = invoke(env, "nudge", "mc-a", stdin=b"first turn")
+        assert taken.returncode == 0, taken.stderr
+        assert invoke(env, "stop", "mc-a").returncode == 0
+    finally:
+        teardown_cores(Path(paths.state_root))
 
 
 @pytest.fixture

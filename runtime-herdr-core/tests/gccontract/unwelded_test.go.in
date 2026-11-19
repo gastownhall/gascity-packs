@@ -40,6 +40,7 @@ type herdrCoreBox struct {
 	city  string
 	sp    runtime.Provider
 	input string
+	gate  string
 }
 
 func herdrCorePack(t *testing.T) (pack, python string) {
@@ -53,9 +54,11 @@ func herdrCorePack(t *testing.T) (pack, python string) {
 
 // newHerdrCoreBox makes a scratch root (short: it holds Unix sockets), a
 // fake-hc launcher, and the pack's test knobs, and returns a provider for a
-// city under it. With fault set, every send the pack makes is refused as
-// blocked until clearFault. Cleanup stops every core under the root.
-func newHerdrCoreBox(t *testing.T, fault string) *herdrCoreBox {
+// city under it. With fault set, the pack answers as that conformance fault
+// says until it is cleared. With gate set, fake-hc refuses every send
+// "unavailable" (hc's send-settle refusal, which the pack answers not_sent)
+// while the box's gate file exists. Cleanup stops every core under the root.
+func newHerdrCoreBox(t *testing.T, fault string, gate bool) *herdrCoreBox {
 	t.Helper()
 	pack, python := herdrCorePack(t)
 	root, err := os.MkdirTemp("/tmp", "hcgc-")
@@ -67,9 +70,16 @@ func newHerdrCoreBox(t *testing.T, fault string) *herdrCoreBox {
 	if err := os.MkdirAll(filepath.Dir(launcher), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	gateFile := ""
+	if gate {
+		gateFile = filepath.Join(root, "send-gate")
+		if err := os.WriteFile(gateFile, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	write := osexec.Command(python, "-c",
-		"import sys; sys.path.insert(0, sys.argv[1]); from fakehc.cli import write_launcher; write_launcher(sys.argv[2])",
-		filepath.Join(pack, "tests"), launcher)
+		"import sys; sys.path.insert(0, sys.argv[1]); from fakehc.cli import write_launcher; write_launcher(sys.argv[2], send_gate=sys.argv[3])",
+		filepath.Join(pack, "tests"), launcher, gateFile)
 	if out, err := write.CombinedOutput(); err != nil {
 		t.Fatalf("writing the fake-hc launcher: %v: %s", err, out)
 	}
@@ -91,6 +101,7 @@ func newHerdrCoreBox(t *testing.T, fault string) *herdrCoreBox {
 		city:  city,
 		sp:    gcexec.NewSeamBackedForCity(entry, "hcgc", city),
 		input: filepath.Join(root, "input.jsonl"),
+		gate:  gateFile,
 	}
 }
 
@@ -178,16 +189,26 @@ func TestHerdrCoreUnwelded(t *testing.T) {
 	var current *herdrCoreBox
 	runtimetest.RunUnweldedLaunchContract(t, runtimetest.UnweldedLaunchFixture{
 		New: func(t *testing.T, refuse runtime.InputOutcome) (runtime.Provider, func(string) []string, func()) {
-			fault := ""
+			fault, gate := "", false
 			switch refuse {
 			case "":
 			case runtime.InputOutcomePendingInteraction:
 				fault = "blocked" // conformance-faults: every send is refused as the agent's own question
+			case runtime.InputOutcomeNotSent:
+				gate = true // fake-hc refuses sends as hc does while a terminal settles
 			default:
 				t.Skipf("the pack cannot be made to refuse %s on demand", refuse)
 			}
-			current = newHerdrCoreBox(t, fault)
-			return current.sp, current.inputLines, func() { os.Setenv("GC_RPP_FAULT", "") }
+			box := newHerdrCoreBox(t, fault, gate)
+			current = box
+			return box.sp, box.inputLines, func() {
+				os.Setenv("GC_RPP_FAULT", "")
+				if box.gate != "" {
+					if err := os.Remove(box.gate); err != nil {
+						t.Errorf("releasing the send gate: %v", err)
+					}
+				}
+			}
 		},
 		Config: func(t *testing.T, dialog bool) runtime.Config { return current.config(t, dialog) },
 		// idle-boundary is declared: the queue's own readiness gate decides.
@@ -195,7 +216,7 @@ func TestHerdrCoreUnwelded(t *testing.T) {
 	})
 
 	t.Run("FreshStart", func(t *testing.T) {
-		b := newHerdrCoreBox(t, "")
+		b := newHerdrCoreBox(t, "", false)
 		cfg := b.config(t, false)
 		cfg.FreshOnly = true
 		cfg.Nudge = "fresh first turn"
@@ -238,7 +259,7 @@ func TestHerdrCoreUnwelded(t *testing.T) {
 	})
 
 	t.Run("AgentDiesDuringStartup", func(t *testing.T) {
-		b := newHerdrCoreBox(t, "")
+		b := newHerdrCoreBox(t, "", false)
 		cfg := b.config(t, false)
 		cfg.Command = "echo dying; exit 3"
 		cfg.FreshOnly = true
