@@ -883,6 +883,13 @@ Planner = Callable[[List[Terminal]], Plan]
 incarnation replaces; raises :class:`OpError` to refuse."""
 
 
+def check_work_dir(cfg: StartConfig) -> None:
+    """Refuse a config whose ``work_dir`` is not an existing directory once
+    staging and ``pre_start`` are done."""
+    if cfg.work_dir and not os.path.isdir(cfg.work_dir):
+        raise OpError("work_dir is not an existing directory after staging and pre_start")
+
+
 def create(
     ctx: OpContext, client: HcClient, hc_bin: str, name: str, cfg: StartConfig, warnings: List[str], plan: Planner
 ) -> Tuple[Terminal, bool]:
@@ -892,8 +899,7 @@ def create(
     store = meta_store(ctx)
     with ctx.name_lock(name, shared=False):
         decided = plan(list_city(client, ctx, name))
-        if cfg.work_dir and not os.path.isdir(cfg.work_dir):
-            raise OpError("work_dir is not an existing directory after staging and pre_start")
+        check_work_dir(cfg)
         visible = app_labels(read_pack_config(ctx.pack_state).app_visibility, ctx.paths.city_id, name, cfg.env)
         obj = new_object_nonce()
         store.write(obj, decided.meta)

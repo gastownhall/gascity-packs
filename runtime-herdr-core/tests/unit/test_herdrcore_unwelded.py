@@ -279,6 +279,18 @@ def test_launch_replaces_a_running_agent(city: City) -> None:
     assert carriers(TOKEN) == [], "the old incarnation's tree is gone"
 
 
+def test_a_launch_that_cannot_start_leaves_the_running_agent(city: City, tmp_path: Path) -> None:
+    assert provision(city, fresh_only=True).code == 0
+    assert launch(city, fresh_only=True).code == 0
+    [old] = city.terminals()
+    old_pid = int(str(old["pid"]))
+    done = launch(city, work_dir=str(tmp_path / "gone"))
+    assert done.code == 1 and "work_dir is not an existing directory" in done.stderr, done.stderr
+    assert alive(old_pid), "the agent it would replace still runs"
+    assert city.terminals() == [old]
+    assert observe(city, "mc-a", "cat")["agent"] == "alive"
+
+
 def test_a_launch_whose_config_carries_no_token_keeps_the_boxs(city: City) -> None:
     assert provision(city, fresh_only=True).code == 0
     assert launch(city, fresh_only=True).code == 0

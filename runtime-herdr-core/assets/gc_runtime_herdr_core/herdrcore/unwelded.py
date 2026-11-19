@@ -34,6 +34,9 @@ record of the name (finished ones too):
 * ``fresh_only`` and any record: exit 73, touching nothing;
 * no provision record and no record: exit 1 (a ``stop`` between
   ``provision`` and ``launch`` dropped it);
+* a ``work_dir`` that is not an existing directory: exit 1, before any
+  earlier incarnation is ended, so a launch that cannot start never ends
+  the agent it would replace;
 * otherwise each earlier incarnation's tree is ended as a start ends it
   (the same refusal while its processes may survive), but its record stays;
   the new terminal is created (metadata first, observe.v1 rule 5, then the
@@ -72,6 +75,7 @@ from .lifecycle import (
     await_launched,
     carried_values,
     check_name,
+    check_work_dir,
     create,
     prepare,
     recycle_before_start,
@@ -161,6 +165,7 @@ def _launch(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
         record: Optional[Provisioned] = provisioned.read(ctx, name, ctx.host.now_ms())
         if record is None and not records:
             raise _nothing_provisioned(name)
+        check_work_dir(cfg)  # before the kill: a launch that cannot start ends nothing
         values = carried_values(ctx, records)
         recycle_before_start(ctx, client, name, records, warnings, keep=True)
         await_ended(ctx, client, records)
