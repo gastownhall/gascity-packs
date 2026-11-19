@@ -1144,7 +1144,7 @@ Every number in the report comes from one of these, for each phase window
 | message ops | closed total; succeeded by `delivery.ack` (`delivered`, `delivered_unobserved`, other); failed by reason; skipped; canceled; unconfirmed and its ratio | events mirror, `op.changed` |
 | store | proxy and Dolt pid changes with their cause; health failures | samples, `faults.jsonl`, `check.jsonl` |
 | sessions | starts, restarts by cause (probe, drill, unexplained), quarantines, controller starts, core restarts, holder losses | agent logs, events mirror, samples |
-| workflows | slung, closed, open after 30 minutes; sling → root closed p50/p95/max | `load.jsonl`, `gc bd show <id> --json` |
+| workflows | slung, closed, open after 30 minutes; sling → root closed p50/p95/max | `load.jsonl`; the root's `bead.closed` event in the events mirror (its time is the close time; every pending root is settled from the one incremental events read of each check) |
 | orphans | count at each hourly scan | `soak orphans` |
 | pack ops | per second: all, controller-spawned, per session, by op; wall latency p50/p95/p99 and CPU per op; ops ended by a signal, by class (watch-startup closed by gc, canceled, killed, other, overrun) | op trace |
 | CPU | controller tree (supervisor incl. reaped children), controller-spawned op CPU, all of this user's CPU (`user@<uid>.service`) | samples, op trace |

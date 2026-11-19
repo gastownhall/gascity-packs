@@ -26,6 +26,8 @@ from soakcheck import (
     OK,
     RECORD_ONLY,
     WARN,
+    WORKFLOW_KEEP_S,
+    Collector,
     Inputs,
     State,
     canary_scan,
@@ -33,6 +35,7 @@ from soakcheck import (
     evaluate,
     read_new_lines,
     read_tail_lines,
+    workflow_closures,
 )
 
 NOW = 100_000.0
@@ -350,3 +353,68 @@ def test_an_op_signal_warning_names_the_unexpected_ends(cls: str, op: str, word:
     found = [w for w in out.warnings if w.id == "W-op-signal"]
     assert ids(out) == [] and len(found) == 1
     assert found[0].reason == f"2 op(s) ended by a signal gc does not send by design in 15 minutes: {word} {op} x2"
+
+
+def _root_closed(wid: str, ts: str, kind: str = "workflow") -> Dict[str, Any]:
+    return {"type": "bead.closed", "ts": ts, "subject": wid, "payload": {"id": wid, "status": "closed", "metadata": {"gc.kind": kind}}}
+
+
+def test_workflow_closures_take_the_close_event_time_of_workflow_roots_only() -> None:
+    events = [
+        _root_closed("w1", "1970-01-02T03:46:40.5Z"),
+        _root_closed("s1", "1970-01-02T03:46:41Z", kind=""),
+        {"type": "bead.updated", "ts": "1970-01-02T03:46:42Z", "subject": "w2", "payload": {"metadata": {"gc.kind": "workflow"}}},
+        _root_closed("w3", "not a time"),
+        _root_closed("w1", "1970-01-02T03:50:00Z"),
+    ]
+    assert workflow_closures(events) == {"w1": 100_000.5}
+
+
+def _collector(tmp_path: Path) -> Collector:
+    return Collector(City(name="hc-soak", path=tmp_path, data=tmp_path, mode="abort"), None)  # type: ignore[arg-type]
+
+
+def _append(path: Path, *recs: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        for rec in recs:
+            handle.write(json.dumps(rec) + "\n")
+
+
+def test_track_workflows_settles_every_pending_root_from_one_read_with_the_close_time(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import soakcheck
+
+    def no_gc(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("the tracker reads no bead per id")
+
+    monkeypatch.setattr(soakcheck, "run", no_gc)
+    collector, state = _collector(tmp_path), State()
+    slings = [{"action": "sling-burst", "t": NOW - 3000 + i, "workflow_id": f"w{i}"} for i in range(40)]
+    _append(tmp_path / "load.jsonl", *slings)
+    state.workflow_closes = {f"w{i}": NOW - 2000 + i for i in range(30)}
+    collector.track_workflows(state, NOW)
+    closed = {k: v["closed_t"] for k, v in state.workflows.items() if v.get("closed_t") is not None}
+    assert len(state.workflows) == 40 and len(closed) == 30
+    assert closed["w0"] == NOW - 2000 and closed["w29"] == NOW - 1971
+    assert all(t < NOW for t in closed.values()) and state.workflow_closes == {}
+
+
+def test_track_workflows_keeps_a_close_read_before_its_sling_and_never_uses_the_check_time(tmp_path: Path) -> None:
+    collector, state = _collector(tmp_path), State()
+    state.workflow_closes = {"early": NOW - 100, "stale": NOW - WORKFLOW_KEEP_S - 1}
+    collector.track_workflows(state, NOW)
+    assert state.workflows == {} and state.workflow_closes == {"early": NOW - 100}
+    _append(tmp_path / "load.jsonl", {"action": "sling-steady", "t": NOW - 160, "workflow_id": "early"}, {"action": "sling-steady", "t": NOW - 150, "workflow_id": "open"})
+    collector.track_workflows(state, NOW + 300)
+    assert state.workflows["early"]["closed_t"] == NOW - 100
+    assert state.workflows["open"].get("closed_t") is None and state.workflow_closes == {}
+
+
+def test_track_workflows_keeps_a_whole_soak_of_roots(tmp_path: Path) -> None:
+    collector, state = _collector(tmp_path), State()
+    _append(tmp_path / "load.jsonl", {"action": "sling-burst", "t": NOW, "workflow_id": "first"})
+    collector.track_workflows(state, NOW)
+    collector.track_workflows(state, NOW + 86400.0 + 1800.0)
+    assert "first" in state.workflows
+    collector.track_workflows(state, NOW + WORKFLOW_KEEP_S + 1)
+    assert "first" not in state.workflows

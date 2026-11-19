@@ -32,6 +32,7 @@ from soakanalysis import (
     NUDGE_LOST,
     OpStats,
     city_cores,
+    event_time,
     find_orphans,
     first_turns,
     foreign_hc,
@@ -69,6 +70,9 @@ HOURLY_S = 3600.0
 DOCTOR_EVERY_S = 6 * 3600.0
 WORKFLOW_IDLE_S = 1200.0
 WORKFLOW_OPEN_S = 1800.0
+WORKFLOW_KEEP_S = 2 * 86400.0
+"""How long the tracker keeps a slung root (the whole 24-hour soak and its end)
+and a root's close that no sling has claimed yet."""
 
 OK, WARN, HIT = "OK", "WARN", "HIT"
 
@@ -103,6 +107,9 @@ class State:
     last_doctor_t: float = 0.0
     box_out_since: Optional[float] = None
     workflows: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    workflow_closes: Dict[str, float] = field(default_factory=dict)
+    """Workflow roots' closes read from the events mirror and not yet matched
+    to a sling: id -> the ``bead.closed`` event's time."""
     load_offset: int = 0
     aborted: bool = False
 
@@ -547,7 +554,9 @@ class Collector:
         inp.store = [(p.pid, p.start, p.argv1 or p.comm) for p in store_procs(snap, uid)]
         # events: incremental
         lines, state.events_offset = read_new_lines(city.events, state.events_offset)
-        for event in parse_jsonl(lines):
+        events = parse_jsonl(lines)
+        state.workflow_closes.update(workflow_closures(events))
+        for event in events:
             t = parse_ts(str(event.get("ts", ""))) or now
             if event.get("type") == "controller.started":
                 state.controller_starts.append(t)
@@ -631,27 +640,47 @@ class Collector:
         inp.workflows_open_30m = sum(1 for t in open_ if now - t >= WORKFLOW_OPEN_S)
         return inp
 
-    def track_workflows(self, state: State, now: float, limit: int = 12) -> None:
+    def track_workflows(self, state: State, now: float) -> None:
+        """Register the roots slung since the last run and settle every pending
+        one at once from the closes the events mirror carried (read with the
+        rest of the events in ``collect``): a root is closed at its
+        ``bead.closed`` event's time, never at the check's time. The store
+        binding that holds the roots serves no bulk read through ``gc bd`` and
+        keeps no ``closed_at``, so the close event is the authoritative time."""
         lines, state.load_offset = read_new_lines(self.city.file("load.jsonl"), state.load_offset)
         for rec in parse_jsonl(lines):
             wid = rec.get("workflow_id")
             if isinstance(wid, str) and wid:
                 state.workflows[wid] = {"t": float(rec.get("t", now)), "action": rec.get("action")}
-        pending = sorted((w["t"], wid) for wid, w in state.workflows.items() if not w.get("closed_t"))
-        for _, wid in pending[:limit]:
-            res = run([self.gc, "bd", "show", wid, "--json"], cwd=str(self.city.path), timeout=60.0)
-            doc = res.json()
-            if doc is None and res.out.strip().startswith("["):
-                try:
-                    items = json.loads(res.out)
-                    doc = items[0] if items and isinstance(items[0], dict) else None
-                except ValueError:
-                    doc = None
-            if doc is not None and doc.get("status") == "closed":
-                closed_at = parse_ts(str(doc.get("closed_at", ""))) or now
-                state.workflows[wid]["closed_t"] = closed_at
-        # keep the last day
-        state.workflows = {k: v for k, v in state.workflows.items() if v["t"] >= now - 86400.0}
+        unmatched: Dict[str, float] = {}
+        for wid, closed_t in state.workflow_closes.items():
+            tracked = state.workflows.get(wid)
+            if tracked is not None:
+                if tracked.get("closed_t") is None:
+                    tracked["closed_t"] = closed_t
+            elif closed_t >= now - WORKFLOW_KEEP_S:
+                unmatched[wid] = closed_t
+        state.workflow_closes = unmatched
+        state.workflows = {k: v for k, v in state.workflows.items() if v["t"] >= now - WORKFLOW_KEEP_S}
+
+
+def workflow_closures(events: Iterable[Rec]) -> Dict[str, float]:
+    """Workflow roots closed in ``events``: id -> the first ``bead.closed``
+    event's time. A root carries ``gc.kind = workflow``; its steps do not.
+    An event without a readable time is skipped, not stamped with now."""
+    closes: Dict[str, float] = {}
+    for event in events:
+        if event.get("type") != "bead.closed":
+            continue
+        payload = event.get("payload")
+        meta = payload.get("metadata") if isinstance(payload, dict) else None
+        wid = event.get("subject")
+        if not isinstance(meta, dict) or meta.get("gc.kind") != "workflow" or not isinstance(wid, str) or not wid:
+            continue
+        t = event_time(event)
+        if t is not None and wid not in closes:
+            closes[wid] = t
+    return closes
 
 
 # --- digest, abort, main --------------------------------------------------------------------
@@ -729,4 +758,16 @@ def _check(city: City, paths: SoakPaths, final: bool, gc: str) -> int:
     return 1 if final and outcome.hits else 0
 
 
-__all__ = ["RECORD_ONLY", "Collector", "Finding", "Inputs", "Outcome", "State", "check_main", "digest", "evaluate"]
+__all__ = [
+    "RECORD_ONLY",
+    "WORKFLOW_KEEP_S",
+    "Collector",
+    "Finding",
+    "Inputs",
+    "Outcome",
+    "State",
+    "check_main",
+    "digest",
+    "evaluate",
+    "workflow_closures",
+]
