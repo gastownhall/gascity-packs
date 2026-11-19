@@ -10,12 +10,13 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 import pytest
 
 from gc_runtime_herdr_core.rpp.exitcodes import ExitCode
 from gc_runtime_herdr_core.rpp.ops import Handler, OpError, OpRequest, OpResult, OpSpec, OpTable, handshake_op
+from gc_runtime_herdr_core.rpp import perop
 from gc_runtime_herdr_core.rpp.perop import parse_deadline_ms, run_per_op
 from gc_runtime_herdr_core.rpp.wire import Handshake
 
@@ -293,6 +294,87 @@ def test_a_closed_stdout_is_a_quiet_failure() -> None:
     assert code == ExitCode.FAIL
 
 
+def test_discard_keeps_dev_null_open_when_it_reuses_the_streams_closed_fd(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A stream whose descriptor is already closed: os.open hands /dev/null
+    # that same number, which must stay open as the stream's descriptor.
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    stream = os.fdopen(write_end, "wb", closefd=False)
+    os.close(write_end)
+    real_open = os.open
+
+    def open_reusing(path: str, flags: int) -> int:
+        null = real_open(path, flags)
+        os.dup2(null, write_end)
+        os.close(null)
+        return write_end
+
+    monkeypatch.setattr(os, "open", open_reusing)
+    try:
+        perop._discard(stream)
+        assert os.fstat(write_end).st_rdev == os.stat(os.devnull).st_rdev
+    finally:
+        monkeypatch.undo()
+        os.close(write_end)
+
+
+class PipeThatBreaksOnce(io.BytesIO):
+    """A stdout whose first write fails as a gone reader's does; later writes
+    land, as they would once the runner points the descriptor at /dev/null."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.broken = False
+
+    def write(self, data: bytes) -> int:  # type: ignore[override]
+        if not self.broken:
+            self.broken = True
+            raise BrokenPipeError()
+        return super().write(data)
+
+
+def swallow_and_answer(req: OpRequest, raised: List[str]) -> OpResult:
+    for _ in range(3):
+        try:
+            req.emit(b"screen\n")
+        except Exception as err:
+            raised.append(type(err).__name__)
+    return OpResult.answer("{}")
+
+
+def swallow_and_fail(req: OpRequest, raised: List[str]) -> OpResult:
+    try:
+        req.emit(b"screen\n")
+    except Exception as err:
+        raised.append(type(err).__name__)
+    raise OpError("no session 'a'", ExitCode.NO_SCREEN)
+
+
+@pytest.mark.parametrize("handler, emits", [(swallow_and_answer, 3), (swallow_and_fail, 1)])
+def test_a_gone_reader_fails_the_op_even_when_its_handler_swallows_that(
+    handler: Callable[[OpRequest, List[str]], OpResult], emits: int
+) -> None:
+    raised: List[str] = []
+    stdout = PipeThatBreaksOnce()
+    stderr = io.StringIO()
+    code = run_per_op(
+        ["x", "op"],
+        {},
+        {"op": spec(lambda req: handler(req, raised))},
+        started=time.monotonic(),
+        stdin=io.BytesIO(),
+        stdout=stdout,
+        stderr=stderr,
+        install_signals=False,
+    )
+    assert code == ExitCode.FAIL
+    # Every emit after the first failure fails too, though the stream behind
+    # it would now take the write.
+    assert raised == ["_ReaderGone"] * emits
+    assert stdout.getvalue() == b""
+    assert stderr.getvalue() == ""
+
+
 HARNESS = """
 import sys, time
 sys.path.insert(0, sys.argv[1])
@@ -408,3 +490,103 @@ def test_a_sigterm_as_stdin_ends_stops_the_op_before_its_handler() -> None:
     assert proc.returncode == ExitCode.FAIL
     assert proc.stdout == b""
     assert proc.stderr.decode().strip() == "nudge: canceled (terminated)"
+
+
+GONE_HARNESS = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from gc_runtime_herdr_core.rpp.exitcodes import ExitCode
+from gc_runtime_herdr_core.rpp.ops import OpError, OpResult, OpSpec
+from gc_runtime_herdr_core.rpp.perop import run_per_op
+
+def answer(req):
+    return OpResult.answer("{}")
+
+def outcome(req):
+    return OpResult(ExitCode.INPUT_OUTCOME, b'{"outcome":"not-delivered"}\\n')
+
+def stream(req):
+    for _ in range(3):
+        req.emit(b'{"content":"screen"}\\n')
+    return OpResult.ok()
+
+def fail(req):
+    raise OpError("no session 'a'")
+
+def outcome_with_message(req):
+    return OpResult(ExitCode.INPUT_OUTCOME, b'{"outcome":"not-delivered"}\\n', "the program is waiting on its own question")
+
+def warn(req):
+    return OpResult(ExitCode.OK, b"", "could not record the start time")
+
+def swallow(req):
+    for _ in range(3):
+        try:
+            req.emit(b'{"content":"screen"}\\n')
+        except Exception:
+            pass
+    return OpResult.answer("{}")
+
+def spec(handler):
+    return OpSpec(handler=handler, reads_stdin=False, deadline="default", stdout_cap=1024)
+
+ops = {name: spec(handler) for name, handler in [
+    ("answer", answer), ("outcome", outcome), ("stream", stream), ("fail", fail),
+    ("outcome_with_message", outcome_with_message), ("warn", warn), ("swallow", swallow),
+]}
+sys.exit(run_per_op(["x", sys.argv[2]], {}, ops, started=time.monotonic(), stdin=sys.stdin.buffer,
+                    stdout=sys.stdout.buffer, stderr=sys.stderr))
+"""
+"""Ops that answer on stdout every way an op can, one that swallows its gone
+reader, and ones that end with a message on stderr."""
+
+
+def run_without_reader(argv: List[str], gone: str) -> Tuple[int, str]:
+    """Run ``argv`` with the read end of its ``gone`` stream (``stdout`` or
+    ``stderr``) closed before the op starts, as when gc has already exited;
+    return the exit status and what the other stream carried."""
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    try:
+        proc = subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=write_end if gone == "stdout" else subprocess.PIPE,
+            stderr=write_end if gone == "stderr" else subprocess.PIPE,
+            timeout=10,
+            start_new_session=True,
+        )
+    finally:
+        os.close(write_end)
+    other = proc.stderr if gone == "stdout" else proc.stdout
+    return proc.returncode, (other or b"").decode()
+
+
+@pytest.mark.parametrize("op", ["answer", "outcome", "stream", "swallow"])
+def test_an_op_whose_caller_has_gone_exits_1_quietly(op: str) -> None:
+    # Python flushes stdout again at interpreter shutdown; a second
+    # BrokenPipeError there turns exit 1 into 120 and prints a traceback.
+    code, err = run_without_reader([sys.executable, "-I", "-S", "-c", GONE_HARNESS, str(ASSETS), op], "stdout")
+    assert code == ExitCode.FAIL
+    assert err == ""
+
+
+@pytest.mark.parametrize(
+    "op, exit_code, answer",
+    [
+        ("fail", ExitCode.FAIL, ""),
+        ("outcome_with_message", ExitCode.INPUT_OUTCOME, '{"outcome":"not-delivered"}\n'),
+        ("warn", ExitCode.OK, ""),
+    ],
+)
+def test_an_op_whose_stderr_reader_has_gone_keeps_its_exit_code(op: str, exit_code: int, answer: str) -> None:
+    code, out = run_without_reader([sys.executable, "-I", "-S", "-c", GONE_HARNESS, str(ASSETS), op], "stderr")
+    assert code == exit_code
+    assert out == answer
+
+
+def test_the_executable_exits_1_when_gc_has_stopped_reading() -> None:
+    entry = ASSETS / "bin" / "gc-runtime-herdr-core"
+    code, err = run_without_reader([sys.executable, "-I", "-S", str(entry), "protocol"], "stdout")
+    assert code == ExitCode.FAIL
+    assert err == ""
