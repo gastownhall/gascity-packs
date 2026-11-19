@@ -17,7 +17,8 @@ following [`soak/RUNBOOK.md`](../soak/RUNBOOK.md). Run 2026-11-17 to
 | 24-hour soak | pass on correctness, findings on cost and throughput | S1, S2, S4, S7 pass in both halves; S3 and S6 miss in the legacy half: S3 was caused by the harness's start method; S6 is an unexplained swing in the core's RSS that came back down, not a leak (both below). S5 over budget (record-only). No predicate hit in 24 h, no abort, nothing of the city left after the final stop. |
 
 In 24 hours and 335 scripted incarnations the runtime lost no first turn,
-duplicated none, lost or duplicated no nudge, left no message op
+duplicated none 1 s or more apart (closer duplicates were not measured; see
+the deviations), lost or duplicated no nudge, left no message op
 unconfirmed and left no orphan or core restart. What it did not do is run
 cheaply: every pack op is a fresh Python process that costs about 150 ms of
 CPU, so at 4 to 5 controller-spawned ops a second the pack used 0.6 to 0.8
@@ -168,7 +169,7 @@ scan (no remains, no canary hit). 290 check runs; 0 HIT lines; no abort.
 | ID | Criterion | Target | Legacy half | v2 half | Result |
 |---|---|---|---|---|---|
 | S1 | lost first turns | 0 | 0 of 179 | 0 of 156 | pass |
-| S2 | duplicated first turns | 0 | 0 | 0 | pass |
+| S2 | duplicated first turns | 0 | 0 (1 s or more apart) | 0 (1 s or more apart) | pass |
 | S3 | infrastructure processes killed, Dolt restarts | 0 | 2 (one store restart at T0 + 0.3 s, seen at the T0 + 60 s sample) | 0 | legacy miss, caused by the harness's start method (below) |
 | S4 | unconfirmed message ops | < 1% | 0 of 370 | 0 of 359 | pass |
 | S5 | controller-spawned pack ops / s / session | ≤ 0.30 / ≤ 0.05 | 0.316 | 0.237 | over budget in both; record-only |
@@ -361,7 +362,18 @@ read too short a log window and the probe timer kept running (both fixed
 in the harness); the soak's VM report used a workflow tracker that
 confounded the backlog (it overstated the legacy half's latency and open
 count and undercounted v2's closes) and a restart attribution that missed
-the legacy reconciler's probe answers (both recomputed here).
+the legacy reconciler's probe answers (both recomputed here). The soak's
+first-turn classifier counted input bursts with a beacon line, so a
+duplicate typed less than 1 s after the first (the pack re-sends a first
+turn the box refused as unavailable after 0.5 s) would have counted as
+exact: every first-turn figure here (B5, V5, the drills' first turns and
+C5, F10, S2, AP4) rules out only duplicates 1 s or more apart. The harness
+now counts beacon lines; the agent logs kept with the artifacts have not
+been re-read with it. S1 and S2 also counted a first turn in the half its
+incarnation booted in, so neither counted the six steady sessions' first
+incarnations, which `soak-phase4 start` boots before the legacy half
+starts; the harness now counts a lost or duplicated first turn in the half
+its verdict came in, and the data has not been re-read with that either.
 
 Findings:
 

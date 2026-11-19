@@ -173,13 +173,13 @@ Accepted defaults:
 | `faults.jsonl` | drills, `soak probe`, `soak note` | every injected fault and planned operator action, with times and what it may end (`covers`, section 13) |
 | `samples.jsonl` | `soak sample` | 60 s samples (section 7.4) |
 | `check.jsonl`, `check.log` | `soak check` | predicate results: JSON, and one human line per run |
-| `check-state.json` | `soak check` | what one run hands the next: infrastructure pids, blind counters, event and load offsets, workflow roots and when they closed |
+| `check-state.json` | `soak check` | what one run hands the next: infrastructure pids, blind counters, event and load offsets, workflow roots and when they closed; whether the soak aborted, and whether the abort's `gc stop` has exited 0 (`stopped`) |
 | `probe-state.json`, `drill-agent-last` | `soak probe`, `soak drill` | the last session the probe or the agent-kill drill took (round robin) |
 | `f1-store.json` | drill F1 | the store pids F1 placed, which F2 and F3 check |
 | `digest.log` | `soak check` | the hourly digest |
 | `drills/<name>-<time>.json` | `soak drill` | each drill's record and verdict |
 | `captures/<time>.tar.gz` | `soak capture` | evidence bundles |
-| `ABORTED` | `soak check` | written once, on the first abort hit |
+| `ABORTED` | `soak check` | created on the first abort hit (time, phase, hits); the abort adds the capture or its failure, then every `gc stop` it runs and what of the city remains after it |
 | `gc-init.log`, `doctor-prestart.json`, `final-scan.json` | `soak city-init`, `soak-phase4 end` | gc init's output; doctor before the first start; the secrets grep and leftover scan after the final stop |
 
 ## 4. Provision the VM
@@ -418,6 +418,10 @@ pack's launcher execs it in its own scope under `gascity-agents.slice`.
   the steps for the unit tests only; the city never sets it.
 - **Log**: appends JSON lines to `$SOAK_DATA/agents/<GC_SESSION_ID>.jsonl`,
   one `write(2)` per line on an `O_APPEND` descriptor, each line under 4 KiB.
+  Like every JSON line the harness writes, a longer record is cut to fit and
+  marked `truncated`: long strings first, then the widest nested lists or
+  objects, so keys and short values (a check run's `status`, finding ids)
+  stay.
   Every record carries `ev`, `t` (wall seconds), `mono` (`CLOCK_MONOTONIC`
   seconds), `pid` and `inc` (`<boot id prefix>:<pid>:<start ticks>`, the
   incarnation key). The instance token is never logged; `boot` carries its
@@ -478,10 +482,13 @@ How gc's input reaches it: the pack types gc's start `nudge` once the
 `soak> ` prompt shows (the first turn); hc types text, then submits with
 Enter, so a multi-line turn arrives as several lines within a second. gc
 composes every first turn as its beacon line, a blank line, then the
-rendered prompt (`SOAK-FIRST-TURN <agent>`, section 8). So a first turn is
-the first input burst (lines less than 1 s apart) of an incarnation that
-contains a beacon line; the marker is a second check. This holds for any
-agent the city runs on the scripted provider, including the bd pack's
+rendered prompt (`SOAK-FIRST-TURN <agent>`, section 8). So each beacon
+line is one first turn typed: the first turn is the first input burst
+(lines less than 1 s apart) of an incarnation that contains a beacon line,
+and a second beacon line is a second first turn however soon it follows
+(the pack re-sends a first turn the box refused as unavailable after
+0.5 s, inside the same burst); the marker is a second check. This holds for
+any agent the city runs on the scripted provider, including the bd pack's
 maintenance pool (`dog`), whose own prompt follows the beacon.
 
 ### 7.2 Load (`soak load`, user service `soak-load`)
@@ -587,14 +594,20 @@ within two minutes; if none do, the city execs another path: read it from
   has the same start ticks and the boot id matches; otherwise its end is its
   last record.
 - **First turns**: input bursts are `in` records less than 1.0 s apart. The
-  first turn is the first burst with a beacon line. *Lost*: no such burst,
-  and the incarnation has lived 180 s or more (alive, or ended 180 s or more
-  after boot), unless a fault record ended it earlier. *Duplicated*: two or
-  more bursts with a beacon in one incarnation. *Short-lived*: ended within
-  180 s with no first turn and no fault record (reported, not a loss).
+  first turn is the first burst with a beacon line; its latency and marker
+  come from that burst. *Exact*: exactly one beacon line in the incarnation.
+  *Lost*: no beacon line, and the incarnation has lived 180 s or more
+  (alive, or ended 180 s or more after boot), unless a fault record ended it
+  earlier. *Duplicated*: two or more beacon lines in one incarnation, in one
+  burst or in several (a re-send 0.5 s after the first lands in the first's
+  burst). *Short-lived*: ended within 180 s with no first turn and no fault
+  record (reported, not a loss). A duplicated verdict comes with the second
+  beacon line, a lost one 180 s after boot; AP4 judges it, and the report
+  counts it (S1, S2), by that time.
 - **Nudges**: a `load.jsonl` nonce whose CLI result was delivered or queued
   must appear in exactly one `in` record of that session's agent log within
-  15 minutes. *Lost*: none. *Duplicated*: more than one.
+  15 minutes of its send (the record's `t`, when the command returned, less
+  its `dur_s`). *Lost*: none. *Duplicated*: more than one.
 - **Message ops**: `op.changed` events in the mirror whose `op.kind` is
   `message`, last post-image per op id. *Unconfirmed*: a closed op with
   `maybe_delivered > 0`, or `attempt > 1`, or `outcome.reason` or
@@ -613,7 +626,14 @@ within two minutes; if none do, the city execs another path: read it from
   any other op (it outlived gc's 2 s grace, or something else killed it).
   *other*: any other signal. gc's timeouts: 30 s; 120 s for start,
   provision and watch-startup (it runs under the start deadline); 4 s for
-  observe and is-attached.
+  observe and is-attached. A window has op figures only when the trace was
+  read, the samples place its clock, and it started (a `B` line) at or
+  before the window did; otherwise they are unknown, with the reason. A
+  trace that is missing, unreadable, never started or started late is no
+  evidence of zero ops. The trace's stamps carry no boot id and the trace
+  spans F10's reboot, so a `B` line of an earlier boot counts as a start
+  too: a trace that did not run in the samples' boot can still read as no
+  ops.
 - **Orphans**: a process of this user whose environment carries
   `GC_INSTANCE_TOKEN=T` and the city's `GC_CITY_PATH`, older than the
   window asked for, where no live box carries `T` (a box is a process whose
@@ -647,7 +667,7 @@ Description=herdr-core soak: predicates
 Type=oneshot
 EnvironmentFile=%h/soak-data/current/soak.env
 ExecStart=%h/soak/bin/soak check
-# an abort captures and stops the city inside this one run
+# an abort captures and stops the city inside this one run (a failed gc stop is run again by every later run)
 TimeoutStartSec=3600
 
 # soak-check.timer (soak-probe.timer is the same with OnActiveSec=30min, OnUnitActiveSec=30min)
@@ -954,6 +974,15 @@ core); `soak-agent` with the city's `GC_CITY_PATH` (agent); argv[1]
 `db-proxy-child` with the city's `GC_CITY_PATH` in its environment or the
 city's `.beads` in its arguments (store proxy).
 
+A fault that does not land ends the drill with verdict `error`, never a
+pass: a refused signal (the check above fails, or the pid is gone or reused),
+a holder `soak hc-status` lists that is not running, or a `systemctl kill`
+that exits non-zero stops the drill where it happens. Each drill that
+signals also judges that its fault took effect: every store proxy F1
+signalled is gone (`F1-killed`), every holder F2 or F3 killed is gone
+(`F2-killed`, `F3-killed`), and the core F4 killed is gone (`F4-killed`), so
+the core that answers is a new one.
+
 Criteria every drill also checks (C1 to C6):
 
 | ID | Criterion |
@@ -962,15 +991,15 @@ Criteria every drill also checks (C1 to C6):
 | C2 | every always-on session the drill ended runs again (a new incarnation's `boot`, or `running` in `gc session list --json`) within 2 × patrol (60 s) + 10 s of the injection. The core pack's formula dispatcher is a demand session (`max_active_sessions = 1`, no minimum; B4 counts it as demand churn): gc closes a dead one and starts a fresh session, under a new id, when work needs it, so the time until a dispatcher box runs again is recorded (`C2-dispatcher`), not judged |
 | C3 | every background child of every ended incarnation is gone within 1 × patrol (30 s) + 10 s of the injection |
 | C4 | 10 minutes after the injection, `soak orphans` finds no orphan |
-| C5 | every new incarnation has exactly one first turn; no surviving incarnation got a second |
+| C5 | every always-on session the drill ended has a new incarnation with a `boot` record; every new incarnation has exactly one first turn; no surviving incarnation got a second; no live scripted agent of the city (command name `soak-agent`, the city's `GC_CITY_PATH`) has run 60 s or more without the `boot` record of its incarnation. C5 judges the incarnations born after the injection and before C5 starts, and every new one of an ended session; it waits up to 180 s + 10 s from its start for a missing incarnation or a first turn still pending (7.6). One still missing or pending then fails C5, as does a drill that ended no always-on session: it has nothing to judge |
 | C6 | no `herdr-core` serve or hold process except the city's (same `XDG_STATE_HOME` and `HC_SESSION`); no start refused because the core "was started outside the pack" in the supervisor log since the injection (other failed starts are listed with their reasons) |
 
 | Drill | Injection (raw) | Drill-specific pass criteria |
 |---|---|---|
-| F1 `place-store` | write `bd-touch-after <proxy pid> <start> <dolt pid> <start>` to one always-on agent's `cmd` file, then `kill -TERM <proxy pid>`; if the old Dolt still runs 30 s after its proxy ended, `kill -TERM` it too (recorded); the agent's bd read restarts the store from inside the agent's scope; repeat (at most 3 times) until the new store lands there | the new proxy and Dolt run in that agent's `run-*.scope` under `gascity-agents.slice`, carry no `HC_SCOPE`, and pass `gc beads health`; record their pids for F2 and F3. If the controller restarts the store first every time, record that and run F2/F3 on the controller-placed store |
-| F2 `holder-kill` (K1) | `kill -KILL <holder pid>` for each holder `soak hc-status` lists | C1 to C6; the store pids recorded in F1 are unchanged (it ran inside a now-dead agent's scope); the controller pid is unchanged |
+| F1 `place-store` | write `bd-touch-after <proxy pid> <start> <dolt pid> <start>` to one always-on agent's `cmd` file, then `kill -TERM <proxy pid>`; if the old Dolt still runs 30 s after its proxy ended, `kill -TERM` it too (recorded); the agent's bd read restarts the store from inside the agent's scope; repeat (at most 3 times) until the new store lands there | the new proxy and Dolt run in that agent's `run-*.scope` under `gascity-agents.slice`, carry no `HC_SCOPE`, and pass `gc beads health`; record their pids for F2 and F3; every proxy signalled is gone. If the controller restarts the store first every time, record that and run F2/F3 on the controller-placed store |
+| F2 `holder-kill` (K1) | `kill -KILL <holder pid>` for each holder `soak hc-status` lists | every holder killed is gone; C1 to C6; the store pids recorded in F1 are unchanged (it ran inside a now-dead agent's scope); the controller pid is unchanged |
 | F3 `holder-unit-kill` (K2) | `unit=$(awk -F/ '{print $NF}' /proc/<holder pid>/cgroup)`; check it matches `hc-hold-*.service` or `.scope`; `systemctl --user kill --kill-whom=all --signal=SIGKILL -- "$unit"` | as F2 (a cgroup-wide kill, as systemd-oomd would do; the agents and the store are outside the holder's cgroup) |
-| F4 `core-kill` | `kill -KILL <core pid>` | no box ends (every box pid and start ticks unchanged); a core answers again within 30 s; a later start is not refused as foreign (F6 after it passes); C1, C4, C6 |
+| F4 `core-kill` | `kill -KILL <core pid>` | the killed core is gone and a core answers again within 30 s; no box ends (every box pid and start ticks unchanged); a later start is not refused as foreign (F6 after it passes); C1, C4, C6 |
 | F5 `core-restart` | `"${hcenv[@]}" "$HC" server restart` | every box unchanged; the core pid changed, its version did not; `gc herdr-core status` says `started: by the pack`; C1, C4, C6 |
 | F6 `agent-kill` | `kill -KILL <agent pid>` (from its `boot` record) | C2 to C5 for that session |
 | F7 `hc-update` | `"${hcenv[@]}" "$HC" update; echo $?` | exits non-zero (the binary and its directory are read-only); `gc herdr-core status` still says `installed: ... (matches the pin)`; the core's version and pid unchanged; every box unchanged |
@@ -1054,13 +1083,13 @@ Soak pass criteria (both halves unless stated):
 
 | ID | Criterion | Target |
 |---|---|---|
-| S1 | lost first turns | 0 |
-| S2 | duplicated first turns | 0 |
+| S1 | lost first turns, each in the half its verdict came in (7.6), whatever phase its incarnation booted in; a verdict in `soak-end`, the settle that still runs v2, is the v2 half's | 0 |
+| S2 | duplicated first turns, each in the half its verdict came in: a steady session booted before `soak-legacy` and typed its first turn again after the switch is the v2 half's, as is one typed again in `soak-end` | 0 |
 | S3 | Dolt or proxy restarts, and any other infrastructure process killed | 0 |
 | S4 | unconfirmed message ops / closed message ops | < 1% |
-| S5 | controller-spawned pack ops per second per session, phase mean | ≤ 0.30 legacy, ≤ 0.05 v2 |
+| S5 | controller-spawned pack ops per second per session, phase mean; `unknown` unless the op trace ran from the half's start (7.6), so a missing, unreadable or late trace does not read as no ops (one with only an earlier boot's lines still can, 7.6) | ≤ 0.30 legacy, ≤ 0.05 v2 |
 | S6 | core RSS: every hourly median within ±20% of hour 2's median | yes |
-| S7 | no abort predicate hit (AP5 is record-only, section 1.1) | yes |
+| S7 | no abort predicate hit (AP5 is record-only, section 1.1); `unknown` when the half had no check run or one without a status; the v2 half's takes in the check runs of `soak-end`, `check --final` among them, so a hit there is a `no` and a run without a status there is `unknown` | yes |
 | S8 | recorded: per-op spawn rate, p50/p95/p99 op latency and CPU per op, controller-tree CPU, death-to-restart latency (n, p50, p95, max), for each reconciler | recorded |
 
 Also reported with target 0, as warnings, not abort predicates: nudges lost
@@ -1084,12 +1113,12 @@ number of live boxes in the window (at least 1).
 | AP1 | store outage or integrity error | `gc beads health --json` (60 s timeout) | 3 consecutive failures 30 s apart; or one failure naming the catalog, the branch head, corruption, a checksum or integrity |
 | AP2 | an infrastructure process killed | the supervisor's `MainPID`, every store proxy and Dolt pid and start ticks, from the previous run | one of them is gone and no `faults.jsonl` record covers it (the planned supervisor restart, the drills) |
 | AP3 | controller crash loop | `NRestarts` and `MainPID` changes of `gascity-supervisor.service`, `controller.started` events | more than 3 controller starts in 15 minutes not covered by a fault record |
-| AP4 | a lost or duplicated first turn | 7.6 first turns | any, for an incarnation booted in the phase |
+| AP4 | a lost or duplicated first turn | 7.6 first turns | any whose verdict came in the phase or since the previous run, whatever phase its incarnation booted in (a session that survives the switch and is typed its first turn again after it is the new phase's); `--final`: any, of every incarnation |
 | AP5 (record-only) | pack cost over twice the budget | op trace, samples | over the last 15 minutes, controller-spawned ops per second above 2 × 0.30 × n (legacy) or 2 × 0.05 × n (v2), or controller-spawned op CPU above 2 × 0.015 × n cores |
-| AP6 | state size | samples | the city's hc state directory above 2 GiB, or `R` above 4 GiB |
+| AP6 | state size | samples | the city's hc state directory above 2 GiB, or `R` above 4 GiB, each judged on its own; unknown while the last size sample lacks either, even when the other hits |
 | AP7 | an unexpected core or holder | 7.6 hc runtime | a `herdr-core` serve or hold process whose `XDG_STATE_HOME` or `HC_SESSION` is not the city's, or two cores of the city (skipped while `CONFORMANCE` exists) |
 | AP8 | a secret on disk (hourly) | the canary | the canary in any regular file under `R`, under `~/.local/share/gc-runtime-herdr-core` or under `/tmp/gc-herdr-core-<uid>` |
-| AP9 | the harness cannot see | every predicate's inputs | a predicate cannot be evaluated (stale samples, a trace silent for 10 minutes while boxes run, a silent events mirror, a failed probe) on 3 consecutive runs |
+| AP9 | the harness cannot see | every predicate's inputs | a predicate cannot be evaluated (stale samples, a trace silent for 10 minutes while boxes run, a silent events mirror, a failed probe, an agent log missing, a state size missing) on 3 consecutive runs |
 
 **Fault records and what they cover.** Every `faults.jsonl` record carries
 `covers`, the infrastructure it may end: `supervisor`, `controller`,
@@ -1100,7 +1129,12 @@ the supervisor, the controller and the store; `city-stop`, `city-start` and
 `reboot` notes cover everything; each drill names its own. While `DRILL`
 exists AP2 and AP5 are not judged, and AP7's foreign-core part is skipped
 while `CONFORMANCE` exists. A predicate whose inputs cannot be read counts
-towards AP9 and shows as `WARN` until then.
+towards AP9 and shows as `WARN` until then. AP4 cannot be evaluated while
+`agents/` is missing, or while a live scripted agent of the city (command
+name `soak-agent`, the city's `GC_CITY_PATH`) that has run for 60 s or more
+has no `boot` record of its incarnation in the agent logs: the agent writes
+that record before it reads any input. The other sessions' first turns are
+still judged.
 
 Warnings (logged and in the digest, never an abort): orphans older than 10
 minutes; any tmux server of this user; outside phase 1 to 3, fewer than 10
@@ -1127,10 +1161,16 @@ free disk under 10 GiB.
    holders'); `ps -eo pid,ppid,lstart,args`; `systemd-cgls --user-unit
    gascity-supervisor.service` and `systemctl --user list-units 'hc-*' --all`;
    the agents' logs; the events mirror; `load.jsonl`, `faults.jsonl`,
-   `samples.jsonl`, `check.jsonl`, the op trace.
+   `samples.jsonl`, `check.jsonl`, the op trace. `ABORTED` names the bundle;
+   a capture that fails is written there as `capture: FAILED <error>`, and
+   the city is stopped all the same.
 3. `gc stop` the city (its server teardown ends the city's core); then check
    that no box, holder or core of the city and no process carrying the
-   city's `GC_SESSION_ID`s remain, and write the result into `ABORTED`.
+   city's `GC_SESSION_ID`s remain, and write both results into `ABORTED`.
+   Step 3 runs even when step 1 or 2 fails. `check-state.json` records
+   `stopped` once `gc stop` exits 0; until then every later `soak check` run
+   runs `gc stop` again, before it collects anything, so a run that then
+   fails has still tried, and adds its result to `ABORTED`.
 4. The watcher pages the person, who files a work item with the capture.
    The soak restarts from the failed phase only after a fix has landed.
 
@@ -1142,7 +1182,7 @@ Every number in the report comes from one of these, for each phase window
 | Metric | Definition | Source |
 |---|---|---|
 | incarnations | `boot` records of scripted agents | agent logs |
-| first turns | exact, lost, duplicated, short-lived; latency boot → first turn p50/p95 | 7.6 |
+| first turns | exact, lost, duplicated, short-lived; latency boot → first turn p50/p95. A lost or duplicated first turn counts in the window its verdict came in, whatever window its incarnation booted in; the others, and the latency, count by boot | 7.6 |
 | nudges (load) | sent; CLI delivered, queued, refused; received once, lost, duplicated; latency CLI → received p50/p95 | `load.jsonl`, agent logs |
 | message ops | closed total; succeeded by `delivery.ack` (`delivered`, `delivered_unobserved`, other); failed by reason; skipped; canceled; unconfirmed and its ratio | events mirror, `op.changed` |
 | store | proxy and Dolt pid changes with their cause; health failures | samples, `faults.jsonl`, `check.jsonl` |

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Callable, Dict, List, Sequence, Tuple
+
+import pytest
 
 from .soaktestkit import rec
 
-from soaklib import Rec, append_jsonl
+from soakcheck import HIT, OK, WARN, Finding, Outcome
+from soaklib import LINE_LIMIT, Rec, append_jsonl, encode_line
 from soakreport import (
+    CHECK_STATUSES,
     ReportInputs,
     restart_causes,
     Window,
@@ -148,11 +152,156 @@ def test_render_markdown_has_the_soak_table_and_drills() -> None:
     assert "### soak-legacy (legacy)" in text and "`observe`: latency p50/p95/p99 30 / 30 / 30 ms" in text
     summary = first_turn_summary(compute(inputs()))
     assert summary.startswith("incarnations 3: exact 2, lost 0, duplicated 1")
+    assert "| S7 | no abort | yes | yes | yes |" in text
+
+
+SWITCHED = T0 + 14 * 3600
+"""Two hours after the switch to v2."""
+
+
+def with_steady_survivor(boot: float, beacons: Sequence[float]) -> ReportInputs:
+    """:func:`inputs` with a ``bringup`` phase before ``soak-legacy``, as
+    ``soak-phase4 start`` records it, and a steady session that lives to the
+    end: booted at ``boot`` and typed a first turn at each of ``beacons``."""
+    inp = inputs()
+    inp.phases.insert(0, {"t": T0 - 3600, "phase": "bringup", "reconciler": "legacy"})
+    inc = "bt:400:4"
+    inp.agent_records.append(rec("boot", boot, inc, session_id="s3", template="soak-steady"))
+    inp.agent_records.extend(rec("in", t, inc, text=BEACON, beacon=True) for t in beacons)
+    inp.agent_records.append(rec("hb", T0 + 23 * 3600, inc))
+    return inp
+
+
+@pytest.mark.parametrize(
+    "boot, beacons, s1, s2",
+    [
+        # booted in bringup, before soak-legacy, and typed its first turn again after the switch
+        (T0 - 10, (T0 - 7, SWITCHED), "0 | 0", "0 | 2"),
+        # booted in the legacy half and typed its first turn again after the switch
+        (T0 + 100, (T0 + 103, SWITCHED), "0 | 0", "0 | 2"),
+        # booted in bringup and never typed one: lost 180 s after boot, in the legacy half
+        (T0 - 10, (), "1 | 0", "0 | 1"),
+    ],
+    ids=["bringup-born-duplicated-after-the-switch", "legacy-born-duplicated-after-the-switch", "bringup-born-lost"],
+)
+def test_s1_and_s2_count_a_lost_or_duplicated_first_turn_in_the_half_its_verdict_came_in(
+    boot: float, beacons: Tuple[float, ...], s1: str, s2: str
+) -> None:
+    text = render_markdown(compute(with_steady_survivor(boot, beacons)))
+    assert f"| S1 | lost first turns | 0 | {s1} |" in text
+    assert f"| S2 | duplicated first turns | 0 | {s2} |" in text
+
+
+END = T0 + 24 * 3600
+"""When ``soak-phase4 end`` records ``soak-end``; the report runs after its 15-minute settle."""
+
+
+def with_a_settle(boot: float, beacons: Sequence[float]) -> ReportInputs:
+    """:func:`inputs` with ``soak-end`` recorded at ``END`` and the report run
+    at the end of its settle, and a steady session booted at ``boot`` that
+    typed a first turn at each of ``beacons`` and lives to the report."""
+    inp = inputs()
+    inp.now = END + 900
+    inp.phases.append({"t": END, "phase": "soak-end", "reconciler": "v2"})
+    inc = "bt:500:5"
+    inp.agent_records.append(rec("boot", boot, inc, session_id="s4", template="soak-steady"))
+    inp.agent_records.extend(rec("in", t, inc, text=BEACON, beacon=True) for t in beacons)
+    inp.agent_records.append(rec("hb", END + 890, inc))
+    return inp
+
+
+@pytest.mark.parametrize(
+    "boot, beacons, s1, s2",
+    [
+        # booted 60 s before soak-end and never typed one: lost 180 s after boot, in the settle
+        (END - 60, (), "0 | 1", "0 | 1"),
+        # booted in the v2 half and typed its first turn again 30 s into the settle
+        (END - 600, (END - 597, END + 30), "0 | 0", "0 | 2"),
+    ],
+    ids=["lost-in-the-settle", "duplicated-in-the-settle"],
+)
+def test_s1_and_s2_count_a_verdict_that_came_in_the_settle_in_the_v2_half(
+    boot: float, beacons: Tuple[float, ...], s1: str, s2: str
+) -> None:
+    report = compute(with_a_settle(boot, beacons))
+    assert [m.window.name for m in report.phases] == ["soak-legacy", "soak-v2", "soak-end"]
+    text = render_markdown(report)
+    assert f"| S1 | lost first turns | 0 | {s1} |" in text
+    assert f"| S2 | duplicated first turns | 0 | {s2} |" in text
+
+
+def test_a_survivor_counts_its_first_turn_failure_once_and_its_latency_by_boot() -> None:
+    bringup, legacy, v2 = compute(with_steady_survivor(T0 - 10, (T0 - 7, SWITCHED))).phases
+    assert [m.window.name for m in (bringup, legacy, v2)] == ["bringup", "soak-legacy", "soak-v2"]
+    assert [m.incarnations for m in (bringup, legacy, v2)] == [1, 2, 1]
+    assert [sum(m.first_turns.values()) for m in (bringup, legacy, v2)] == [0, 2, 2]
+    assert bringup.bad_first_turns == [] and legacy.bad_first_turns == []
+    assert sorted(v2.bad_first_turns) == ["s2 bt:300:3 duplicated", "s3 bt:400:4 duplicated"]
+    assert (bringup.first_turn_latency["n"], bringup.first_turn_latency["p50"]) == (1.0, 3.0)
+    assert (v2.first_turn_latency["n"], v2.first_turn_latency["p50"]) == (1.0, 5.0)
+    assert first_turn_summary(compute(with_steady_survivor(T0 - 10, (T0 - 7, SWITCHED)))).startswith(
+        "incarnations 4: exact 2, lost 0, duplicated 2"
+    )
+
+
+def test_s7_reads_the_hit_of_a_check_run_whose_line_was_cut_to_fit() -> None:
+    outcome = Outcome(T0 + 13 * 3600 + 300, "soak-v2", "abort")
+    outcome.judge(Finding("AP7", "foreign hc runtime: " + ", ".join(f"hold pid {1000 + i} (/home/soak/.local/state/x{i})" for i in range(150))))
+    line = encode_line(outcome.as_rec())
+    cut = json.loads(line)
+    assert len(line) < LINE_LIMIT and cut["truncated"] is True
+    assert cut["status"] == HIT and [h["id"] for h in cut["hits"]] == ["AP7"]
+    inp = inputs()
+    inp.checks.append(cut)
+    assert "| S7 | no abort | yes | yes | no (1 hit runs) |" in render_markdown(compute(inp))
+
+
+def test_s7_is_unknown_for_a_check_run_without_a_status_or_a_half_without_check_runs() -> None:
+    assert CHECK_STATUSES == (OK, WARN, HIT)
+    inp = inputs()
+    inp.checks.append({"t": T0 + 14 * 3600, "truncated": True})
+    report = compute(inp)
+    assert report.phases[1].checks == {"WARN": 1, "unknown": 1}
+    assert "| S7 | no abort | yes | yes | unknown (1 runs without a status) |" in render_markdown(report)
+    inp.checks[:] = [c for c in inp.checks if c["t"] < T0 + 12 * 3600]
+    assert "| S7 | no abort | yes | yes | unknown (no check run) |" in render_markdown(compute(inp))
+
+
+def final_check(hit: bool) -> Rec:
+    """The record of ``check --final`` 1 s before the settle ends."""
+    outcome = Outcome(END + 899, "soak-end", "abort")
+    if hit:
+        outcome.judge(Finding("AP8", "the canary is on disk: /home/soak/R/x/screen.log"))
+    out = outcome.as_rec()
+    out["final"] = True
+    return out
+
+
+@pytest.mark.parametrize(
+    "final, v2_checks, s7",
+    [
+        (final_check(hit=True), True, "no (1 hit runs)"),
+        ({"t": END + 899, "truncated": True}, True, "unknown (1 runs without a status)"),
+        (final_check(hit=False), True, "yes"),
+        (final_check(hit=False), False, "unknown (no check run)"),
+    ],
+    ids=["final-hit", "final-without-a-status", "final-ok", "only-the-settle-has-check-runs"],
+)
+def test_s7_of_the_v2_half_takes_in_the_check_runs_of_the_settle(final: Rec, v2_checks: bool, s7: str) -> None:
+    inp = inputs()
+    inp.now = END + 900
+    inp.phases.append({"t": END, "phase": "soak-end", "reconciler": "v2"})
+    if not v2_checks:
+        inp.checks[:] = [c for c in inp.checks if c["t"] < T0 + 12 * 3600]
+    inp.checks.append(final)
+    report = compute(inp)
+    assert [m.window.name for m in report.phases] == ["soak-legacy", "soak-v2", "soak-end"]
+    assert f"| S7 | no abort | yes | yes | {s7} |" in render_markdown(report)
 
 
 def test_render_markdown_counts_ops_ended_by_a_signal_by_who_ended_them() -> None:
     src = inputs()
-    src.optrace = src.optrace + [
+    src.optrace = optrace() + [
         "E 5000000000 9001 77 gc /p/gc-runtime-herdr-core watch-startup s1",
         "X 5241000000 9001 9 241 122000",
         "E 6000000000 9002 77 gc /p/gc-runtime-herdr-core watch-startup s2",
@@ -196,10 +345,66 @@ def test_load_inputs_reads_a_data_directory(tmp_path: Path) -> None:
     (data / "drills" / "reboot-pending.json").write_text(json.dumps({"t_inject": 1}), encoding="utf-8")
     (data / "check-state.json").write_text(json.dumps({"workflows": src.workflows}), encoding="utf-8")
     trace = tmp_path / "optrace.log"
-    trace.write_text("\n".join(src.optrace) + "\n", encoding="utf-8")
+    trace.write_text("\n".join(optrace()) + "\n", encoding="utf-8")
     loaded = load_inputs(data, trace, src.alive, src.now)
     assert len(loaded.drills) == 1 and loaded.workflows == src.workflows
     assert render_markdown(compute(loaded)) == render_markdown(compute(src)).replace(src.city, loaded.city)
+
+
+def phases_and_samples(tmp_path: Path) -> Path:
+    """A city's data directory with :func:`inputs`' phases and samples only,
+    which place the op trace's clock in each half."""
+    data = tmp_path / "hc-soak"
+    data.mkdir()
+    src = inputs()
+    for name, items in (("phases.jsonl", src.phases), ("samples.jsonl", src.samples)):
+        for item in items:
+            append_jsonl(data / name, item)
+    return data
+
+
+def trace_of(text: str) -> Callable[[Path], object]:
+    return lambda path: path.write_text(text, encoding="utf-8")
+
+
+S5_ROW = "| S5 | controller-spawned pack ops / s / session | ≤ 0.30 / ≤ 0.05 |"
+NO_OPS = "- pack ops / s: all 0.000; controller-spawned 0.000; per session 0.0000"
+
+
+@pytest.mark.parametrize(
+    "make, legacy, v2",
+    [
+        # no trace file
+        (lambda path: None, "unknown (op trace missing or unreadable)", "unknown (op trace missing or unreadable)"),
+        # a directory where the trace should be: reading it fails
+        (Path.mkdir, "unknown (op trace missing or unreadable)", "unknown (op trace missing or unreadable)"),
+        # bpftrace never reached BEGIN
+        (trace_of("Attaching 3 probes...\n"), "unknown (op trace has no start line)", "unknown (op trace has no start line)"),
+        # started two hours into the legacy half, whose rate it would understate
+        (trace_of(f"B {2 * 3600 * 10**9}\n"), "unknown (op trace started after the phase did)", "0.0000"),
+        # ran from the start of the soak and saw no op: a measured zero
+        (trace_of("B 0\n"), "0.0000", "0.0000"),
+        # restarted two hours into the legacy half: its first start still covers the half
+        (trace_of(f"B 0\nB {2 * 3600 * 10**9}\n"), "0.0000", "0.0000"),
+    ],
+    ids=["missing", "unreadable", "never-started", "started-in-the-legacy-half", "ran-and-saw-no-op", "restarted-in-the-legacy-half"],
+)
+def test_s5_is_unknown_unless_the_op_trace_ran_from_the_start_of_the_half(
+    tmp_path: Path, make: Callable[[Path], object], legacy: str, v2: str
+) -> None:
+    trace = tmp_path / "optrace.log"
+    make(trace)
+    text = render_markdown(compute(load_inputs(phases_and_samples(tmp_path), trace, lambda inc: False, T0 + 24 * 3600)))
+    assert f"{S5_ROW} {legacy} | {v2} |" in text
+    for cell in (legacy, v2):
+        assert (NO_OPS if cell == "0.0000" else f"- pack ops: {cell}") in text
+
+
+def test_s5_is_unknown_without_samples_to_time_the_op_trace_by() -> None:
+    inp = inputs()
+    inp.samples = [{k: v for k, v in s.items() if k != "mono_ns"} for s in inp.samples]
+    gap = "unknown (no samples to time the op trace by)"
+    assert f"{S5_ROW} {gap} | {gap} |" in render_markdown(compute(inp))
 
 
 def test_a_restart_across_an_operator_stop_and_start_is_explained() -> None:

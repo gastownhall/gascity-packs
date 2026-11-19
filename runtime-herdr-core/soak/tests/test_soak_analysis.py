@@ -41,7 +41,7 @@ from soakanalysis import (
     store_procs,
     supervisor_timeline,
 )
-from soaklib import ProcFS, Rec
+from soaklib import CmdResult, ProcFS, Rec, cmd_record
 
 BEACON = "[hc-soak] soak-steady-1 • 2026-11-17T10:00:00"
 INC = "b00tb00t:100:5000"
@@ -76,12 +76,26 @@ def test_first_turn_exact_and_its_latency() -> None:
     records = [boot(0.0), line(5.0, BEACON), line(5.2, ""), line(5.4, "SOAK-FIRST-TURN soak-steady")]
     incs = incarnations(records, lambda inc: True)
     turn = first_turn(incs[0], [], 1000.0)
-    assert turn.status == FT_EXACT and turn.latency_s == 5.0 and turn.marker
+    assert turn.status == FT_EXACT and turn.latency_s == 5.0 and turn.marker and turn.beacons == 1
 
 
 def test_first_turn_typed_twice_is_duplicated() -> None:
     records = [boot(), line(5.0, BEACON), line(5.3, "SOAK-FIRST-TURN x"), line(40.0, BEACON), line(40.2, "SOAK-FIRST-TURN x")]
     assert one(records) == FT_DUPLICATED
+
+
+def test_a_first_turn_re_sent_inside_the_burst_gap_is_duplicated() -> None:
+    # The pack re-sends a first turn the box refused as unavailable after
+    # 0.5 s, so both copies land in one input burst: two beacon lines.
+    turn_lines = [BEACON, "", "SOAK-FIRST-TURN soak-steady"]
+    first = [line(5.0 + 0.1 * i, text) for i, text in enumerate(turn_lines)]
+    again = [line(5.5 + 0.1 * i, text) for i, text in enumerate(turn_lines)]
+    incs = incarnations([boot()] + first + again, lambda inc: True)
+    assert len(input_bursts(incs[0].inputs)) == 1
+    turn = first_turn(incs[0], [], 1000.0)
+    assert turn.status == FT_DUPLICATED and turn.beacons == 2 and turn.latency_s == 5.0
+    # The control: one copy, its prompt running on in the same burst, is exact.
+    assert one([boot()] + first + [line(5.5, "the rest of the prompt"), line(5.6, "")]) == FT_EXACT
 
 
 def test_first_turn_lost_pending_short_lived_and_faulted() -> None:
@@ -94,6 +108,21 @@ def test_first_turn_lost_pending_short_lived_and_faulted() -> None:
     assert one(ended_early, alive=False, faults=[fault]) == FT_FAULTED
     ended_late = [boot(), rec("hb", 200.0, INC)]
     assert one(ended_late, alive=False, faults=[fault]) == FT_LOST
+
+
+def test_a_bad_first_turn_carries_the_time_its_verdict_came() -> None:
+    def turn(records: List[Rec], alive: bool = True, now: float = 1000.0) -> object:
+        incs = incarnations(records, lambda inc: alive)
+        t = first_turn(incs[0], [], now)
+        return t.status, t.verdict_t
+
+    assert turn([boot(), line(5.0, BEACON), line(40.0, BEACON), line(90.0, BEACON)]) == (FT_DUPLICATED, 40.0)
+    assert turn([boot(), line(40.0, BEACON), line(5.0, BEACON)]) == (FT_DUPLICATED, 40.0)  # by time, not log order
+    assert turn([boot(10.0)]) == (FT_LOST, 190.0)
+    assert turn([boot(10.0), rec("hb", 300.0, INC)], alive=False) == (FT_LOST, 190.0)
+    assert turn([boot(), line(5.0, BEACON)]) == (FT_EXACT, None)
+    assert turn([boot()], now=100.0) == (FT_PENDING, None)
+    assert turn([boot(), rec("hb", 60.0, INC)], alive=False) == (FT_SHORT_LIVED, None)
 
 
 def test_an_operator_note_that_covers_everything_explains_an_early_end() -> None:
@@ -133,6 +162,18 @@ def test_nudge_verdicts() -> None:
     assert verdicts[c].status == NUDGE_LOST
     assert verdicts[d].status == NUDGE_PENDING
     assert verdicts[e].status == NUDGE_REFUSED
+
+
+def test_a_nudge_is_judged_from_when_it_was_sent_not_when_its_command_returned() -> None:
+    """``cmd_record`` stamps a nudge when ``gc session nudge`` returns, here
+    10 s after it was sent; the session read it 1 s after it was sent."""
+    nonce = "f" * 32
+    res = CmdResult(("gc", "session", "nudge"), 0, '{"ok": true, "outcome": "submitted"}', "", 10.0)
+    record = cmd_record("nudge", res, session_id="s1", nonce=nonce, mode="wait-idle")
+    returned = float(record["t"])
+    [verdict] = nudge_verdicts([record], {"s1": [{"t": returned - 9.0, "nonce": nonce}]}, now=returned + 1000.0)
+    assert verdict.status == NUDGE_RECEIVED and abs(verdict.t - (returned - 10.0)) < 1e-6
+    assert verdict.latency_s is not None and abs(verdict.latency_s - 1.0) < 1e-6
 
 
 def op_event(op_id: str, ts: str, status: str, **extra: object) -> Rec:

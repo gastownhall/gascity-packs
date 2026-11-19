@@ -50,6 +50,14 @@ from soaklib import Rec, iso, obj, read_jsonl
 
 BUDGET = {"legacy": 0.30, "v2": 0.05}
 SOAK_PHASES = ("soak-legacy", "soak-v2")
+SETTLE_PHASE = "soak-end"
+"""The settle after ``soak-v2`` (``soak-phase4 end``). v2 still runs in it, so
+a lost or duplicated first turn whose verdict comes in it is the v2 half's
+(S1, S2)."""
+CHECK_STATUSES = ("OK", "WARN", "HIT")
+"""A check run's statuses, as ``soak check`` writes them to ``check.jsonl``."""
+NO_STATUS = "unknown"
+"""How :func:`compute` counts a check run whose line has no status it knows."""
 CLK_TCK = 100
 
 
@@ -62,6 +70,15 @@ class Window:
 
     def has(self, t: float) -> bool:
         return self.t0 <= t < self.t1
+
+
+def counted_in(w: Window, turn: FirstTurn) -> bool:
+    """Whether ``turn`` counts in the phase ``w``: a lost or duplicated first
+    turn in the phase its verdict came in, as AP4 judges it, whatever phase its
+    incarnation booted in; any other by boot. A steady session booted before
+    ``soak-legacy`` and typed its first turn again after the switch is the v2
+    half's."""
+    return w.has(turn.boot_t if turn.verdict_t is None else turn.verdict_t)
 
 
 def windows(phases: Sequence[Rec], now: float) -> List[Window]:
@@ -84,7 +101,8 @@ class ReportInputs:
     events: List[Rec]
     samples: List[Rec]
     faults: List[Rec]
-    optrace: List[str]
+    optrace: Optional[List[str]]
+    """The op trace's lines; None when it could not be read."""
     phases: List[Rec]
     drills: List[Rec]
     checks: List[Rec]
@@ -120,6 +138,8 @@ class PhaseMetrics:
     holder_losses: int = 0
     workflows: Dict[str, Any] = field(default_factory=dict)
     ops: Optional[OpStats] = None
+    ops_gap: Optional[str] = None
+    """Why ``ops`` is None (:func:`trace_gap`)."""
     controller_cpu: Dict[str, Optional[float]] = field(default_factory=dict)
     user_cpu_cores: Optional[float] = None
     core_rss: Dict[str, Any] = field(default_factory=dict)
@@ -317,6 +337,23 @@ def restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: W
     return counts
 
 
+def trace_gap(read: bool, starts: Sequence[int], offset: Optional[float], t0: float) -> Optional[str]:
+    """Why the op trace is no evidence of the pack ops of a window from
+    ``t0``, or None when it is: it was read, the samples place its clock, and
+    it started (a ``B`` line) at or before ``t0``. A trace missing, unreadable
+    or never started is no evidence of zero ops, and one that started later
+    would understate the window's rate."""
+    if not read:
+        return "op trace missing or unreadable"
+    if offset is None:
+        return "no samples to time the op trace by"
+    if not starts:
+        return "op trace has no start line"
+    if min(starts) / 1e9 + offset > t0:
+        return "op trace started after the phase did"
+    return None
+
+
 def compute(inp: ReportInputs) -> Report:
     incs = incarnations(inp.agent_records, inp.alive)
     turns = first_turns(incs, inp.faults, inp.now)
@@ -325,7 +362,7 @@ def compute(inp: ReportInputs) -> Report:
     for inc in incs:
         inputs_by_session.setdefault(inc.session_id, []).extend(inc.inputs)
     nudges = nudge_verdicts(inp.load, inputs_by_session, inp.now)
-    runs, _ = parse_optrace(inp.optrace)
+    runs, starts = parse_optrace(inp.optrace or [])
     offset = mono_offset(inp.samples)
     timeline = supervisor_timeline(inp.samples)
     phases: List[PhaseMetrics] = []
@@ -333,9 +370,9 @@ def compute(inp: ReportInputs) -> Report:
         m = PhaseMetrics(window=w)
         in_w = [i for i in incs if w.has(i.boot_t)]
         m.incarnations = len(in_w)
-        w_turns = [by_inc[i.inc] for i in in_w]
+        w_turns = [t for t in turns if counted_in(w, t)]
         m.first_turns = first_turn_counts(w_turns)
-        m.first_turn_latency = _stats([t.latency_s for t in w_turns if t.latency_s is not None])
+        m.first_turn_latency = _stats([lat for lat in (by_inc[i.inc].latency_s for i in in_w) if lat is not None])
         m.bad_first_turns = [f"{t.session_id} {t.inc} {t.status}" for t in w_turns if t.status in (FT_LOST, FT_DUPLICATED)]
         w_nudges = [n for n in nudges if w.has(n.t)]
         m.nudges = {"sent": len(w_nudges)}
@@ -363,7 +400,8 @@ def compute(inp: ReportInputs) -> Report:
             "open_30m": sum(1 for t, c in slung if c is None and inp.now - t >= 1800) + sum(1 for d in durations if d > 1800),
             "sling_to_closed_s": _stats(durations),
         }
-        if offset is not None:
+        m.ops_gap = trace_gap(inp.optrace is not None, starts, offset, w.t0)
+        if offset is not None and m.ops_gap is None:
             m.ops = op_stats(runs, offset, w.t0, w.t1, timeline, mean_boxes(inp.samples, w.t0, w.t1))
         m.controller_cpu, m.user_cpu_cores = _cpu(inp.samples, w, inp.hz)
         m.core_rss = core_rss_hourly(inp.samples, w)
@@ -372,7 +410,9 @@ def compute(inp: ReportInputs) -> Report:
         m.death_to_restart = _stats(death_to_restart(inp.faults, incs, w))
         for c in inp.checks:
             if w.has(float(c.get("t", 0))):
-                m.checks[str(c.get("status"))] = m.checks.get(str(c.get("status")), 0) + 1
+                status = c.get("status")
+                key = str(status) if status in CHECK_STATUSES else NO_STATUS
+                m.checks[key] = m.checks.get(key, 0) + 1
                 for warning in c.get("warnings") or []:
                     if warning.get("id") == "W-orphans":
                         try:
@@ -394,9 +434,15 @@ def _ms(values: Sequence[int]) -> str:
     return f"{_f(percentile(values, 50), 0)} / {_f(percentile(values, 95), 0)} / {_f(percentile(values, 99), 0)}"
 
 
-def _ops_lines(ops: Optional[OpStats], budget: Optional[float]) -> List[str]:
+def ops_unknown(m: PhaseMetrics) -> str:
+    """What S5 and the pack-ops line say for a phase without op figures."""
+    return f"unknown ({m.ops_gap or 'no op trace or samples'})"
+
+
+def _ops_lines(m: PhaseMetrics, budget: Optional[float]) -> List[str]:
+    ops = m.ops
     if ops is None:
-        return ["- pack ops: no op trace or samples"]
+        return [f"- pack ops: {ops_unknown(m)}"]
     lines = [
         f"- pack ops / s: all {_f(ops.rate_all, 3)}; controller-spawned {_f(ops.rate_ctl, 3)}; "
         f"per session {_f(ops.rate_ctl_per_session, 4)} (n = {ops.sessions:.1f}"
@@ -424,7 +470,8 @@ def render_phase(m: PhaseMetrics) -> List[str]:
         f"### {w.name} ({w.reconciler or '-'}): {iso(w.t0)} to {iso(w.t1)} ({(w.t1 - w.t0) / 3600:.2f} h)",
         "",
         f"- incarnations: {m.incarnations}; restarts: {m.restarts}",
-        f"- first turns: exact {ft.get(FT_EXACT, 0)}, lost {ft.get(FT_LOST, 0)}, duplicated {ft.get(FT_DUPLICATED, 0)}, "
+        f"- first turns (lost and duplicated by when the verdict came, the rest by boot): "
+        f"exact {ft.get(FT_EXACT, 0)}, lost {ft.get(FT_LOST, 0)}, duplicated {ft.get(FT_DUPLICATED, 0)}, "
         f"short-lived {ft.get('short_lived', 0)}, ended by a fault {ft.get('faulted', 0)}, pending {ft.get('pending', 0)}; "
         f"boot to first turn p50/p95 {_f(m.first_turn_latency.get('p50'))} / {_f(m.first_turn_latency.get('p95'))} s",
     ]
@@ -452,7 +499,7 @@ def render_phase(m: PhaseMetrics) -> List[str]:
         f"- workflows: slung {wf.get('slung', 0)}, closed {wf.get('closed', 0)}, open after 30 min {wf.get('open_30m', 0)}; "
         f"sling to closed p50/p95/max {_f(s.get('p50'), 0)} / {_f(s.get('p95'), 0)} / {_f(s.get('max'), 0)} s"
     )
-    lines += _ops_lines(m.ops, BUDGET.get(w.reconciler))
+    lines += _ops_lines(m, BUDGET.get(w.reconciler))
     lines.append(
         f"- CPU: controller tree mean {_f(m.controller_cpu.get('mean'), 3)} / p95 {_f(m.controller_cpu.get('p95'), 3)} cores; all of this user's {_f(m.user_cpu_cores, 3)} cores"
     )
@@ -482,28 +529,49 @@ def _bytes(value: Any) -> str:
     return f"{size:.1f} GiB"
 
 
+def no_abort(m: PhaseMetrics, settle: Optional[PhaseMetrics] = None) -> str:
+    """S7 for one half: yes only when it had check runs and each one's
+    status is known and not a hit. The v2 half's takes in the settle's runs,
+    ``check --final`` among them: a hit or a run without a status there
+    counts as the half's."""
+    late = settle.checks if settle is not None else {}
+    hits = m.checks.get("HIT", 0) + late.get("HIT", 0)
+    if hits:
+        return f"no ({hits} hit runs)"
+    blind = m.checks.get(NO_STATUS, 0) + late.get(NO_STATUS, 0)
+    if blind:
+        return f"unknown ({blind} runs without a status)"
+    return "yes" if m.checks else "unknown (no check run)"
+
+
 def soak_table(report: Report) -> List[str]:
     by_name = {m.window.name: m for m in report.phases}
     halves = [by_name.get(p) for p in SOAK_PHASES]
     if not any(halves):
         return []
+    settle = by_name.get(SETTLE_PHASE)
 
     def cell(m: Optional[PhaseMetrics], fn: Callable[[PhaseMetrics], str]) -> str:
         return "-" if m is None else fn(m)
 
+    def first_turn_cell(m: PhaseMetrics, status: str) -> str:
+        """S1, S2: the half's count; the v2 half's takes in the settle's."""
+        late = settle.first_turns.get(status, 0) if settle is not None and m is halves[1] else 0
+        return str(m.first_turns.get(status, 0) + late)
+
     rows = [
-        ("S1", "lost first turns", "0", lambda m: str(m.first_turns.get(FT_LOST, 0))),
-        ("S2", "duplicated first turns", "0", lambda m: str(m.first_turns.get(FT_DUPLICATED, 0))),
+        ("S1", "lost first turns", "0", lambda m: first_turn_cell(m, FT_LOST)),
+        ("S2", "duplicated first turns", "0", lambda m: first_turn_cell(m, FT_DUPLICATED)),
         ("S3", "infrastructure processes killed, Dolt restarts", "0", lambda m: str(m.unexplained_store_changes)),
         ("S4", "unconfirmed message ops", "< 1%", lambda m: f"{m.messages.unconfirmed}/{m.messages.closed}"),
         (
             "S5",
             "controller-spawned pack ops / s / session",
             "≤ 0.30 / ≤ 0.05",
-            lambda m: "-" if m.ops is None else f"{m.ops.rate_ctl_per_session:.4f}",
+            lambda m: ops_unknown(m) if m.ops is None else f"{m.ops.rate_ctl_per_session:.4f}",
         ),
         ("S6", "core RSS within ±20%", "yes", lambda m: str(m.core_rss.get("within_20pct"))),
-        ("S7", "no abort", "yes", lambda m: "yes" if not m.checks.get("HIT") else f"no ({m.checks.get('HIT')} hit runs)"),
+        ("S7", "no abort", "yes", lambda m: no_abort(m, settle if m is halves[1] else None)),
     ]
     lines = ["| ID | Criterion | Target | Legacy half | v2 half |", "|---|---|---|---|---|"]
     for rid, what, target, fn in rows:
@@ -541,7 +609,7 @@ def first_turn_summary(report: Report) -> str:
     counts = first_turn_counts(report.all_first_turns)
     bad = [t for t in report.all_first_turns if t.status not in (FT_EXACT, "pending")]
     lines = [f"incarnations {len(report.all_first_turns)}: " + ", ".join(f"{k} {v}" for k, v in counts.items())]
-    lines += [f"  {t.session_id} {t.inc} {t.status} ({t.beacon_bursts} beacon bursts)" for t in bad]
+    lines += [f"  {t.session_id} {t.inc} {t.status} ({t.beacons} beacon lines)" for t in bad]
     return "\n".join(lines) + "\n"
 
 
@@ -552,10 +620,11 @@ def load_inputs(data: Path, optrace: Path, alive: Callable[[str], bool], now: fl
     agents: List[Rec] = []
     for path in sorted((data / "agents").glob("*.jsonl")):
         agents.extend(read_jsonl(path))
+    trace: Optional[List[str]]
     try:
         trace = optrace.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        trace = []
+        trace = None
     drills: List[Rec] = []
     for path in sorted((data / "drills").glob("*.json")):
         try:

@@ -239,9 +239,11 @@ def conf_teardown(
         core = CoreTuple(session, sock, root, os.path.join(root, "hc-config"))
         res = run([hc_bin, "server", "stop"], env=hc_env(core, hc_bin, base_env), timeout=60.0)
         result.cores.append({"session": session, "socket": sock, "stop_exit": res.code, "tail": res.tail(300)})
+    # An exiting core stops reading as hc runtime before the kernel releases
+    # its lock: wait for both before judging either.
     deadline = time.monotonic() + wait_s
     left = runtime_of(procfs, root, me)
-    while left and time.monotonic() < deadline:
+    while (left or not all(lock_free(lock) for lock in locks)) and time.monotonic() < deadline:
         time.sleep(0.2)
         left = runtime_of(procfs, root, me)
     for proc in left:

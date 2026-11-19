@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Dict, Iterator, List
@@ -14,8 +16,10 @@ import pytest
 from fakehc import FakeHc
 from fakehc.cli import write_launcher
 from soakanalysis import hc_role
-from soakhc import CoreTuple, HcError, HcRpc, conf_teardown, hc_env, lock_free, parse_status_env, runtime_of, wait_answers
+from soakhc import CoreTuple, HcError, HcRpc, Teardown, conf_teardown, hc_env, lock_free, parse_status_env, runtime_of, wait_answers
 from soaklib import NotOwned, ProcFS, signal_owned
+
+from .soaktestkit import ProcTree
 
 
 def test_parse_status_env() -> None:
@@ -40,10 +44,15 @@ def test_server_status_from_fake_hc(short_tmp: Path) -> None:
     try:
         rpc = HcRpc(fake.socket_path)
         status = rpc.status()
-        assert status.pid == os.getpid() and status.version == "0.1.19" and status.holders == (os.getpid(),)
+        # hc v0.1.19 starts a holder on demand, for the first terminal.run:
+        # a fresh core lists none. fake-hc's one holder is the core itself.
+        assert status.pid == os.getpid() and status.version == "0.1.19" and status.holders == ()
         assert status.live == 0 and rpc.answers()
+        rpc.call("terminal.run", {"argv": ["/bin/sh", "-c", "exec cat"], "cwd": str(short_tmp), "no_parent": True, "no_notify": True})
+        running = rpc.status()
+        assert running.holders == (os.getpid(),) and running.live == 1
         assert wait_answers(rpc, 5.0) is not None
-        assert fake.call_count("hello") >= 1 and fake.call_count("server.status") == 1
+        assert fake.call_count("hello") >= 1 and fake.call_count("server.status") == 2 and fake.call_count("terminal.run") == 1
         assert fake.schema_violations == []
     finally:
         fake.close()
@@ -116,6 +125,39 @@ def test_conf_teardown_kills_a_survivor_by_pid(scratch: Dict[str, str], tmp_path
     while runtime_of(procfs, root, os.getuid()) and time.monotonic() < deadline:
         time.sleep(0.05)
     assert runtime_of(procfs, root, os.getuid()) == []
+
+
+def test_conf_teardown_waits_for_a_lock_released_after_its_core_left(tmp_path: Path, proc_tree: ProcTree) -> None:
+    root = tmp_path / "R"
+    lock = root / "herdr-core" / "conf1" / "core.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text(str(tmp_path / "c1.sock") + "\n", encoding="utf-8")
+    stop = tmp_path / "stop-hc"
+    stop.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stop.chmod(0o755)
+    procfs = ProcFS(str(proc_tree.root))  # no hc runtime left at all
+
+    def hold() -> int:
+        fd = os.open(str(lock), os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        return fd
+
+    def teardown(wait_s: float) -> Teardown:
+        return conf_teardown(str(root), str(stop), {"HOME": str(tmp_path)}, procfs, wait_s=wait_s, unit_gone=lambda unit: True)
+
+    release = threading.Timer(0.5, os.close, args=(hold(),))
+    release.start()
+    try:
+        late = teardown(10.0)
+    finally:
+        release.join()
+    assert late.ok and late.held_locks == [] and late.survivors == [], late.as_rec()
+    fd = hold()
+    try:
+        held = teardown(0.3)
+    finally:
+        os.close(fd)
+    assert not held.ok and held.held_locks == [str(lock)] and held.survivors == []
 
 
 def test_conf_teardown_reports_units_left(scratch: Dict[str, str]) -> None:

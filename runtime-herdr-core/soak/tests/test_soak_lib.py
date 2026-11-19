@@ -70,8 +70,50 @@ def test_encode_line_keeps_every_line_under_the_limit() -> None:
     assert len(line) < LINE_LIMIT
     doc = json.loads(line)
     assert doc["truncated"] is True and doc["ev"] == "in"
+    assert len(doc["text"]) == len(doc["other"]) > 1000  # one common cut, as long as fits
     small = encode_line({"ev": "hb", "t": 2.0})
     assert json.loads(small) == {"ev": "hb", "t": 2.0}
+
+
+def test_encode_line_keeps_a_check_run_s_status_and_finding_ids() -> None:
+    """A check run whose finding carries a long reason is cut inside the
+    finding: the report and the digest still read its status and ids."""
+    reason = "foreign hc runtime: " + ", ".join(f"hold pid {1000 + i} (/home/soak/.local/state/x{i})" for i in range(150))
+    rec = {
+        "t": 500.0,
+        "phase": "soak-v2",
+        "mode": "abort",
+        "status": "HIT",
+        "hits": [{"id": "AP7", "reason": reason}],
+        "warnings": [{"id": "AP9", "reason": "record-only: a slow probe"}],
+        "unknown": {"AP5": "no ops"},
+        "perf": None,
+        "final": False,
+    }
+    line = encode_line(rec)
+    assert len(line) < LINE_LIMIT < len(json.dumps(rec))
+    doc = json.loads(line)
+    assert doc["truncated"] is True
+    assert {k: v for k, v in doc.items() if k not in ("hits", "truncated")} == {k: v for k, v in rec.items() if k != "hits"}
+    [hit] = doc["hits"]
+    assert hit["id"] == "AP7" and reason.startswith(hit["reason"]) and len(hit["reason"]) > 2000
+
+
+def test_encode_line_halves_the_bulkiest_nested_list_and_keeps_what_wraps_it() -> None:
+    sessions = [{"id": f"s{i}", "n": i} for i in range(2000)]
+    line = encode_line({"ev": "cmd", "t": 1.0, "json": {"count": 2000, "sessions": sessions}})
+    assert len(line) < LINE_LIMIT
+    doc = json.loads(line)
+    assert doc["truncated"] is True and doc["ev"] == "cmd" and doc["json"]["count"] == 2000
+    kept = doc["json"]["sessions"]
+    assert 0 < len(kept) < len(sessions) and kept == sessions[: len(kept)]
+
+
+def test_encode_line_keeps_the_essential_scalars_when_nothing_else_fits() -> None:
+    rec = {**{f"k{i:04d}": i for i in range(1000)}, "ev": "x", "t": 3.0, "status": "OK", "kind": "note", "inc": {"nested": [1, 2]}}
+    line = encode_line(rec)
+    assert len(line) < LINE_LIMIT
+    assert json.loads(line) == {"ev": "x", "t": 3.0, "status": "OK", "kind": "note", "truncated": True}
 
 
 def test_jsonl_round_trip_skips_a_torn_line(tmp_path: Path) -> None:

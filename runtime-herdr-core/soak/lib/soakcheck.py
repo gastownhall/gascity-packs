@@ -49,7 +49,7 @@ from soakanalysis import (
 )
 from soakhc import HcError, HcRpc, core_tuple
 from soaksample import supervisor_state
-from soaklib import City, ProcFS, Rec, SoakPaths, append_jsonl, iso, parse_jsonl, read_jsonl, run, write_atomic
+from soaklib import City, ProcFS, ProcInfo, Rec, SoakPaths, append_jsonl, iso, parse_jsonl, read_jsonl, run, write_atomic
 
 CHECK_PERIOD_S = 300.0
 HEALTH_TRIES = 3
@@ -61,6 +61,9 @@ HC_STATE_LIMIT = 2 << 30
 R_LIMIT = 4 << 30
 WINDOW_S = 900.0
 UNKNOWN_LIMIT = 3
+AGENT_LOG_GRACE_S = 60.0
+"""How long a live scripted agent may run before its incarnation must have a
+``boot`` record in the agent logs: the agent writes it before it reads any input."""
 SAMPLES_STALE_S = 180.0
 TRACE_SILENT_S = 600.0
 EVENTS_SILENT_S = 600.0
@@ -112,6 +115,9 @@ class State:
     to a sling: id -> the ``bead.closed`` event's time."""
     load_offset: int = 0
     aborted: bool = False
+    stopped: bool = False
+    """Set, and saved at once, when the abort's ``gc stop`` exits 0. Until
+    then every check run after the abort runs ``gc stop`` again."""
 
     @classmethod
     def load(cls, path: Path) -> "State":
@@ -134,12 +140,18 @@ class Inputs:
     reconciler: str
     drill: bool = False
     conformance: bool = False
+    final: bool = False
+    """``soak check --final``: AP4 judges every incarnation."""
     health: Optional[List[Tuple[bool, str]]] = None
     supervisor: Optional[Tuple[int, int]] = None
     store: Optional[List[Tuple[int, int, str]]] = None
     faults: List[Rec] = field(default_factory=list)
     controller_starts: Optional[List[float]] = None
     first_turns: Optional[List[FirstTurn]] = None
+    """None when there is no agent-log directory to read."""
+    unlogged_agents: List[str] = field(default_factory=list)
+    """Live scripted agents of the city, running for :data:`AGENT_LOG_GRACE_S`
+    or more, whose incarnation has no ``boot`` record in the agent logs."""
     ops: Optional[OpStats] = None
     sizes: Optional[Rec] = None
     hc: Optional[List[HcProc]] = None
@@ -223,6 +235,28 @@ def fault_covers(fault: Rec, what: str, t0: float, t1: float) -> bool:
     return what in covers or "all" in covers
 
 
+def first_turn_cutoff(inp: Inputs, state: State) -> float:
+    """AP4 judges a lost or duplicated first turn whose verdict came at or after this.
+
+    A verdict belongs to the phase it comes in, whatever phase its incarnation
+    booted in: a survivor's second first turn after the switch, or a loss that
+    matures after it, is the new phase's. A run also judges what came since the
+    previous run, so a verdict between the last run of one phase and the start
+    of the next is judged once. ``--final`` judges every incarnation.
+    """
+    if inp.final:
+        return float("-inf")
+    if state.last_t:
+        return min(inp.phase_start, state.last_t)
+    return inp.phase_start
+
+
+def judged_first_turns(turns: Sequence[FirstTurn], cutoff: float) -> List[FirstTurn]:
+    """The lost or duplicated first turns whose verdict came at or after
+    ``cutoff``; one without a verdict time is judged too."""
+    return [ft for ft in turns if ft.status in (FT_LOST, FT_DUPLICATED) and (ft.verdict_t is None or ft.verdict_t >= cutoff)]
+
+
 def evaluate(inp: Inputs, state: State, mode: str) -> Outcome:
     """Judge one run. ``state`` is updated in place for the next run."""
     out = Outcome(t=inp.now, phase=inp.phase, mode=mode)
@@ -278,12 +312,15 @@ def evaluate(inp: Inputs, state: State, mode: str) -> Outcome:
 
     # AP4 a lost or duplicated first turn
     if inp.first_turns is None:
-        unknown("AP4", "agent logs unreadable")
+        unknown("AP4", "no agent-log directory")
     else:
-        bad = [ft for ft in inp.first_turns if ft.status in (FT_LOST, FT_DUPLICATED) and ft.boot_t >= inp.phase_start]
+        bad = judged_first_turns(inp.first_turns, first_turn_cutoff(inp, state))
         if bad:
             desc = ", ".join(f"{ft.session_id} {ft.status}" for ft in bad[:5])
             out.hits.append(Finding("AP4", f"{len(bad)} first turn(s) lost or duplicated: {desc}"))
+        if inp.unlogged_agents:
+            names = ", ".join(inp.unlogged_agents[:5])
+            unknown("AP4", f"{len(inp.unlogged_agents)} live scripted agent(s) with no agent log: {names}")
 
     # AP5 pack cost
     if inp.ops is None:
@@ -308,16 +345,20 @@ def evaluate(inp: Inputs, state: State, mode: str) -> Outcome:
         elif inp.ops.ctl_cpu_cores > cpu_limit:
             out.judge(Finding("AP5", f"controller-spawned op CPU {inp.ops.ctl_cpu_cores:.3f} cores over {cpu_limit:.3f} (n={n:.1f})"))
 
-    # AP6 state size
+    # AP6 state size: each size on its own; one the sample lacks makes AP6
+    # unknown, even next to a hit on the other
     if inp.sizes is None:
         unknown("AP6", "no size sample")
     else:
-        hc_state = inp.sizes.get("hc_state")
-        r_size = inp.sizes.get("R")
-        if isinstance(hc_state, int) and hc_state > HC_STATE_LIMIT:
-            out.hits.append(Finding("AP6", f"hc state directory {hc_state} bytes"))
-        if isinstance(r_size, int) and r_size > R_LIMIT:
-            out.hits.append(Finding("AP6", f"R {r_size} bytes"))
+        lacking: List[str] = []
+        for key, name, limit in (("hc_state", "hc state directory", HC_STATE_LIMIT), ("R", "R", R_LIMIT)):
+            size = inp.sizes.get(key)
+            if not isinstance(size, int):
+                lacking.append(name)
+            elif size > limit:
+                out.hits.append(Finding("AP6", f"{name} {size} bytes"))
+        if lacking:
+            unknown("AP6", "size sample lacks " + " and ".join(lacking))
 
     # AP7 an unexpected core or holder
     if inp.hc is None or inp.city_core is None:
@@ -479,6 +520,23 @@ def agent_records(city: City) -> Dict[str, List[Rec]]:
     return out
 
 
+def unlogged_agents(
+    snap: Mapping[int, ProcInfo], city_path: str, logged: Iterable[str], boot: str, grace_s: float = AGENT_LOG_GRACE_S
+) -> List[str]:
+    """``<session> pid <pid>`` of every scripted agent of the city (command name
+    ``soak-agent``, the city's ``GC_CITY_PATH``) running for ``grace_s`` or more
+    whose ``inc`` (``<boot>:<pid>:<start ticks>``) is not in ``logged``."""
+    seen = set(logged)
+    return [
+        f"{p.env.get('GC_SESSION_ID') or '?'} pid {p.pid}"
+        for p in sorted(snap.values(), key=lambda q: q.pid)
+        if p.comm == "soak-agent"
+        and p.env.get("GC_CITY_PATH") == city_path
+        and p.age_s >= grace_s
+        and f"{boot}:{p.pid}:{p.start}" not in seen
+    ]
+
+
 def canary_scan(roots: Iterable[Path], canary: str) -> List[str]:
     """Regular files under ``roots`` that contain ``canary``."""
     needle = canary.encode("utf-8")
@@ -540,7 +598,7 @@ class Collector:
         city = self.city
         uid = os.getuid()
         phase, phase_start, reconciler = phase_info(city)
-        inp = Inputs(now=now, phase=phase, phase_start=phase_start, reconciler=reconciler)
+        inp = Inputs(now=now, phase=phase, phase_start=phase_start, reconciler=reconciler, final=final)
         inp.drill = city.flag("DRILL")
         inp.conformance = city.flag("CONFORMANCE")
         inp.faults = read_jsonl(city.file("faults.jsonl"))
@@ -568,7 +626,10 @@ class Collector:
         records = agent_records(city)
         alive = alive_by_proc(self.procfs)
         incs = incarnations((r for recs in records.values() for r in recs), alive)
-        inp.first_turns = first_turns(incs, inp.faults, now)
+        if city.agents.is_dir():
+            inp.first_turns = first_turns(incs, inp.faults, now)
+            boot = self.procfs.boot_id()[:8]
+            inp.unlogged_agents = unlogged_agents(snap, str(city.path), (i.inc for i in incs), boot)
         inputs_by_session: Dict[str, List[Rec]] = {}
         for sid, recs in records.items():
             inputs_by_session[sid] = [r for r in recs if r.get("ev") == "in"]
@@ -706,8 +767,10 @@ def digest(outcomes: Sequence[Rec], now: float) -> str:
 
 
 def abort(city: City, outcome: Outcome, paths: SoakPaths, gc: str, procfs: ProcFS) -> None:
-    """The abort procedure: ABORTED, stop load and probes, capture, stop the city, check, record."""
-    from soakcapture import capture, remains
+    """Abort steps 1 and 2: ``ABORTED``, stop load and probes, capture. A capture
+    that fails is recorded and never keeps the city running: ``_check`` runs
+    ``stop_city`` (step 3) after this, whatever happens here."""
+    from soakcapture import capture
 
     aborted = city.file("ABORTED")
     with open(aborted, "a", encoding="utf-8") as handle:
@@ -715,13 +778,32 @@ def abort(city: City, outcome: Outcome, paths: SoakPaths, gc: str, procfs: ProcF
         for f in outcome.hits:
             handle.write(f"  {f.id}: {f.reason}\n")
     run(["systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"], timeout=60.0)
-    bundle = capture(city, paths, gc, procfs)
-    stop = run([gc, "stop", str(city.path)], timeout=900.0)
-    left = remains(city, procfs)
+    try:
+        bundle = str(capture(city, paths, gc, procfs))
+    except Exception as err:
+        bundle = f"FAILED {type(err).__name__}: {err}"
     with open(aborted, "a", encoding="utf-8") as handle:
         handle.write(f"capture: {bundle}\n")
+
+
+def stop_city(city: City, state: State, state_path: Path, gc: str, procfs: ProcFS) -> None:
+    """Abort step 3: ``gc stop`` the city, check what of it remains, record both
+    in ``ABORTED``. Only an exit 0 sets ``state.stopped``; until then every
+    later check run calls this again, before it collects its inputs."""
+    from soakcapture import remains
+
+    stop = run([gc, "stop", str(city.path)], timeout=900.0)
+    if stop.ok:
+        state.stopped = True
+        state.save(state_path)
+    try:
+        left = remains(city, procfs)
+        after = "nothing of the city remains" if not left else "REMAINING " + "; ".join(left)
+    except Exception as err:
+        after = f"FAILED {type(err).__name__}: {err}"
+    with open(city.file("ABORTED"), "a", encoding="utf-8") as handle:
         handle.write(f"gc stop exit {stop.code}: {stop.tail(300)}\n")
-        handle.write("after stop: " + ("nothing of the city remains" if not left else "REMAINING " + "; ".join(left)) + "\n")
+        handle.write(f"after stop: {after}\n")
 
 
 def check_main(city: City, paths: SoakPaths, final: bool = False, gc: str = "gc") -> int:
@@ -736,6 +818,10 @@ def _check(city: City, paths: SoakPaths, final: bool, gc: str) -> int:
     procfs = ProcFS()
     state_path = city.file("check-state.json")
     state = State.load(state_path)
+    if state.aborted and not state.stopped:
+        # An earlier abort's gc stop failed, or that run was killed: stop the
+        # city before anything this run reads or writes can raise.
+        stop_city(city, state, state_path, gc, procfs)
     inputs = Collector(city, paths, procfs, gc).collect(state, final=final)
     outcome = evaluate(inputs, state, city.mode)
     rec = outcome.as_rec()
@@ -752,13 +838,17 @@ def _check(city: City, paths: SoakPaths, final: bool, gc: str) -> int:
     if outcome.hits and city.mode == "abort" and not state.aborted and not city.flag("ABORTED"):
         state.aborted = True
         state.save(state_path)
-        abort(city, outcome, paths, gc, procfs)
+        try:
+            abort(city, outcome, paths, gc, procfs)
+        finally:
+            stop_city(city, state, state_path, gc, procfs)
     state.save(state_path)
     print(outcome.line())
     return 1 if final and outcome.hits else 0
 
 
 __all__ = [
+    "AGENT_LOG_GRACE_S",
     "RECORD_ONLY",
     "WORKFLOW_KEEP_S",
     "Collector",
@@ -769,5 +859,6 @@ __all__ = [
     "check_main",
     "digest",
     "evaluate",
+    "unlogged_agents",
     "workflow_closures",
 ]

@@ -9,6 +9,12 @@ with every criterion's measured value and verdict.
 Every signal goes through :func:`soaklib.signal_owned` after an ownership
 check: hc runtime of the city's core tuple, a scripted agent of the city, or
 the city's store proxy. Nothing is ever killed by name or pattern.
+
+A drill never measures recovery from a fault that did not land: a refused
+signal, a listed holder that is not running or a failed ``systemctl kill``
+ends the drill with verdict ``error``, and every drill that signals judges
+that what it signalled is gone (``F1-killed``, ``F2-killed``, ``F3-killed``,
+``F4-killed``).
 """
 
 from __future__ import annotations
@@ -19,12 +25,14 @@ import signal
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from soakanalysis import (
+    FIRST_TURN_WINDOW_S,
     FT_DUPLICATED,
     FT_EXACT,
     FT_PENDING,
+    FirstTurn,
     city_cores,
     find_orphans,
     first_turns,
@@ -37,7 +45,7 @@ from soakanalysis import (
     store_procs,
 )
 from soakcapture import remains
-from soakcheck import agent_records, alive_by_proc
+from soakcheck import agent_records, alive_by_proc, unlogged_agents
 from soakhc import CoreStatus, CoreTuple, HcError, HcRpc, core_tuple, hc_env, wait_answers
 from soakload import STEADY, agent_owner, kill_agent, running_sessions
 from soaklib import (
@@ -62,6 +70,12 @@ BACK_LIMIT_S = 2 * PATROL_S + 10.0
 REAP_LIMIT_S = PATROL_S + 10.0
 SETTLE_S = 600.0
 CORE_ANSWER_S = 30.0
+GONE_WAIT_S = 10.0
+"""How long a process the drill signalled may take to be gone."""
+FIRST_TURN_WAIT_S = FIRST_TURN_WINDOW_S + 10.0
+"""How long C5 waits, from when it starts, for each ended session's new
+incarnation and for the first turns it judges to resolve: by then every
+incarnation born before C5 started is past the first-turn window."""
 HC_VERSION = "0.1.19"
 UPGRADE_VERSION = "0.1.20"
 FOREIGN_REFUSAL = "started outside the pack"
@@ -320,6 +334,8 @@ class Drill:
         return owns
 
     def kill(self, pid: int, start: int, sig: int, owner: Callable[[int], Optional[str]]) -> bool:
+        """A follow-up signal (a Dolt that outlived its proxy, F9's SIGCONT): a
+        refusal is noted. The fault itself goes through :meth:`inject`."""
         try:
             signal_owned(pid, sig, start, owner, self.procfs)
         except NotOwned as err:
@@ -328,34 +344,62 @@ class Drill:
             return False
         return True
 
+    def inject(self, what: str, pid: int, start: int, sig: int, owner: Callable[[int], Optional[str]]) -> None:
+        """Signal the drill's fault; a refused signal is a :class:`DrillError`."""
+        try:
+            signal_owned(pid, sig, start, owner, self.procfs)
+        except NotOwned as err:
+            raise DrillError(f"{what} not signalled: {err}") from None
+
+    def wait_gone(self, pairs: Sequence[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """The ``(pid, start)`` pairs still running after at most :data:`GONE_WAIT_S`."""
+        deadline = time.time() + GONE_WAIT_S
+        while True:
+            left = [(pid, start) for pid, start in pairs if self.procfs.alive(pid, start)]
+            if not left or time.time() >= deadline:
+                return left
+            time.sleep(0.5)
+
+    def judge_gone(self, cid: str, what: str, pairs: Sequence[Tuple[int, int]]) -> None:
+        """The positive check that the fault took effect: every pair signalled is gone."""
+        left = self.wait_gone(pairs)
+        self.judge(cid, what, {"signalled": [list(p) for p in pairs], "left": [list(p) for p in left]}, bool(pairs) and not left)
+
     # --- shared criteria ------------------------------------------------------------------------------
 
-    def measure_back(self, before: Before, ended: Dict[str, int], dispatcher: bool = False) -> Tuple[Dict[str, Optional[float]], Optional[float]]:
+    def measure_recovery(
+        self, before: Before, ended: Dict[str, int], pairs: Sequence[Tuple[int, int]] = (), dispatcher: bool = False
+    ) -> Tuple[Dict[str, Optional[float]], Optional[float], Optional[float]]:
         """Seconds from the injection until each ended session runs a new box,
-        and (with ``dispatcher``) until a dispatcher session runs a new box."""
+        until (with ``dispatcher``) a dispatcher session runs a new box, and
+        until every background child in ``pairs`` is gone; None for what was not
+        seen by its deadline. One loop, so a slow reap never delays when a
+        session counts as back, nor a slow return when the children count as
+        reaped."""
         back: Dict[str, Optional[float]] = {sid: None for sid in ended}
         disp_back: Optional[float] = None
-        deadline = self.t_inject + max(BACK_LIMIT_S * 3, 300.0)
-        while time.time() < deadline and (any(v is None for v in back.values()) or (dispatcher and disp_back is None)):
-            status = self.status()
-            holders = set(status.holders) if status else set()
-            boxes = [p for p in self.snapshot().values() if p.ppid in holders]
-            for p in boxes:
-                sid = p.env.get("GC_SESSION_ID", "")
-                if sid in back and back[sid] is None and p.pid != ended[sid]:
-                    back[sid] = round(time.time() - self.t_inject, 1)
-            if dispatcher and disp_back is None and new_dispatcher_box(boxes, before.boxes) is not None:
-                disp_back = round(time.time() - self.t_inject, 1)
-            time.sleep(1.0)
-        return back, disp_back
-
-    def measure_reaped(self, pairs: Sequence[Tuple[int, int]]) -> Optional[float]:
-        deadline = self.t_inject + REAP_LIMIT_S * 4
-        while time.time() < deadline:
-            if all(not self.procfs.alive(pid, start) for pid, start in pairs):
-                return round(time.time() - self.t_inject, 1)
-            time.sleep(0.5)
-        return None
+        reaped: Optional[float] = None if pairs else 0.0
+        back_deadline = self.t_inject + max(BACK_LIMIT_S * 3, 300.0)
+        reap_deadline = self.t_inject + REAP_LIMIT_S * 4
+        while True:
+            now = time.time()
+            reaping = reaped is None and now < reap_deadline
+            waiting = now < back_deadline and (any(v is None for v in back.values()) or (dispatcher and disp_back is None))
+            if not (reaping or waiting):
+                return back, disp_back, reaped
+            if reaping and all(not self.procfs.alive(pid, start) for pid, start in pairs):
+                reaped = round(time.time() - self.t_inject, 1)
+            if waiting:
+                status = self.status()
+                holders = set(status.holders) if status else set()
+                boxes = [p for p in self.snapshot().values() if p.ppid in holders]
+                for p in boxes:
+                    sid = p.env.get("GC_SESSION_ID", "")
+                    if sid in back and back[sid] is None and p.pid != ended[sid]:
+                        back[sid] = round(time.time() - self.t_inject, 1)
+                if dispatcher and disp_back is None and new_dispatcher_box(boxes, before.boxes) is not None:
+                    disp_back = round(time.time() - self.t_inject, 1)
+            time.sleep(0.5 if reaping else 1.0)
 
     def ended_dispatcher(self, before: Before) -> bool:
         """Whether the drill ended a dispatcher box."""
@@ -390,8 +434,7 @@ class Drill:
         disp_ended = self.ended_dispatcher(before)
         dead_incs = [i for i in self.incs() if i.inc in before.alive_incs and not i.alive]
         pairs = [pair for i in dead_incs for pair in i.bg]
-        reaped = self.measure_reaped(pairs) if pairs else 0.0
-        back, disp_back = self.measure_back(before, ended, disp_ended)
+        back, disp_back, reaped = self.measure_recovery(before, ended, pairs, disp_ended)
         worst = max([v for v in back.values() if v is not None], default=0.0)
         all_back = all(v is not None for v in back.values())
         self.judge("C2", f"ended always-on sessions run again within {BACK_LIMIT_S:.0f} s", {"sessions": back, "max_s": worst}, all_back and worst <= BACK_LIMIT_S)
@@ -415,18 +458,56 @@ class Drill:
         orphans = find_orphans(self.snapshot(), status.holders if status else [], str(self.city.path), 0.0, self.uid)
         self.judge("C4", "no orphan after the settle window", [f"{p.pid} {p.comm} {' '.join(p.argv[:3])}" for p in orphans], not orphans)
 
-    def c5(self, before: Before, sessions: Optional[Set[str]] = None) -> None:
-        now = time.time()
-        faults = read_jsonl(self.city.file("faults.jsonl"))
-        turns = first_turns(self.incs(), faults, now)
-        new = [t for t in turns if t.boot_t >= self.t_inject and (sessions is None or t.session_id in sessions)]
-        bad_new = [f"{t.session_id} {t.status}" for t in new if t.status not in (FT_EXACT, FT_PENDING)]
-        survivors = [t for t in turns if t.inc in before.alive_incs and t.status == FT_DUPLICATED]
+    def c5_turns(self, want: Set[str], sessions: Optional[Set[str]]) -> Tuple[List[FirstTurn], List[FirstTurn], float]:
+        """Every first turn, the ones C5 judges, and how long C5 waited for them:
+        until each session in ``want`` has a new incarnation and none judged is
+        pending, or for :data:`FIRST_TURN_WAIT_S`. C5 judges the incarnations
+        (of ``sessions``, when given) born since the injection and before C5
+        started, and every new one of a session in ``want``; one load starts
+        while C5 waits is not judged, so it cannot hold C5 open."""
+        t0 = time.time()
+        while True:
+            now = time.time()
+            turns = first_turns(self.incs(), read_jsonl(self.city.file("faults.jsonl")), now)
+            judged = [
+                t
+                for t in turns
+                if t.boot_t >= self.t_inject and (sessions is None or t.session_id in sessions) and (t.boot_t < t0 or t.session_id in want)
+            ]
+            done = want <= {t.session_id for t in judged} and all(t.status != FT_PENDING for t in judged)
+            if done or now - t0 >= FIRST_TURN_WAIT_S:
+                return turns, judged, now - t0
+            time.sleep(5.0)
+
+    def c5(self, before: Before, expected: Iterable[str], sessions: Optional[Set[str]] = None) -> None:
+        """C5 passes only on evidence: each session the drill ended (``expected``)
+        has a new incarnation with a ``boot`` record, every new incarnation has
+        exactly one first turn, none still pending, no survivor got a second,
+        and no live scripted agent of the city runs without a ``boot`` record
+        of its incarnation (the check that makes AP4 unknown). A drill that
+        ended no session has nothing to judge, and fails C5."""
+        want = set(expected)
+        turns, judged, waited = self.c5_turns(want, sessions)
+        missing = sorted(want - {t.session_id for t in judged})
+        pending = [t.session_id for t in judged if t.status == FT_PENDING]
+        bad_new = [f"{t.session_id} {t.status}" for t in judged if t.status not in (FT_EXACT, FT_PENDING)]
+        survivors = [t.session_id for t in turns if t.inc in before.alive_incs and t.status == FT_DUPLICATED]
+        unlogged = unlogged_agents(self.snapshot(), str(self.city.path), (t.inc for t in turns), self.procfs.boot_id()[:8])
         self.judge(
             "C5",
-            "every new incarnation has exactly one first turn; no survivor got a second",
-            {"new": len(new), "bad_new": bad_new, "survivors_duplicated": [t.session_id for t in survivors]},
-            not bad_new and not survivors,
+            "each ended session has a new, logged incarnation; every new incarnation has exactly one first turn, "
+            "none pending; no survivor got a second; no live agent without its log",
+            {
+                "expected": sorted(want),
+                "new": len(judged),
+                "missing": missing,
+                "pending": pending,
+                "bad_new": bad_new,
+                "survivors_duplicated": survivors,
+                "unlogged": unlogged,
+                "waited_s": round(waited, 1),
+            },
+            bool(want) and not (missing or pending or bad_new or survivors or unlogged),
         )
 
     def c6(self, before: Before) -> None:
@@ -496,12 +577,13 @@ class Drill:
         self.c2_c3(before)
         self.settle()
         self.c4()
-        self.c5(before, {sid})
+        self.c5(before, {sid}, {sid})
 
     def drill_place_store(self, before: Before) -> None:
         sid = self.pick_steady(before)
         landed = False
         attempts: List[Rec] = []
+        signalled: List[Tuple[int, int]] = []
         for attempt in range(3):
             store = store_procs(self.snapshot(), self.uid)
             proxies = [p for p in store if p.argv1 == "db-proxy-child"]
@@ -516,7 +598,8 @@ class Drill:
             if attempt == 0:
                 self.t_inject = time.time()
             self.fault("drill-store-term", ["store"], pids=[proxy.pid] + [d.pid for d in dolts], attempt=attempt + 1)
-            self.kill(proxy.pid, proxy.start, signal.SIGTERM, self.store_owner())
+            self.inject("store proxy", proxy.pid, proxy.start, signal.SIGTERM, self.store_owner())
+            signalled.append((proxy.pid, proxy.start))
             time.sleep(30.0)
             for dolt in dolts:
                 if self.procfs.alive(dolt.pid, dolt.start):
@@ -528,6 +611,7 @@ class Drill:
             if new and agent and all(p.cgroup == agent for p in new):
                 landed = True
                 break
+        self.judge_gone("F1-killed", "every store proxy the drill signalled is gone", signalled)
         new_store = store_procs(self.snapshot(), self.uid)
         write_atomic(self.city.file("f1-store.json"), json.dumps([[p.pid, p.start] for p in new_store]) + "\n")
         clean = all("HC_SCOPE" not in p.env and "gascity-agents.slice" in p.cgroup.split("/") for p in new_store)
@@ -570,29 +654,40 @@ class Drill:
         if before.core is None or not before.core.holders:
             raise DrillError("no holders to kill")
         snap = self.snapshot()
-        self.t_inject = time.time()
-        self.fault("drill-holder-kill", ["holder", "boxes"], pids=list(before.core.holders), all=True)
+        owner = self.hc_owner("hold")
+        targets: List[Tuple[int, int, str]] = []
+        # Every listed holder is checked before anything is signalled: a drill
+        # that kills only some of them does not exercise what it names.
         for pid in before.core.holders:
             info = snap.get(pid)
             if info is None:
-                continue
-            if cgroup_wide:
-                unit = unit_of(info.cgroup) or ""
-                if not (unit.startswith("hc-hold-") and unit.endswith((".service", ".scope"))):
-                    raise DrillError(f"holder {pid} runs in {unit!r}, not one hc-hold-* unit")
-                if self.hc_owner("hold")(pid) is not None:
-                    raise DrillError(f"holder {pid} is not this city's")
+                raise DrillError(f"holder {pid} that the core lists is not running")
+            reason = owner(pid)
+            if reason is not None:
+                raise DrillError(f"holder {pid} is not this city's: {reason}")
+            unit = unit_of(info.cgroup) or ""
+            if cgroup_wide and not (unit.startswith("hc-hold-") and unit.endswith((".service", ".scope"))):
+                raise DrillError(f"holder {pid} runs in {unit!r}, not one hc-hold-* unit")
+            targets.append((pid, info.start, unit))
+        self.t_inject = time.time()
+        self.fault("drill-holder-kill", ["holder", "boxes"], pids=list(before.core.holders), all=True)
+        if cgroup_wide:
+            for unit in dict.fromkeys(u for _pid, _start, u in targets):
                 res = run(["systemctl", "--user", "kill", "--kill-whom=all", "--signal=SIGKILL", "--", unit], timeout=60.0)
                 self.notes.append(f"systemctl kill {unit}: exit {res.code}")
-            else:
-                self.kill(pid, info.start, signal.SIGKILL, self.hc_owner("hold"))
-        self.c2_c3(before)
+                if not res.ok:
+                    raise DrillError(f"systemctl kill {unit} exited {res.code}: {res.tail(300)}")
+        else:
+            for pid, start, _unit in targets:
+                self.inject(f"holder {pid}", pid, start, signal.SIGKILL, owner)
+        self.judge_gone("F3-killed" if cgroup_wide else "F2-killed", "every holder the drill killed is gone", [(pid, start) for pid, start, _unit in targets])
+        ended = self.c2_c3(before)
         self.f1_store_kept()
         self.judge("controller", "the controller pid is unchanged", {"before": before.supervisor_pid, "now": self.supervisor_pid()}, before.supervisor_pid == self.supervisor_pid())
         self.c1(before)
         self.settle()
         self.c4()
-        self.c5(before)
+        self.c5(before, ended)
         self.c6(before)
 
     def drill_holder_kill(self, before: Before) -> None:
@@ -609,9 +704,10 @@ class Drill:
             raise DrillError("the core pid is gone")
         self.t_inject = time.time()
         self.fault("drill-core-kill", ["core"], pids=[before.core.pid])
-        self.kill(before.core.pid, info.start, signal.SIGKILL, self.hc_owner("serve"))
+        self.inject("core", before.core.pid, info.start, signal.SIGKILL, self.hc_owner("serve"))
         answered = wait_answers(self.rpc(), 120.0)
         self.judge("F4-answer", f"a core answers within {CORE_ANSWER_S:.0f} s", answered, answered is not None and answered <= CORE_ANSWER_S)
+        self.judge_gone("F4-killed", "the core the drill killed is gone, so the core that answers is a new one", [(before.core.pid, info.start)])
         self.boxes_unchanged(before, "no box ends")
         self.c1(before)
         self.settle()
@@ -681,7 +777,7 @@ class Drill:
         self.c2_c3(sub)
         self.settle()
         self.c4()
-        self.c5(sub, {sid})
+        self.c5(sub, {sid}, {sid})
 
     def drill_stop_wedged(self, before: Before) -> None:
         if before.core is None:
@@ -692,9 +788,11 @@ class Drill:
         city = str(self.city.path)
         self.t_inject = time.time()
         self.fault("drill-stop-wedged", ["all"], all=True)
-        self.kill(before.core.pid, info.start, signal.SIGSTOP, self.hc_owner("serve"))
-        first = run([self.gc, "stop", city], timeout=900.0)
-        self.kill(before.core.pid, info.start, signal.SIGCONT, self.hc_owner("serve"))
+        self.inject("core", before.core.pid, info.start, signal.SIGSTOP, self.hc_owner("serve"))
+        try:
+            first = run([self.gc, "stop", city], timeout=900.0)
+        finally:
+            self.kill(before.core.pid, info.start, signal.SIGCONT, self.hc_owner("serve"))
         first_text = first.out + first.err
         self.judge(
             "F9-first-stop",
@@ -722,7 +820,7 @@ class Drill:
         self.notes.append(f"gc start: exit {start.code}")
         ended = {sid: pid for pid, (_s, sid) in before.boxes.items() if sid and is_always_on(before.sessions.get(sid, ""))}
         disp_ended = any(is_dispatcher(before.sessions.get(sid, "")) for _s, sid in before.boxes.values())
-        back, disp_back = self.measure_back(before, ended, disp_ended)
+        back, disp_back, _reaped = self.measure_recovery(before, ended, dispatcher=disp_ended)
         worst = max([v for v in back.values() if v is not None], default=0.0)
         self.judge("C2", "every always-on session back after gc start (measured from the start)", back, all(v is not None for v in back.values()))
         self.judge("C2-latency", "slowest session back (s)", worst, None)
@@ -732,7 +830,7 @@ class Drill:
         self.c1(before, store_may_change=True)
         self.settle()
         self.c4()
-        self.c5(before)
+        self.c5(before, ended)
 
     def pinned_pin(self) -> str:
         """The pack commit's ``hc-pin.json``: from the gascity-packs clone when

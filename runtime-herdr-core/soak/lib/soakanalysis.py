@@ -171,8 +171,12 @@ def is_beacon(text: str) -> bool:
     return BEACON.match(text) is not None
 
 
+def _is_beacon_line(rec: Rec) -> bool:
+    return bool(rec.get("beacon")) or is_beacon(str(rec.get("text", "")))
+
+
 def _burst_has_beacon(burst: Sequence[Rec]) -> bool:
-    return any(bool(r.get("beacon")) or is_beacon(str(r.get("text", ""))) for r in burst)
+    return any(_is_beacon_line(r) for r in burst)
 
 
 def covers_everything(fault: Rec) -> bool:
@@ -197,32 +201,43 @@ class FirstTurn:
     inc: str
     session_id: str
     status: str
-    beacon_bursts: int
+    beacons: int
+    """Beacon lines the incarnation received: one per first turn gc typed."""
     boot_t: float
     latency_s: Optional[float]
     marker: bool
+    verdict_t: Optional[float] = None
+    """When a lost or duplicated verdict came: the second beacon line, or
+    ``window_s`` after a boot with none. None for any other status."""
 
 
 def first_turn(inc: Incarnation, faults: Sequence[Rec], now: float, window_s: float = FIRST_TURN_WINDOW_S) -> FirstTurn:
+    # gc heads every first turn with exactly one beacon line, so the count of
+    # beacon lines is the count of first turns typed. Counting bursts instead
+    # would merge a re-send less than BURST_GAP_S after the first (the pack
+    # retries an unavailable first turn after 0.5 s) into one exact turn.
+    beacon_ts = sorted(_num(r, "t") for r in inc.inputs if _is_beacon_line(r))
+    beacons = len(beacon_ts)
     bursts = [b for b in input_bursts(inc.inputs) if _burst_has_beacon(b)]
     latency = None
     marker = False
     if bursts:
         latency = _num(bursts[0][0], "t") - inc.boot_t
         marker = any(MARKER in str(r.get("text", "")) or bool(r.get("marker")) for r in bursts[0])
-    if len(bursts) == 1:
+    verdict_t: Optional[float] = None
+    if beacons == 1:
         status = FT_EXACT
-    elif len(bursts) > 1:
-        status = FT_DUPLICATED
+    elif beacons > 1:
+        status, verdict_t = FT_DUPLICATED, beacon_ts[1]
     elif inc.lived_s(now) >= window_s:
-        status = FT_LOST
+        status, verdict_t = FT_LOST, inc.boot_t + window_s
     elif inc.alive:
         status = FT_PENDING
     elif any(fault_covers(f, inc.session_id, inc.pid, inc.boot_t, inc.last_t + 5.0) for f in faults):
         status = FT_FAULTED
     else:
         status = FT_SHORT_LIVED
-    return FirstTurn(inc.inc, inc.session_id, status, len(bursts), inc.boot_t, latency, marker)
+    return FirstTurn(inc.inc, inc.session_id, status, beacons, inc.boot_t, latency, marker, verdict_t)
 
 
 def first_turns(incs: Sequence[Incarnation], faults: Sequence[Rec], now: float) -> List[FirstTurn]:
@@ -278,7 +293,8 @@ def nudge_verdicts(
             continue
         nonce = str(rec["nonce"])
         session = str(rec.get("session_id", ""))
-        sent = _num(rec, "t")
+        # cmd_record stamps a command when it returns; it was sent dur_s before.
+        sent = _num(rec, "t") - _num(rec, "dur_s")
         cli = nudge_cli_result(rec)
         if cli == "refused":
             out.append(NudgeVerdict(nonce, session, sent, str(rec.get("mode", "")), cli, NUDGE_REFUSED, None))

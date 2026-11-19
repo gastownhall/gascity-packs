@@ -14,7 +14,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 Rec = Dict[str, Any]
 """One JSON-lines record."""
@@ -52,26 +52,100 @@ def guard(throwaway: str = GUARD_FILE, machine_id: str = MACHINE_ID_FILE) -> Non
 # --- JSON lines ---------------------------------------------------------------------
 
 
+KEEP_CHARS = 32
+"""A string is never cut shorter than this, so a status, a kind, a
+finding's id or an incarnation key survives whatever is cut around it."""
+
+ESSENTIAL_KEYS = ("ev", "t", "mono", "pid", "inc", "kind", "status", "truncated")
+"""The top-level keys a record keeps when nothing else of it fits."""
+
+
+def _dumps(value: Any) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+def _children(value: Any) -> List[Tuple[Any, Any]]:
+    if isinstance(value, dict):
+        return list(value.items())
+    if isinstance(value, list):
+        return list(enumerate(value))
+    return []
+
+
+def _walk(value: Any, path: Tuple[Any, ...] = ()) -> Iterator[Tuple[Tuple[Any, ...], Any]]:
+    """Every value inside ``value``, at any depth, with its path of keys and indexes."""
+    for key, child in _children(value):
+        yield path + (key,), child
+        yield from _walk(child, path + (key,))
+
+
+def _cap(lengths: Sequence[int], over: int) -> int:
+    """The longest cap on strings of ``lengths`` (longest first) that frees
+    ``over`` characters; :data:`KEEP_CHARS` when no cap does."""
+    total = 0
+    for k, length in enumerate(lengths, 1):
+        total += length
+        cap = (total - over) // k
+        if cap >= (lengths[k] if k < len(lengths) else KEEP_CHARS):
+            return cap
+    return KEEP_CHARS
+
+
+def _second_half(value: Any) -> List[Any]:
+    """The indexes, or the keys in sorted order, of the second half of a list
+    or an object; the first half keeps the odd one out."""
+    keys = sorted(value) if isinstance(value, dict) else list(range(len(value)))
+    return keys[(len(keys) + 1) // 2 :]
+
+
+def _shrink(doc: Rec, over: int) -> bool:
+    """Shorten ``doc`` in place by ``over`` bytes where it can: cut every string
+    longer than :data:`KEEP_CHARS` to the longest common cap that frees them
+    (not below that), else drop the second half of the list or object below
+    the top level with the most items, so a wrapper keeps what it wraps.
+    False when neither is left."""
+    found = list(_walk(doc))
+    strings = [(path, v) for path, v in found if isinstance(v, str) and len(v) > KEEP_CHARS]
+    if strings:
+        # A character cut frees at least one byte: JSON escapes only lengthen.
+        cap = _cap(sorted((len(v) for _, v in strings), reverse=True), over)
+        for path, text in strings:
+            parent: Any = doc
+            for key in path[:-1]:
+                parent = parent[key]
+            parent[path[-1]] = text[:cap]
+        return True
+    containers = [v for _, v in found if isinstance(v, (dict, list)) and len(v) > 1]
+    if not containers:
+        return False
+    widest = max(containers, key=len)
+    for key in reversed(_second_half(widest)):
+        del widest[key]
+    return True
+
+
 def encode_line(rec: Mapping[str, Any], limit: int = LINE_LIMIT) -> bytes:
-    """``rec`` as one JSON line under ``limit`` bytes: the longest string
-    values are cut (and the record marked ``truncated``) until it fits."""
-    work: Rec = dict(rec)
-    line = (json.dumps(work, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    """``rec`` as one JSON line under ``limit`` bytes.
+
+    A longer record is marked ``truncated`` and shortened until it fits: its
+    longest strings first, at any depth, each to no less than
+    :data:`KEEP_CHARS` characters; then, one at a time, the second half of the
+    nested list or object with the most items. Keys and short values stay,
+    so a reader still sees a check run's status and its findings' ids. Only
+    when that is not enough does it keep just those of
+    :data:`ESSENTIAL_KEYS` that hold a string, a number, a boolean or null."""
+    line = _dumps(rec)
+    if len(line) < limit:
+        return line
+    doc: Rec = json.loads(line)  # a deep copy, of plain JSON types
+    doc["truncated"] = True
+    line = _dumps(doc)
     while len(line) >= limit:
-        longest = max(
-            ((k, v) for k, v in work.items() if isinstance(v, str)),
-            key=lambda kv: len(kv[1]),
-            default=None,
-        )
-        if longest is None or len(longest[1]) <= 16:
-            work = {k: work[k] for k in ("ev", "t", "kind") if k in work}
-            work["truncated"] = True
-            line = (json.dumps(work, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-            break
-        key, value = longest
-        work[key] = value[: max(16, len(value) - (len(line) - limit) - 64)]
-        work["truncated"] = True
-        line = (json.dumps(work, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        if not _shrink(doc, len(line) - limit + 1):
+            # Every string is cut to KEEP_CHARS by now: these few scalars take
+            # well under LINE_LIMIT, even escaped.
+            return _dumps({k: doc[k] for k in ESSENTIAL_KEYS if k in doc and not isinstance(doc[k], (dict, list))})
+        line = _dumps(doc)
     return line
 
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import errno
 import json
+import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pytest
 
-from soaklib import City
+from soaklib import City, CmdResult, ProcFS, SoakPaths
+from soakhc import CoreTuple, HcError
 from soakanalysis import (
     ENDED_CANCELED,
     ENDED_CLOSED,
@@ -20,8 +23,11 @@ from soakanalysis import (
     HcProc,
     NudgeVerdict,
     OpStats,
+    first_turns,
+    incarnations,
 )
 from soakcheck import (
+    AGENT_LOG_GRACE_S,
     HIT,
     OK,
     RECORD_ONLY,
@@ -29,6 +35,7 @@ from soakcheck import (
     WORKFLOW_KEEP_S,
     Collector,
     Inputs,
+    Outcome,
     State,
     canary_scan,
     digest,
@@ -37,6 +44,8 @@ from soakcheck import (
     read_tail_lines,
     workflow_closures,
 )
+
+from .soaktestkit import ProcTree, rec
 
 NOW = 100_000.0
 CORE = ("/home/soak/.local/state/gc-runtime-herdr-core", "gc-hc-soak")
@@ -124,8 +133,63 @@ def test_ap4_a_lost_or_duplicated_first_turn_in_the_phase() -> None:
     assert ids(evaluate(lost, primed(), "abort")) == ["AP4"]
     dup = healthy(first_turns=[FirstTurn("i3", "s3", FT_DUPLICATED, 2, NOW - 600, 1.0, True)])
     assert ids(evaluate(dup, primed(), "abort")) == ["AP4"]
-    before_phase = healthy(first_turns=[FirstTurn("i2", "s2", FT_LOST, 0, NOW - 9000, None, False)])
+    before_phase = healthy(first_turns=[FirstTurn("i2", "s2", FT_LOST, 0, NOW - 9000, None, False, NOW - 8820)])
     assert ids(evaluate(before_phase, primed(), "abort")) == []
+    # A bad first turn with no verdict time is judged, whatever its boot.
+    unknown_time = healthy(first_turns=[FirstTurn("i2", "s2", FT_LOST, 0, NOW - 9000, None, False)])
+    assert ids(evaluate(unknown_time, primed(), "abort")) == ["AP4"]
+
+
+# --- AP4 across a phase boundary, through the real incarnation and first-turn analysis -----------
+
+SWITCH = NOW - 300  # the phase began here; the survivor booted 100 s before it
+SURVIVOR = "b00tb00t:100:5000"
+STEADY_BEACON = "[hc-soak] soak-steady-1 • 2026-11-19T10:00:00"
+
+
+def survivor(*beacons: float) -> List[FirstTurn]:
+    """The first turn, as the check sees it at NOW, of a live session booted at
+    ``SWITCH - 100`` that received a beacon line at each of ``beacons``."""
+    records = [rec("boot", SWITCH - 100, SURVIVOR, session_id="s1", session_name="soak-steady-1", template="soak-steady")]
+    records += [rec("in", t, SURVIVOR, text=STEADY_BEACON, beacon=True) for t in beacons]
+    return first_turns(incarnations(records, lambda inc: True), [], NOW)
+
+
+def ap4(turns: List[FirstTurn], last_t: float, final: bool = False) -> List[str]:
+    """AP4's answer at NOW in the phase that began at ``SWITCH``, the previous run at ``last_t``."""
+    inp = healthy(phase="soak-v2", phase_start=SWITCH, reconciler="v2", first_turns=turns, final=final)
+    return [i for i in ids(evaluate(inp, State(last_t=last_t), "abort")) if i == "AP4"]
+
+
+def test_ap4_judges_a_survivor_s_second_first_turn_in_the_phase_it_came_in() -> None:
+    turns = survivor(SWITCH - 99, SWITCH + 50)
+    assert [(t.status, t.boot_t, t.verdict_t) for t in turns] == [(FT_DUPLICATED, SWITCH - 100, SWITCH + 50)]
+    assert ap4(turns, last_t=NOW - 100) == ["AP4"]
+    assert ap4(turns, last_t=0.0) == ["AP4"]  # the phase's first run, and no run before it
+    assert ap4(survivor(SWITCH - 99), last_t=NOW - 100) == []  # the control: one first turn
+
+
+def test_ap4_judges_a_survivor_s_loss_that_matures_after_the_switch() -> None:
+    turns = survivor()
+    assert [(t.status, t.verdict_t) for t in turns] == [(FT_LOST, SWITCH + 80)]
+    assert ap4(turns, last_t=NOW - 100) == ["AP4"]
+
+
+def test_ap4_judges_a_verdict_from_before_the_switch_once_and_only_if_no_run_saw_it() -> None:
+    turns = survivor(SWITCH - 99, SWITCH - 50)
+    assert ap4(turns, last_t=SWITCH - 60) == ["AP4"]  # it came after the old phase's last run
+    assert ap4(turns, last_t=SWITCH - 40) == []  # the old phase's last run judged it
+    assert ap4(turns, last_t=NOW - 100) == []  # an earlier run of this phase judged it
+    assert ap4(turns, last_t=NOW - 100, final=True) == ["AP4"]  # --final judges every incarnation
+
+
+def test_ap4_cannot_evaluate_an_unlogged_agent_and_still_hits_on_the_logged_ones() -> None:
+    blind = evaluate(healthy(unlogged_agents=["s2 pid 4002"]), primed(), "abort")
+    assert ids(blind) == [] and blind.status == WARN
+    assert blind.unknown == {"AP4": "1 live scripted agent(s) with no agent log: s2 pid 4002"}
+    lost = healthy(first_turns=[FirstTurn("i2", "s2", FT_LOST, 0, NOW - 600, None, False)], unlogged_agents=["s3 pid 4003"])
+    assert ids(evaluate(lost, primed(), "abort")) == ["AP4"]
+    assert evaluate(healthy(first_turns=None), primed(), "abort").unknown == {"AP4": "no agent-log directory"}
 
 
 def warning_ids(outcome: Any) -> List[str]:
@@ -160,7 +224,9 @@ def test_ap5_over_budget_never_aborts_while_a_correctness_predicate_still_does(t
 
     busy = OpStats(seconds=900.0, sessions=12.0, ops=7000, ctl_ops=900 * 7, ctl_cpu_us=int(0.4 * 900 * 1e6))
     aborts: List[Any] = []
+    stops: List[Any] = []
     monkeypatch.setattr(soakcheck, "abort", lambda city, outcome, paths, gc, procfs: aborts.append(outcome))
+    monkeypatch.setattr(soakcheck, "stop_city", lambda city, state, state_path, gc, procfs: stops.append(city))
 
     class FakeCollector:
         inputs: Inputs
@@ -176,7 +242,7 @@ def test_ap5_over_budget_never_aborts_while_a_correctness_predicate_still_does(t
     for i in range(4):
         FakeCollector.inputs = healthy(now=NOW + 300 * i, ops=busy, reconciler="v2")
         assert soakcheck._check(city, None, False, "gc") == 0  # type: ignore[arg-type]
-    assert aborts == [] and not State.load(tmp_path / "check-state.json").aborted
+    assert aborts == [] and stops == [] and not State.load(tmp_path / "check-state.json").aborted
     log = (tmp_path / "check.log").read_text(encoding="utf-8").splitlines()
     assert len(log) == 4 and all(" WARN AP5 AP5: record-only: controller-spawned ops 7.000/s over 1.200/s" in line for line in log)
     recs = [json.loads(line) for line in (tmp_path / "check.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -184,7 +250,191 @@ def test_ap5_over_budget_never_aborts_while_a_correctness_predicate_still_does(t
 
     FakeCollector.inputs = healthy(now=NOW + 1500, ops=busy, reconciler="v2", first_turns=[FirstTurn("i2", "s2", FT_LOST, 0, NOW - 600, None, False)])
     soakcheck._check(city, None, False, "gc")  # type: ignore[arg-type]
-    assert [ids(o) for o in aborts] == [["AP4"]] and warning_ids(aborts[0]) == ["AP5"]
+    assert [ids(o) for o in aborts] == [["AP4"]] and warning_ids(aborts[0]) == ["AP5"] and stops == [city]
+
+
+INTEGRITY_HIT = [(False, "error: checksum mismatch in chunk")]
+
+
+class AbortRig:
+    """``_check`` in ``abort`` mode on inputs a test sets, with the abort's
+    commands faked: ``systemctl`` exits 0 (or raises ``systemctl_error``), each
+    ``gc stop`` exits with the next of ``stop_codes``; ``capture`` raises
+    ``capture_error`` when one is given; ``remains`` finds nothing of the
+    city, or raises ``remains_error`` once; the collector raises
+    ``collect_error`` while a test sets one."""
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        stop_codes: Sequence[int],
+        capture_error: Optional[Exception] = None,
+        remains_error: Optional[Exception] = None,
+        systemctl_error: Optional[Exception] = None,
+    ) -> None:
+        import soakcapture
+        import soakcheck
+
+        self.city = City(name="hc-soak", path=tmp_path, data=tmp_path, mode="abort")
+        self.calls: List[Tuple[str, ...]] = []
+        self.inputs = healthy()
+        self.collect_error: Optional[Exception] = None
+        codes = list(stop_codes)
+        raises = [remains_error] if remains_error is not None else []
+        rig = self
+
+        def fake_run(argv: Sequence[str], **kwargs: Any) -> CmdResult:
+            rig.calls.append(tuple(argv))
+            if argv[0] == "systemctl" and systemctl_error is not None:
+                raise systemctl_error
+            code = codes.pop(0) if tuple(argv[:2]) == ("gc", "stop") else 0
+            return CmdResult(tuple(argv), code, "", "" if code == 0 else f"city busy ({code})", 0.1)
+
+        def fake_capture(city: City, paths: SoakPaths, gc: str, procfs: ProcFS) -> Path:
+            if capture_error is not None:
+                raise capture_error
+            return city.data / "captures" / "bundle.tar.gz"
+
+        def fake_remains(city: City, procfs: ProcFS, gc: str = "gc") -> List[str]:
+            if raises:
+                raise raises.pop()
+            return []
+
+        class FakeCollector:
+            def __init__(self, *args: Any) -> None:
+                pass
+
+            def collect(self, state: State, final: bool = False) -> Inputs:
+                if rig.collect_error is not None:
+                    raise rig.collect_error
+                return rig.inputs
+
+        monkeypatch.setattr(soakcheck, "run", fake_run)
+        monkeypatch.setattr(soakcheck, "Collector", FakeCollector)
+        monkeypatch.setattr(soakcapture, "capture", fake_capture)
+        monkeypatch.setattr(soakcapture, "remains", fake_remains)
+
+    def check(self, **overrides: Any) -> int:
+        import soakcheck
+
+        self.inputs = healthy(**overrides)
+        return soakcheck._check(self.city, None, False, "gc")  # type: ignore[arg-type]
+
+    def stops(self) -> int:
+        return sum(1 for argv in self.calls if argv[:2] == ("gc", "stop"))
+
+    def state(self) -> State:
+        return State.load(self.city.data / "check-state.json")
+
+    def aborted(self) -> str:
+        return (self.city.data / "ABORTED").read_text(encoding="utf-8")
+
+
+def test_an_abort_whose_capture_fails_still_stops_the_city(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[0], capture_error=OSError(errno.ENOSPC, "No space left on device"))
+    assert rig.check(health=INTEGRITY_HIT) == 0
+    assert rig.calls == [
+        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"),
+        ("gc", "stop", str(tmp_path)),
+    ]
+    assert rig.aborted().splitlines()[1:] == [
+        "  AP1: store integrity error: error: checksum mismatch in chunk",
+        "capture: FAILED OSError: [Errno 28] No space left on device",
+        "gc stop exit 0: ",
+        "after stop: nothing of the city remains",
+    ]
+    assert rig.state().aborted and rig.state().stopped
+    rig.check(now=NOW + 300, health=INTEGRITY_HIT)
+    rig.check(now=NOW + 600)
+    assert rig.stops() == 1 and len(rig.calls) == 2
+
+
+def test_a_gc_stop_that_fails_is_run_again_by_each_check_until_it_exits_0(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[1, 124, 0], remains_error=OSError(errno.EACCES, "Permission denied"))
+    rig.check(health=INTEGRITY_HIT)
+    assert rig.stops() == 1 and rig.state().aborted and not rig.state().stopped
+    rig.check(now=NOW + 300)
+    assert rig.stops() == 2 and not rig.state().stopped
+    rig.check(now=NOW + 600, health=INTEGRITY_HIT)
+    assert rig.stops() == 3 and rig.state().stopped
+    rig.check(now=NOW + 900)
+    assert rig.stops() == 3 and [argv[0] for argv in rig.calls].count("systemctl") == 1
+    assert rig.aborted().splitlines()[2:] == [
+        f"capture: {tmp_path / 'captures' / 'bundle.tar.gz'}",
+        "gc stop exit 1: city busy (1)",
+        "after stop: FAILED PermissionError: [Errno 13] Permission denied",
+        "gc stop exit 124: city busy (124)",
+        "after stop: nothing of the city remains",
+        "gc stop exit 0: ",
+        "after stop: nothing of the city remains",
+    ]
+
+
+def test_an_abort_that_raises_before_its_capture_still_stops_the_city(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[0], systemctl_error=PermissionError(errno.EACCES, "Permission denied"))
+    with pytest.raises(PermissionError):
+        rig.check(health=INTEGRITY_HIT)
+    assert rig.stops() == 1 and rig.state().aborted and rig.state().stopped
+    assert rig.aborted().splitlines()[2:] == ["gc stop exit 0: ", "after stop: nothing of the city remains"]
+    rig.check(now=NOW + 300)
+    assert rig.stops() == 1
+
+
+def test_an_abort_that_raises_and_whose_gc_stop_fails_is_stopped_by_the_next_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[1, 0], systemctl_error=PermissionError(errno.EACCES, "Permission denied"))
+    with pytest.raises(PermissionError):
+        rig.check(health=INTEGRITY_HIT)
+    assert rig.stops() == 1 and rig.state().aborted and not rig.state().stopped
+    rig.check(now=NOW + 300)
+    assert rig.stops() == 2 and rig.state().stopped
+    assert rig.aborted().splitlines()[2:] == [
+        "gc stop exit 1: city busy (1)",
+        "after stop: nothing of the city remains",
+        "gc stop exit 0: ",
+        "after stop: nothing of the city remains",
+    ]
+
+
+def test_a_pending_gc_stop_runs_before_the_inputs_are_collected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # the abort's gc stop failed (or that run was killed), and now every
+    # collect raises: each run still tries gc stop until one exits 0
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[1, 0])
+    rig.collect_error = PermissionError(errno.EACCES, "Permission denied")
+    State(aborted=True).save(tmp_path / "check-state.json")
+    for _ in range(3):
+        with pytest.raises(PermissionError):
+            rig.check()
+    assert rig.calls == [("gc", "stop", str(tmp_path))] * 2
+    assert rig.state().aborted and rig.state().stopped
+    assert rig.aborted().splitlines() == [
+        "gc stop exit 1: city busy (1)",
+        "after stop: nothing of the city remains",
+        "gc stop exit 0: ",
+        "after stop: nothing of the city remains",
+    ]
+
+
+def test_the_abort_is_on_disk_before_its_first_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import soakcapture
+
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[0])
+    fake = soakcapture.capture
+    on_disk: List[bool] = []
+
+    def spy(city: City, paths: SoakPaths, gc: str, procfs: ProcFS) -> Path:
+        on_disk.append(State.load(city.data / "check-state.json").aborted)
+        rig.calls.append(("capture",))
+        return fake(city, paths, gc, procfs)
+
+    monkeypatch.setattr(soakcapture, "capture", spy)
+    rig.check(health=INTEGRITY_HIT)
+    assert on_disk == [True]
+    assert rig.calls == [
+        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"),
+        ("capture",),
+        ("gc", "stop", str(tmp_path)),
+    ]
 
 
 def test_ap5_inputs_unreadable_never_make_ap9() -> None:
@@ -201,6 +451,27 @@ def test_ap5_inputs_unreadable_never_make_ap9() -> None:
 def test_ap6_state_size() -> None:
     assert ids(evaluate(healthy(sizes={"R": 5 << 30, "hc_state": 1}), primed(), "abort")) == ["AP6"]
     assert ids(evaluate(healthy(sizes={"R": 1, "hc_state": 3 << 30}), primed(), "abort")) == ["AP6"]
+
+
+@pytest.mark.parametrize(
+    "sizes, hits, lacking",
+    [
+        ({"R": None, "hc_state": None}, [], "hc state directory and R"),
+        ({"R": 5 << 30, "hc_state": None}, ["AP6"], "hc state directory"),
+        ({"R": None, "hc_state": 3 << 30}, ["AP6"], "R"),
+        ({"hc_state": 1}, [], "R"),
+    ],
+    ids=["both-lacking", "hc-state-lacking-r-over", "r-lacking-hc-state-over", "r-not-sampled"],
+)
+def test_ap6_is_unknown_while_the_size_sample_lacks_a_size_and_still_hits_on_the_other(
+    sizes: Dict[str, Optional[int]], hits: List[str], lacking: str
+) -> None:
+    state = primed()
+    for i in range(3):
+        out = evaluate(healthy(now=NOW + 300 * i, sizes=sizes), state, "abort")
+        assert out.unknown["AP6"] == f"size sample lacks {lacking}"
+        assert ids(out) == hits + (["AP9"] if i == 2 else [])
+    assert f"AP6 (size sample lacks {lacking})" in out.hits[-1].reason
 
 
 def test_ap7_foreign_runtime_or_two_cores() -> None:
@@ -418,3 +689,89 @@ def test_track_workflows_keeps_a_whole_soak_of_roots(tmp_path: Path) -> None:
     assert "first" in state.workflows
     collector.track_workflows(state, NOW + WORKFLOW_KEEP_S + 1)
     assert "first" not in state.workflows
+
+
+# --- AP4 through the real collector: blind without the agent logs ---------------------------------
+
+AGENT_BEACON = "[hc-soak] soak-steady-1 • 2026-11-19T10:00:00"
+
+
+def _offline_collector(tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch) -> Collector:
+    """The real collector over a synthetic ``/proc``; gc, systemd and hc answer offline."""
+    import soakcheck
+
+    def gc_ok(argv: Sequence[str], **kwargs: Any) -> CmdResult:
+        return CmdResult(tuple(argv), 0, '{"ok": true}', "", 0.0)
+
+    def no_core(*args: Any, **kwargs: Any) -> CoreTuple:
+        raise HcError("no core in a unit test")
+
+    monkeypatch.setattr(soakcheck, "run", gc_ok)
+    monkeypatch.setattr(soakcheck, "supervisor_state", lambda: {"pid": 0, "nrestarts": 0, "active": "inactive"})
+    monkeypatch.setattr(soakcheck, "core_tuple", no_core)
+    city = City(name="hc-soak", path=tmp_path / "city", data=tmp_path / "data", mode="abort")
+    return Collector(city, SoakPaths(home=tmp_path / "home"), ProcFS(str(proc_tree.root)))
+
+
+def _agent(proc_tree: ProcTree, collector: Collector, pid: int, session: str, age_s: float = 3000.0, city: Optional[str] = None) -> str:
+    """A live scripted agent of the city (or of ``city``), ``age_s`` old: its ``inc``."""
+    start = int((collector.procfs.uptime_s() - age_s) * collector.procfs.hz)
+    proc_tree.add(pid, "soak-agent", start=start, env={"GC_CITY_PATH": city or str(collector.city.path), "GC_SESSION_ID": session})
+    return f"b00tb00t:{pid}:{start}"
+
+
+def _logged(collector: Collector, session: str, inc: str) -> None:
+    """The session's agent log gains the ``boot`` of ``inc`` and its one first turn."""
+    t = time.time() - 600.0
+    _append(collector.city.agents / f"{session}.jsonl", rec("boot", t, inc, session_id=session), rec("in", t + 5.0, inc, text=AGENT_BEACON, beacon=True))
+
+
+def _runs(collector: Collector, state: State, n: int) -> List[Outcome]:
+    return [evaluate(collector.collect(state), state, "abort") for _ in range(n)]
+
+
+def _ap9(outcome: Outcome) -> str:
+    return "; ".join(f.reason for f in outcome.hits if f.id == "AP9")
+
+
+def test_collect_makes_ap4_blind_without_the_agent_log_directory(tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch) -> None:
+    collector = _offline_collector(tmp_path, proc_tree, monkeypatch)
+    _agent(proc_tree, collector, 4001, "s1")
+    assert not collector.city.agents.exists()
+    first, second, third = _runs(collector, State(), 3)
+    for out in (first, second, third):
+        assert out.unknown.get("AP4") == "no agent-log directory" and "AP4" not in ids(out)
+    assert "AP4" not in _ap9(second) and "AP4 (no agent-log directory)" in _ap9(third)
+
+
+def test_collect_makes_ap4_blind_while_a_live_scripted_agent_has_no_log(tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch) -> None:
+    collector = _offline_collector(tmp_path, proc_tree, monkeypatch)
+    _logged(collector, "s1", _agent(proc_tree, collector, 4001, "s1"))
+    s2 = _agent(proc_tree, collector, 4002, "s2")
+    _logged(collector, "s2", "b00tb00t:4002:5")  # an earlier incarnation of the session only
+    _agent(proc_tree, collector, 4003, "s3", age_s=AGENT_LOG_GRACE_S - 30.0)  # within its grace
+    _agent(proc_tree, collector, 4004, "s4", city="/home/soak/cities/other")  # another city's agent
+    proc_tree.add(4005, "python3", env={"GC_CITY_PATH": str(collector.city.path), "GC_SESSION_ID": "s5"})  # not an agent
+    state = State()
+    first, second, third = _runs(collector, state, 3)
+    reason = "1 live scripted agent(s) with no agent log: s2 pid 4002"
+    for out in (first, second, third):
+        assert out.unknown.get("AP4") == reason and "AP4" not in ids(out)
+    assert "AP4" not in _ap9(second) and f"AP4 ({reason})" in _ap9(third)
+    _logged(collector, "s2", s2)
+    (fourth,) = _runs(collector, state, 1)
+    assert "AP4" not in fourth.unknown and "AP4" not in state.unknown
+    assert "AP4" not in ids(fourth) and "AP4" not in _ap9(fourth)
+
+
+def test_collect_hands_final_to_ap4_which_then_judges_every_incarnation(tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch) -> None:
+    collector = _offline_collector(tmp_path, proc_tree, monkeypatch)
+    inc = _agent(proc_tree, collector, 4001, "s1")
+    t = time.time()
+    # Its first turn came twice an hour ago, in a phase that has since ended.
+    first, again = (rec("in", t - 3600.0 + d, inc, text=AGENT_BEACON, beacon=True) for d in (5.0, 60.0))
+    _append(collector.city.agents / "s1.jsonl", rec("boot", t - 3600.0, inc, session_id="s1"), first, again)
+    _append(collector.city.file("phases.jsonl"), {"t": t - 900.0, "phase": "soak-end", "reconciler": "v2"})
+    state = State(last_t=t - 300.0)
+    assert "AP4" not in ids(evaluate(collector.collect(state), state, "abort"))
+    assert "AP4" in ids(evaluate(collector.collect(state, final=True), state, "abort"))
