@@ -25,12 +25,15 @@ from __future__ import annotations
 import os
 import sys
 import time
-from dataclasses import dataclass
-from typing import Dict, Final, Mapping, Optional
+from typing import TYPE_CHECKING, Dict, Final, Mapping, Optional
 
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError, ensure_private_dir
 from .naming import is_object_nonce
+
+if TYPE_CHECKING:
+    from .context import OpContext
 
 MAX_AGE_S: Final = 120.0
 SUFFIX: Final = ".json"
@@ -38,7 +41,7 @@ ROOT_ENV: Final = "GC_HC_TEST_SPAWN_ROOT"
 """Test-only: the directory spawn files go under (``GC_HC_TEST=1`` only)."""
 
 
-@dataclass(frozen=True)
+@frozen
 class Scope:
     """Run the agent in its own transient systemd scope under ``slice``,
     reaching the user manager through ``runtime_dir`` and ``bus`` (what the
@@ -50,7 +53,7 @@ class Scope:
     bus: str
 
 
-@dataclass(frozen=True)
+@frozen
 class SpawnSpec:
     """What the launcher needs: the session environment, command and work dir."""
 
@@ -184,3 +187,17 @@ def sweep(city_dir: str, *, now: Optional[float] = None, max_age_s: float = MAX_
         except FileNotFoundError:
             continue
     return removed
+
+
+def spawn_dir(ctx: OpContext) -> str:
+    """The op's city's spawn file directory."""
+    override = ctx.env.get(ROOT_ENV, "") if ctx.test else ""
+    return directory(ctx.paths.city_id, override=override or None)
+
+
+def sweep_spawn_files(ctx: OpContext) -> None:
+    """Every op's housekeeping: spawn files a killed start left behind."""
+    try:
+        sweep(spawn_dir(ctx))
+    except (OSError, StateDirError):
+        pass

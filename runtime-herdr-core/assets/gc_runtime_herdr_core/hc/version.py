@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import functools
 import re
-from dataclasses import dataclass
 from typing import Final, Optional, Tuple
 
+from ..rpp.frozen import frozen
 from .errors import HcGateError
 from .types import HelloResult
 
@@ -29,7 +29,7 @@ _SEMVER: Final = re.compile(
 
 
 @functools.total_ordering
-@dataclass(frozen=True, eq=True)
+@frozen
 class Version:
     """A semantic version; build metadata is dropped, as precedence ignores it."""
 
@@ -68,7 +68,7 @@ class Version:
         return f"{core}-{'.'.join(self.prerelease)}" if self.prerelease else core
 
 
-@dataclass(frozen=True)
+@frozen
 class VersionPolicy:
     """Which cores the pack drives: at least ``min_version``; ``tested`` run without a warning."""
 
@@ -76,7 +76,7 @@ class VersionPolicy:
     tested: Tuple[Version, ...]
 
 
-@dataclass(frozen=True)
+@frozen
 class GateResult:
     hello: HelloResult
     version: Version

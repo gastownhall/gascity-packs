@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import errno
 import os
-from dataclasses import dataclass, field, replace
 from typing import Dict, Final, List, Mapping, Optional
 
+from ..rpp.frozen import field, frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError
 from ..rpp.wire import IDENTITY_KEYS
@@ -38,7 +38,7 @@ class MetaError(Exception):
     """A metadata file exists but cannot be read."""
 
 
-@dataclass(frozen=True)
+@frozen
 class Meta:
     session: str
     values: Mapping[str, str] = field(default_factory=dict)

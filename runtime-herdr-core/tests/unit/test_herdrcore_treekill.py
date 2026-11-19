@@ -5,7 +5,6 @@ processes under fake-hc."""
 
 from __future__ import annotations
 
-import dataclasses
 import errno
 import json
 import os
@@ -28,6 +27,7 @@ from gc_runtime_herdr_core.herdrcore.lifecycle import INSTANCE_TOKEN_KEY, RESCAN
 from gc_runtime_herdr_core.herdrcore.metastore import Meta, MetaError, MetaStore
 from gc_runtime_herdr_core.herdrcore.naming import LABEL_REFUSED
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, subtree
+from gc_runtime_herdr_core.rpp import frozen
 
 PROXY = """\
 import os, subprocess, sys, time
@@ -260,8 +260,6 @@ def test_a_recycled_box_pid_inside_tmux_keeps_the_tmux_fence(city: City, tmp_pat
 def test_a_rollback_reads_the_record_afresh_before_it_captures_a_tree(city: City, tmp_path: Path) -> None:
     """run's reply may be seconds old by the rollback: a pid that ended since
     may run an unrelated process, whose tree is never captured."""
-    import dataclasses
-
     from gc_runtime_herdr_core.herdrcore import lifecycle
     from gc_runtime_herdr_core.herdrcore.records import object_of
 
@@ -276,7 +274,7 @@ def test_a_rollback_reads_the_record_afresh_before_it_captures_a_tree(city: City
     add_proc(root, 778, ppid=777, argv=["sleep", "600"])
     source = _RecordingProcs(root)
     city.procs.inner = source
-    lifecycle._undo(ctx, dataclasses.replace(record, pid=777), obj, pending=False)
+    lifecycle._undo(ctx, frozen.replace(record, pid=777), obj, pending=False)
     assert source.signals == []
     assert city.terminals() == []
 
@@ -617,7 +615,7 @@ def survivor_box(city: City, leftovers: List[int], work: Path) -> List[int]:
     leftovers.append(int(wait_file(work / "detached.pid")))
     [record] = city.terminals()
     clock = [int(str(record["created_ms"])) + 60_000]
-    city.host = dataclasses.replace(city.host, now_ms=lambda: clock[0])
+    city.host = frozen.replace(city.host, now_ms=lambda: clock[0])
     city.procs.inner = _Unreadable()
     assert city.run("stop", "mc-a").code == 1
     return clock

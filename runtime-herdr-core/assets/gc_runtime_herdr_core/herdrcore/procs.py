@@ -50,15 +50,12 @@ the session's stop.
 
 from __future__ import annotations
 
-import calendar
 import os
-import signal
-import subprocess
 import sys
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Collection, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from ..rpp.frozen import frozen, replace
 from .infra_argv import is_infrastructure_argv
 
 INTERPRETERS: Final = frozenset({"node", "bun", "npx", "deno"})
@@ -72,6 +69,8 @@ titled ``tmux: server``). Exact, path-stripped: a ``tmux-*`` wrapper may be
 an agent."""
 
 _PS_TIMEOUT_S: Final = 2.0
+_READ_CHUNK: Final = 1 << 16
+"""Bytes per read of a ``/proc`` file (each is read to its end)."""
 
 PS_ENV: Final[Mapping[str, str]] = {"PATH": "/usr/bin:/bin", "TZ": "UTC0", "LC_ALL": "C"}
 """The whole environment ``ps`` runs with. ``lstart`` is printed in the
@@ -84,7 +83,7 @@ class ProcError(Exception):
     """The process table cannot be read."""
 
 
-@dataclass(frozen=True)
+@frozen
 class Proc:
     """One process as the snapshot saw it."""
 
@@ -187,8 +186,18 @@ class LinuxProcs(ProcSource):
         self._uid = os.getuid() if uid is None else uid
 
     def _read(self, pid: int, leaf: str) -> bytes:
-        with open(os.path.join(self._root, str(pid), leaf), "rb") as handle:
-            return handle.read()
+        # os.open/os.read rather than open(): the same bytes and OSErrors,
+        # without a file object per read (a scan reads every process).
+        fd = os.open(os.path.join(self._root, str(pid), leaf), os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            chunks: List[bytes] = []
+            while True:
+                chunk = os.read(fd, _READ_CHUNK)
+                if not chunk:
+                    return b"".join(chunks)
+                chunks.append(chunk)
+        finally:
+            os.close(fd)
 
     def _proc(self, pid: int) -> Optional[Proc]:
         try:
@@ -375,6 +384,8 @@ class PsProcs(ProcSource):
     lossy_environ = True
 
     def _ps(self, *args: str) -> str:
+        import subprocess  # only macOS reads processes through ps
+
         try:
             done = subprocess.run(
                 ["ps", *args],
@@ -425,6 +436,8 @@ class PsProcs(ProcSource):
 
     def started_ms(self, proc: Proc) -> Optional[int]:
         """``lstart`` ("Mon Nov 9 08:00:00 2026", UTC: :data:`PS_ENV`), to the second."""
+        import calendar
+
         try:
             return calendar.timegm(time.strptime(proc.start, "%a %b %d %H:%M:%S %Y")) * 1000
         except (ValueError, OverflowError):
@@ -696,6 +709,8 @@ def kill_captured(
     still the captured process: when the table cannot be re-read, every
     target not yet known to have ended is reported as surviving and none is
     signalled."""
+    import signal
+
     unsure: List[Proc] = []
 
     def alive(targets: Sequence[Proc]) -> Optional[List[Proc]]:

@@ -673,6 +673,17 @@ send held past the deadline) and `dead` (every record reads finished).
   (UTF-8) or more, `GC_INSTANCE_TOKEN` always, and secret-looking
   assignments. Tracebacks appear only under `GC_HERDR_CORE_DEBUG=1`,
   redacted too.
+- **Per-op cost.** gc runs every op as a fresh process, so every import is
+  paid on every call. Each op loads only its own modules: the op table names
+  each handler by module and imports it when the op runs, and the modules
+  and standard library that only cold paths need are imported where they
+  are used (`tests/unit/test_op_imports.py` fails when a hot op loads one).
+  Value records use `rpp.frozen` rather than `dataclasses`: a frozen
+  dataclass costs about a millisecond per class per process to define on
+  CPython 3.9-3.14, which a one-process-per-op runtime pays on every op.
+  Nor do they use `typing.NamedTuple`, which on CPython 3.14 imports
+  `annotationlib` and `ast`.
+  `tests/bench_ops.py` measures each op's CPU (see Tests).
 
 ## Tests
 
@@ -711,9 +722,25 @@ goes to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
 default state root instead. Without `--json` it reads the text report, for a
 gc that cannot encode it.
 
+`tests/bench_ops.py` measures each op's CPU the way gc runs it: a fresh
+process per run, against fake-hc on a scratch state root it removes after.
+It prints the median and p90 CPU (user+sys) and the median wall time per op;
+`--compare` interleaves runs of a second entry, such as the runtime at an
+older commit, and prints before, after and the change:
+
+```bash
+mkdir /tmp/hcbase && git -C .. archive <commit> runtime-herdr-core | tar -x -C /tmp/hcbase
+python tests/bench_ops.py --runs 30 --compare /tmp/hcbase/runtime-herdr-core/assets/bin/gc-runtime-herdr-core
+```
+
+The process-table ops (`observe` with names, `is-attached`, `inventory`,
+`process-alive`, `start`, `stop`) scale with the host's process count, which
+the bench prints.
+
 CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12,
 with gc pinned to a gascity commit, and the unit tier again in the shared
-pytest step.
+pytest step. The 3.12 leg also runs `tests/unit/test_op_imports.py` on
+Python 3.14, since what an op imports can change with the interpreter.
 
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.

@@ -8,13 +8,22 @@ city key has its own core), ``conformance-faults``, ``server-lifecycle``
 ``input-fence``: under ``proc.exec`` gc would drive the box by piping tmux
 commands to ``exec``. ``exec``, ``provision`` and ``check-image`` are absent
 from the table, so they exit 2 without reading stdin.
+
+The table is data: each op names the module and function that handle it,
+and the handler's module is imported only when that op runs. gc runs every
+op as a fresh process, so an op pays for exactly the code it uses; a read
+never loads ``start``'s or the core's code. This module therefore imports
+none of the handler modules (nor :mod:`.core`) at module level, and only
+the entry imports it.
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict
+import importlib
+from typing import Callable, Dict, Final, Mapping
 
 from ..rpp.flock import LockFileError, LockTimeout
+from ..rpp.frozen import frozen
 from ..rpp.ops import (
     INVENTORY_STDOUT_CAP,
     OBSERVE_STDOUT_CAP,
@@ -29,13 +38,64 @@ from ..rpp.ops import (
 )
 from ..rpp.statedir import StateDirError
 from ..handshake import HANDSHAKE
-from . import attach, inputs, lifecycle, reads, screen, server
 from .config import ConfigError
 from .context import Host, OpContext
-from .core import KICK_OP, run_kick
 from .metastore import MetaError
+from .naming import KICK_OP
+from .spawnfile import sweep_spawn_files
 
 OpFn = Callable[[OpContext], OpResult]
+
+
+@frozen
+class OpDecl:
+    """An op's handler, by module (under ``herdrcore``) and function, and
+    the transport facts about it."""
+
+    module: str
+    function: str
+    stdin: bool = False
+    deadline: DeadlineClass = "default"
+    cap: int = SMALL_STDOUT_CAP
+    housekeeping: bool = True
+
+
+OP_SPECS: Final[Mapping[str, OpDecl]] = {
+    "start": OpDecl("lifecycle", "op_start", stdin=True, deadline="start"),
+    "stop": OpDecl("lifecycle", "op_stop"),
+    "kill-object": OpDecl("lifecycle", "op_kill_object", stdin=True),
+    "observe": OpDecl("reads", "op_observe", stdin=True, deadline="probe", cap=OBSERVE_STDOUT_CAP),
+    "inventory": OpDecl("reads", "op_inventory", cap=INVENTORY_STDOUT_CAP),
+    "is-running": OpDecl("reads", "op_is_running"),
+    "process-alive": OpDecl("reads", "op_process_alive", stdin=True),
+    "list-running": OpDecl("reads", "op_list_running", cap=INVENTORY_STDOUT_CAP),
+    "is-attached": OpDecl("reads", "op_is_attached", deadline="probe"),
+    "get-last-activity": OpDecl("reads", "op_get_last_activity"),
+    "peek": OpDecl("reads", "op_peek", cap=OBSERVE_STDOUT_CAP),
+    "get-meta": OpDecl("reads", "op_get_meta"),
+    "set-meta": OpDecl("reads", "op_set_meta", stdin=True),
+    "remove-meta": OpDecl("reads", "op_remove_meta"),
+    "nudge": OpDecl("inputs", "op_nudge", stdin=True),
+    "send-keys": OpDecl("inputs", "op_send_keys"),
+    "interrupt": OpDecl("inputs", "op_interrupt"),
+    "clear-scrollback": OpDecl("inputs", "op_clear_scrollback"),
+    "watch-startup": OpDecl("screen", "op_watch_startup", deadline="start"),
+    "attach": OpDecl("attach", "op_attach", deadline="start"),
+    "copy-to": OpDecl("screen", "op_copy_to"),
+    "server-stop": OpDecl("server", "op_server_stop"),
+    KICK_OP: OpDecl("ops_table", "op_kick_core", housekeeping=False),
+}
+"""Every op but ``protocol`` (the static handshake)."""
+
+
+def _lazy(module: str, name: str) -> OpFn:
+    """The handler ``module.name``, imported when the op runs."""
+
+    def run(ctx: OpContext) -> OpResult:
+        fn: OpFn = getattr(importlib.import_module(f"{__package__}.{module}"), name)
+        return fn(ctx)
+
+    return run
 
 
 def _wrap(host: Host, fn: OpFn, *, housekeeping: bool = True) -> Callable[[OpRequest], OpResult]:
@@ -43,7 +103,7 @@ def _wrap(host: Host, fn: OpFn, *, housekeeping: bool = True) -> Callable[[OpReq
         try:
             ctx = OpContext(request, host)
             if housekeeping:
-                lifecycle.sweep_spawn_files(ctx)
+                sweep_spawn_files(ctx)
             return fn(ctx)
         except (StateDirError, ConfigError, MetaError, LockFileError) as err:
             raise OpError(str(err)) from None
@@ -53,41 +113,22 @@ def _wrap(host: Host, fn: OpFn, *, housekeeping: bool = True) -> Callable[[OpReq
     return handle
 
 
-def _kick(ctx: OpContext) -> OpResult:
+def op_kick_core(ctx: OpContext) -> OpResult:
+    """The detached core start a read kicked (:func:`.core.run_kick`)."""
+    from .core import run_kick
+
     run_kick(ctx)
     return OpResult.ok()
 
 
 def build_ops(host: Host) -> OpTable:
     """The op table for ``host``."""
-
-    def spec(fn: OpFn, *, stdin: bool = False, deadline: DeadlineClass = "default", cap: int = SMALL_STDOUT_CAP, housekeeping: bool = True) -> OpSpec:
-        return OpSpec(handler=_wrap(host, fn, housekeeping=housekeeping), reads_stdin=stdin, deadline=deadline, stdout_cap=cap)
-
-    table: Dict[str, OpSpec] = {
-        "protocol": handshake_op(HANDSHAKE),
-        "start": spec(lifecycle.op_start, stdin=True, deadline="start"),
-        "stop": spec(lifecycle.op_stop),
-        "kill-object": spec(lifecycle.op_kill_object, stdin=True),
-        "observe": spec(reads.op_observe, stdin=True, deadline="probe", cap=OBSERVE_STDOUT_CAP),
-        "inventory": spec(reads.op_inventory, cap=INVENTORY_STDOUT_CAP),
-        "is-running": spec(reads.op_is_running),
-        "process-alive": spec(reads.op_process_alive, stdin=True),
-        "list-running": spec(reads.op_list_running, cap=INVENTORY_STDOUT_CAP),
-        "is-attached": spec(reads.op_is_attached, deadline="probe"),
-        "get-last-activity": spec(reads.op_get_last_activity),
-        "peek": spec(reads.op_peek, cap=OBSERVE_STDOUT_CAP),
-        "get-meta": spec(reads.op_get_meta),
-        "set-meta": spec(reads.op_set_meta, stdin=True),
-        "remove-meta": spec(reads.op_remove_meta),
-        "nudge": spec(inputs.op_nudge, stdin=True),
-        "send-keys": spec(inputs.op_send_keys),
-        "interrupt": spec(inputs.op_interrupt),
-        "clear-scrollback": spec(inputs.op_clear_scrollback),
-        "watch-startup": spec(screen.op_watch_startup, deadline="start"),
-        "attach": spec(attach.op_attach, deadline="start"),
-        "copy-to": spec(screen.op_copy_to),
-        "server-stop": spec(server.op_server_stop),
-        KICK_OP: spec(_kick, housekeeping=False),
-    }
+    table: Dict[str, OpSpec] = {"protocol": handshake_op(HANDSHAKE)}
+    for op, decl in OP_SPECS.items():
+        table[op] = OpSpec(
+            handler=_wrap(host, _lazy(decl.module, decl.function), housekeeping=decl.housekeeping),
+            reads_stdin=decl.stdin,
+            deadline=decl.deadline,
+            stdout_cap=decl.cap,
+        )
     return table

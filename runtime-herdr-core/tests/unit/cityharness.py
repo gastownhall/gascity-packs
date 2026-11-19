@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Mapping, Optional, Set, Tuple
 
@@ -28,6 +28,7 @@ from gc_runtime_herdr_core.herdrcore.core import core_env
 from gc_runtime_herdr_core.herdrcore.ops_table import build_ops
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, Proc, ProcError, ProcSource, is_tmux
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Cancelled, Deadline
+from gc_runtime_herdr_core.rpp.frozen import replace
 from gc_runtime_herdr_core.rpp.ops import OpError, OpRequest
 from gc_runtime_herdr_core.rpp.perop import run_per_op
 from gc_runtime_herdr_core.rpp.redact import Redactor

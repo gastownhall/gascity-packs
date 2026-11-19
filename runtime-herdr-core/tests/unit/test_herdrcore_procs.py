@@ -85,6 +85,18 @@ def test_linux_snapshot_reads_stat_cmdline_and_environ(tmp_path: Path) -> None:
     assert LinuxProcs(str(tmp_path)).environ(99) is None
 
 
+def test_a_cmdline_over_one_read_is_read_whole(tmp_path: Path) -> None:
+    # /proc files are read in 64 KiB chunks until end of file: an argv past
+    # the first chunk (a long prompt on the command line) keeps every word.
+    argv = ["node", "x" * (70 << 10), "--flag", "y" * (130 << 10), "last"]
+    add_proc(tmp_path, 13, ppid=1, argv=argv, env={"BIG": "z" * (100 << 10)})
+    procs = LinuxProcs(str(tmp_path))
+    assert procs.snapshot()[13].argv == tuple(argv)
+    found = procs.process(13)
+    assert found is not None and found.argv == tuple(argv)
+    assert procs.environ(13) == {"BIG": "z" * (100 << 10)}
+
+
 def test_comm_with_spaces_and_parens_parses(tmp_path: Path) -> None:
     add_proc(tmp_path, 12, ppid=1, argv=["weird"], comm="a (b) c")
     assert LinuxProcs(str(tmp_path)).snapshot()[12].comm == "a (b) c"

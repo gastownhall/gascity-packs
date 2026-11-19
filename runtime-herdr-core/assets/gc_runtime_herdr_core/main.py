@@ -8,8 +8,10 @@
 This is the only module that reads the process environment: it hands a
 snapshot to the per-op runner, which builds each op's request from it.
 The handshake is static, reads no state and loads no backend code; every
-other op loads the op table (:mod:`.herdrcore.ops_table`). An op missing
-from it answers exit 2, the RPP "unknown operation", without reading stdin.
+other op loads the op table (:mod:`.herdrcore.ops_table`), which imports
+only the module of the op being run: gc runs each op as a fresh process,
+so an op pays for exactly the code it uses. An op missing from the table
+answers exit 2, the RPP "unknown operation", without reading stdin.
 """
 
 from __future__ import annotations
@@ -31,7 +33,8 @@ PROTOCOL_ONLY: Final[OpTable] = {"protocol": handshake_op(HANDSHAKE)}
 
 
 def ops_for(op: str) -> OpTable:
-    """The op table ``op`` needs: the static handshake alone, or every op."""
+    """The op table ``op`` needs: the static handshake alone, or every op
+    (each handler is imported only when its op runs)."""
     if op == "protocol":
         return PROTOCOL_ONLY
     from .herdrcore.context import live_host

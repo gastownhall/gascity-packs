@@ -20,13 +20,13 @@ from __future__ import annotations
 import hashlib
 import os
 import time
-from dataclasses import dataclass, field, replace
 from typing import Callable, Final, Mapping, Optional
 
 from ..hc.client import BackendFault, CallTimeouts, CoreEndpoint, HcClient
 from ..hc.paths import HcPaths, resolve_paths
 from ..rpp.cancel import CancelToken, Deadline
 from ..rpp.flock import FileLock
+from ..rpp.frozen import field, frozen, replace
 from ..rpp.ops import OpRequest
 from ..rpp.statedir import OP_CITY_ENV, ensure_private_dir, user_home
 from .config import pin_policy, resolve_hc_binary, test_mode
@@ -58,7 +58,7 @@ def _pack_dir() -> str:
     return os.path.dirname(os.path.dirname(os.path.dirname(here)))
 
 
-@dataclass(frozen=True)
+@frozen
 class Host:
     """The host an op runs on. :func:`live_host` is the real one."""
 

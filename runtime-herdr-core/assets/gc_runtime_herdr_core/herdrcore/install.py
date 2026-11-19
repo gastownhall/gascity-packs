@@ -40,12 +40,12 @@ import tarfile
 import tempfile
 import time
 import urllib.parse
-from dataclasses import dataclass
 from typing import Callable, Final, FrozenSet, List, Mapping, Optional, Set, Tuple
 
 from ..hc.version import Version
 from ..rpp.cancel import CancelToken
 from ..rpp.flock import FileLock
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError, ensure_private_dir
 from .config import BINARY_NAME, read_private_file
@@ -74,7 +74,7 @@ class InstallError(Exception):
     """The pinned build cannot be installed; nothing was changed."""
 
 
-@dataclass(frozen=True)
+@frozen
 class InstallRecord:
     """``<version>/install.json``: what ``install`` put there."""
 
@@ -85,7 +85,7 @@ class InstallRecord:
     installed_ms: int
 
 
-@dataclass(frozen=True)
+@frozen
 class InstallOutcome:
     version: str
     binary: str

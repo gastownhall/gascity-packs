@@ -22,11 +22,11 @@ from __future__ import annotations
 import errno
 import os
 import stat
-from dataclasses import dataclass
 from typing import Callable, Final, Literal, Mapping, Optional
 
 from ..hc.paths import HcPaths
 from ..hc.version import VersionPolicy
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, loads
 from ..rpp.statedir import StateDirError, ensure_private_dir, user_home
 from .pin import PinError, load_pin
@@ -102,7 +102,7 @@ def pinned_binary(home: Callable[[], str] = user_home, version: Optional[str] = 
     return os.path.join(install_root(home), version or pinned_version(), BINARY_NAME)
 
 
-@dataclass(frozen=True)
+@frozen
 class PackConfig:
     """``<pack state>/config.json``: operator choices for one city."""
 

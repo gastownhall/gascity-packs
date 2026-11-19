@@ -74,11 +74,11 @@ import hashlib
 import os
 import stat
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Final, Mapping, Optional, Sequence, Tuple
 
 from ..hc.types import StatusResult
 from ..rpp.flock import LockFileError, LockTimeout
+from ..rpp.frozen import frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError
 from .config import write_private_file
@@ -112,7 +112,7 @@ _LINEAGE_READ_LIMIT: Final = 256 << 10
 _HEX_LEN: Final = 32
 
 
-@dataclass(frozen=True)
+@frozen
 class LaunchdStart:
     """How a launchd-placed core was asked for."""
 
@@ -144,7 +144,7 @@ def launchd_start(argv: Sequence[str]) -> Optional[LaunchdStart]:
     return LaunchdStart(starter_pid=pid, asked_ns=int(fields[1])) if pid > 0 else None
 
 
-@dataclass(frozen=True)
+@frozen
 class CoreIdentity:
     """A core process the pack started."""
 
@@ -248,7 +248,7 @@ def pin(ctx: OpContext, status: StatusResult, *, superseding: Optional[PendingSt
 # --- the pack's pending starts (launchd) -----------------------------------------------
 
 
-@dataclass(frozen=True)
+@frozen
 class PendingStart:
     """An hc the pack runs (or ran) to start the core."""
 
@@ -389,7 +389,7 @@ def value_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", "surrogateescape")).hexdigest()
 
 
-@dataclass(frozen=True)
+@frozen
 class Lineage:
     """What every holder of the systemd core a start of the pack accepted
     carries: a digest of each value, by name."""

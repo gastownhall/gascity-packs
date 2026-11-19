@@ -48,7 +48,9 @@ _SENSITIVE_MARKERS: Final = (
     "AUTH-JSON",
 )
 
-_SECRET_ASSIGNMENT: Final = re.compile(
+# Compiled on first use by re's own cache, not at import: only an op that
+# writes stderr redacts.
+_SECRET_ASSIGNMENT: Final = (
     r"(?i)((?:[A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|ACCESS[_-]?KEY"
     r"|CREDENTIALS?|OAUTH|AUTH[_-]?JSON)[A-Z0-9_.-]*"
     r"|--?[A-Z0-9_.-]*(?:token|secret|password|private-key|api-key|access-key|credential|oauth)[A-Z0-9_.-]*)"
@@ -99,4 +101,4 @@ class Redactor:
         """``text`` with every known secret and secret assignment replaced."""
         for secret in sorted(self._secrets, key=len, reverse=True):
             text = text.replace(secret, REDACTED)
-        return _SECRET_ASSIGNMENT.sub(r"\1" + REDACTED, text)
+        return re.sub(_SECRET_ASSIGNMENT, r"\1" + REDACTED, text)

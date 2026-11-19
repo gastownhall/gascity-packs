@@ -4,7 +4,6 @@ an in-process fake-hc: the observe.v1 promises (exec-session-provider.md
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import os
 import subprocess
@@ -15,6 +14,7 @@ from typing import Any, Dict, List
 import pytest
 from cityharness import City, make_city
 from fakehc.rawclient import raw_call
+from gc_runtime_herdr_core.rpp import frozen
 
 IDENTITY = {
     "GC_SESSION_ID": "mc-1",
@@ -364,7 +364,7 @@ def test_inventory_reports_unknown_activity_for_a_screen_it_did_not_read(
     from gc_runtime_herdr_core.rpp.wire import rfc3339_ms
 
     clock = [int(time.time() * 1000)]
-    city.host = dataclasses.replace(city.host, now_ms=lambda: clock[0])
+    city.host = frozen.replace(city.host, now_ms=lambda: clock[0])
     assert city.start("mc-a", start_config()).code == 0
     assert city.start("mc-b", start_config()).code == 0
 
