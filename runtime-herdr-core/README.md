@@ -639,7 +639,8 @@ send held past the deadline) and `dead` (every record reads finished).
   2 s later, and reports the op canceled whatever it exits with. The runner
   turns SIGTERM into exit 1 (`<op>: canceled (terminated)`); a SIGTERM that
   arrives while Python is still loading the pack, before anything is read or
-  written, ends the process by the signal instead.
+  written, ends the process by the signal instead. An op whose gc has exited
+  ends with exit 1 and prints nothing more.
 
   `watch-startup` is different. It streams the screen until gc stops
   reading, and gc then ends it with SIGKILL to the process, with no SIGTERM

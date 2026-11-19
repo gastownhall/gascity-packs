@@ -7,10 +7,14 @@ runs its handler, and maps every way a handler can end onto an exit code and
 a redacted stderr line. Nothing reaches stdout unless the op succeeded within
 its cap.
 
-gc may stop reading before the op writes (it gave up, or exited). Then the op
-ends with exit 1 and nothing more: the broken stream is pointed at
-``/dev/null``, so Python's own flush at interpreter shutdown cannot fail again
-and turn the exit code into 120.
+An op's pipes break only once the gc process that ran it has exited: a live
+gc never closes them while the op runs (its buffer takes every write, and on
+cancel it sends SIGTERM, then SIGKILL, before it closes them). An op whose
+stdout reader has gone ends with exit 1 and prints nothing more, however its
+handler ends, even when the handler swallows the failed write; an op whose
+stderr reader has gone keeps its exit code. Either way the broken stream is
+pointed at ``/dev/null``, so Python's own flush at interpreter shutdown cannot
+fail again and turn the exit code into 120.
 
 Reading stdin waits in :data:`~.cancel.POLL_INTERVAL_S` steps, so a SIGTERM
 or the op's deadline ends it, and no handler starts once its op is canceled
@@ -85,7 +89,12 @@ def _read_stdin(stdin: BinaryIO, cancel: CancelToken, deadline: Deadline) -> byt
 
 
 class _ReaderGone(Exception):
-    """gc stopped reading the op's stdout while the op streamed to it."""
+    """The op's stdout reader has gone: the gc that ran it has exited.
+
+    A handler can catch this, so the runner does not rely on it propagating:
+    once a write fails, every later emit raises it again and the op exits 1
+    whatever its handler returns.
+    """
 
 
 def _discard(stream: Union[BinaryIO, TextIO]) -> None:
@@ -107,9 +116,12 @@ def _discard(stream: Union[BinaryIO, TextIO]) -> None:
     try:
         os.dup2(null, fd)
     except OSError:
-        pass  # the descriptor is closed: shutdown has nothing to flush to it
+        pass  # fd is out of range: no descriptor there to flush to at shutdown
     finally:
-        os.close(null)
+        # A closed fd lets open() reuse its number: null is then the stream's
+        # own descriptor, already on /dev/null, and stays open.
+        if null != fd:
+            os.close(null)
 
 
 def _emit(stderr: TextIO, text: str) -> None:
@@ -151,11 +163,17 @@ def run_per_op(
         _emit(stderr, redactor.redact(f"{op}: unknown operation"))
         return int(ExitCode.UNKNOWN_OP)
 
+    gone = False  # stdout's reader has gone; set once, read after the handler
+
     def emit(data: bytes) -> None:
+        nonlocal gone
+        if gone:
+            raise _ReaderGone()
         try:
             stdout.write(data)
             stdout.flush()
-        except OSError:  # gc stopped reading the stream (BrokenPipeError and kin)
+        except OSError:  # the gc that ran the op has exited (BrokenPipeError and kin)
+            gone = True
             _discard(stdout)
             raise _ReaderGone() from None
 
@@ -195,13 +213,15 @@ def run_per_op(
 
             trace = traceback.format_exc()
 
+    if gone:  # the handler swallowed _ReaderGone: nobody is left to read its answer
+        return int(ExitCode.FAIL)
     if len(result.stdout) > spec.stdout_cap:
         result = OpResult.fail(f"answer of {len(result.stdout)} bytes is over the {spec.stdout_cap}-byte cap")
     if result.stdout:
         try:
             stdout.write(result.stdout)
             stdout.flush()
-        except OSError:  # gc stopped reading (BrokenPipeError and kin)
+        except OSError:  # the gc that ran the op has exited (BrokenPipeError and kin)
             _discard(stdout)
             return int(ExitCode.FAIL)
     if result.message:
