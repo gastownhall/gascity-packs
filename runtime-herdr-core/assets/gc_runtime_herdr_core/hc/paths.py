@@ -33,9 +33,9 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
-from dataclasses import dataclass
 from typing import Callable, Dict, Final, Mapping, Optional
 
+from ..rpp.frozen import frozen
 from ..rpp.statedir import (
     OP_CITY_ENV,
     city_id,
@@ -66,7 +66,7 @@ does not fit ``sun_path`` (``crates/herdr-core/src/paths.rs``)."""
 TMP_SOCKET_DIR_PREFIX: Final = "gc-herdr-core-"
 
 
-@dataclass(frozen=True)
+@frozen
 class HcPaths:
     """A city's core: its session, socket, state and config locations."""
 

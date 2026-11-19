@@ -13,8 +13,8 @@ text either (gascity ``internal/runtime/program_status.go``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Final, FrozenSet, Literal, Mapping, Optional, Tuple, cast, get_args
+from ..rpp.frozen import frozen
 
 StatusWord = Literal["idle", "working", "done", "blocked", "error"]
 """The words hc's OSC 7501 parser keeps (``clear`` removes a record)."""
@@ -35,14 +35,14 @@ _STATUS_WORDS: Final[FrozenSet[str]] = frozenset(get_args(StatusWord))
 _END_REASONS: Final[FrozenSet[str]] = frozenset(get_args(EndReason))
 
 
-@dataclass(frozen=True)
+@frozen
 class CoreInfo:
     id: str
     """Permanent random id of the core's state; reset only when state is wiped."""
     name: str
 
 
-@dataclass(frozen=True)
+@frozen
 class HelloResult:
     generation: int
     version: str
@@ -52,7 +52,7 @@ class HelloResult:
     features: Tuple[str, ...]
 
 
-@dataclass(frozen=True)
+@frozen
 class HolderInfo:
     pid: int
     instance: str
@@ -60,7 +60,7 @@ class HolderInfo:
     terminals: int
 
 
-@dataclass(frozen=True)
+@frozen
 class StatusResult:
     """``server.status``: the core process and its holders."""
 
@@ -75,12 +75,12 @@ class StatusResult:
     installed_by: Optional[str]
 
 
-@dataclass(frozen=True)
+@frozen
 class StopResult:
     stopped: bool
 
 
-@dataclass(frozen=True)
+@frozen
 class ProgramStatus:
     """One OSC 7501 record, without its text."""
 
@@ -97,7 +97,7 @@ class ProgramStatus:
         return cast(StatusWord, self.state) if self.state in _STATUS_WORDS else None
 
 
-@dataclass(frozen=True)
+@frozen
 class Foreground:
     """What runs in a terminal now (polled by hc about twice a second)."""
 
@@ -107,7 +107,7 @@ class Foreground:
     cwd: str
 
 
-@dataclass(frozen=True)
+@frozen
 class Terminal:
     """A terminal record: live, or finished until pruned (24 h or 500 records)."""
 
@@ -152,13 +152,13 @@ class Terminal:
         return cast(EndReason, self.reason) if self.reason in _END_REASONS else None
 
 
-@dataclass(frozen=True)
+@frozen
 class ListResult:
     terminals: Tuple[Terminal, ...]
     hidden_finished: int
 
 
-@dataclass(frozen=True)
+@frozen
 class SendResult:
     turn: int
     status: Optional[str]
@@ -167,20 +167,20 @@ class SendResult:
     """Whether it went ``working`` within hc's window; None when it never reports status."""
 
 
-@dataclass(frozen=True)
+@frozen
 class KeysResult:
     turn: int
     status: Optional[str]
 
 
-@dataclass(frozen=True)
+@frozen
 class InterruptResult:
     outcome: str
     """stopped, exited, still_working or unknown."""
     key: str
 
 
-@dataclass(frozen=True)
+@frozen
 class ReadResult:
     text: str
     how: str
@@ -188,12 +188,12 @@ class ReadResult:
     why: Optional[str]
 
 
-@dataclass(frozen=True)
+@frozen
 class RemoveResult:
     removed: str
 
 
-@dataclass(frozen=True)
+@frozen
 class RunSpec:
     """What the pack asks ``terminal.run`` for. The client adds the fixed
     parameters (``keep: false``, ``no_parent: true``, ``no_notify: true``)

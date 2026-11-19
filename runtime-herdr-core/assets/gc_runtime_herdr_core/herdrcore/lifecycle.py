@@ -108,7 +108,6 @@ import os
 import shutil
 import sys
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from ..hc.client import HcClient
@@ -117,6 +116,7 @@ from ..hc.types import RunSpec, Terminal
 from ..rpp.cancel import Cancelled
 from ..rpp.exitcodes import ExitCode
 from ..rpp.flock import LockTimeout
+from ..rpp.frozen import frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError, OpResult
 from ..rpp.outcome import InputOutcome
@@ -407,7 +407,7 @@ def _read_meta(ctx: OpContext, record: Terminal) -> Optional[Meta]:
         return None
 
 
-@dataclass
+@frozen
 class _Refusals:
     """A start's recycle: what may survive a record the start goes ahead
     beside, and when each record still refused stops being refused (ms),
@@ -636,7 +636,7 @@ def _systemd_run(ctx: OpContext) -> Optional[str]:
     return shutil.which("systemd-run", path="/usr/bin:/bin:/usr/local/bin")
 
 
-@dataclass(frozen=True)
+@frozen
 class CoreProcess:
     """The core process a probe ran under: its pid and start time."""
 
@@ -731,19 +731,6 @@ def _user_scope(
         warnings.append(f"agents are not re-scoped out of the holder's cgroup: {detail}")
         return None
     return scope
-
-
-def _spawn_dir(ctx: OpContext) -> str:
-    override = ctx.env.get(spawnfile.ROOT_ENV, "") if ctx.test else ""
-    return spawnfile.directory(ctx.paths.city_id, override=override or None)
-
-
-def sweep_spawn_files(ctx: OpContext) -> None:
-    """Every op's housekeeping: spawn files a killed start left behind."""
-    try:
-        spawnfile.sweep(_spawn_dir(ctx))
-    except (OSError, StateDirError):
-        pass
 
 
 def _launcher_argv(ctx: OpContext, spawn_path: str) -> List[str]:
@@ -854,7 +841,7 @@ def _create(
                 shim_dir=ctx.shim_dir,
                 scope=scope,
             )
-            spawn_path = spawnfile.create(_spawn_dir(ctx), obj, spawn)
+            spawn_path = spawnfile.create(spawnfile.spawn_dir(ctx), obj, spawn)
             spec = RunSpec(
                 argv=tuple(_launcher_argv(ctx, spawn_path)),
                 cwd=cfg.work_dir or ctx.host.home(),
@@ -1039,7 +1026,7 @@ def _fail_if_ended(client: HcClient, record: Terminal, cfg: StartConfig) -> None
 # --- the first turn ----------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@frozen
 class _Unready:
     """A wait that ended without readiness: the terminal to type the first
     turn into all the same, and why it was not seen ready."""

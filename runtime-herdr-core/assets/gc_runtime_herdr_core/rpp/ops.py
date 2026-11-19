@@ -10,11 +10,11 @@ transport answers alike.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
 from typing import Callable, Final, Literal, Mapping, Optional, Tuple
 
 from .cancel import CancelToken, Clock, Deadline
 from .exitcodes import ExitCode
+from .frozen import field, frozen
 from .redact import Redactor
 from .wire import Handshake
 
@@ -41,7 +41,7 @@ def _no_stream(data: bytes) -> None:
     raise OpError("this transport does not stream op output")
 
 
-@dataclass(frozen=True)
+@frozen
 class OpRequest:
     """One op, as every transport hands it to its handler."""
 
@@ -57,7 +57,7 @@ class OpRequest:
     that answers once returns its stdout in its :class:`OpResult` instead."""
 
 
-@dataclass(frozen=True)
+@frozen
 class OpResult:
     """How an op ended: exit code, stdout bytes, and a stderr message."""
 
@@ -91,7 +91,7 @@ class OpError(Exception):
 Handler = Callable[[OpRequest], OpResult]
 
 
-@dataclass(frozen=True)
+@frozen
 class OpSpec:
     """An op's handler and the transport facts about it."""
 

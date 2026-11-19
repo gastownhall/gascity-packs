@@ -10,12 +10,11 @@ never "whatever hc is on PATH". Moving the pin is a pack release.
 from __future__ import annotations
 
 import os
-import platform
 import re
-from dataclasses import dataclass
 from typing import Dict, Final, Mapping, Optional, Tuple
 
 from ..hc.version import GENERATION, Version, VersionPolicy
+from ..rpp.frozen import frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, loads
 
 PIN_FILE: Final = "hc-pin.json"
@@ -28,7 +27,7 @@ class PinError(Exception):
     """The pin is missing or malformed: the pack has no hc build to drive."""
 
 
-@dataclass(frozen=True)
+@frozen
 class PinTarget:
     """One platform's release asset (a ``.tar.gz`` holding the binary) and its sha256."""
 
@@ -36,7 +35,7 @@ class PinTarget:
     sha256: str
 
 
-@dataclass(frozen=True)
+@frozen
 class HcPin:
     """``hc-pin.json``."""
 
@@ -149,6 +148,8 @@ def host_target(system: Optional[str] = None, machine: Optional[str] = None) -> 
     """This host's release target name (``linux-x86_64``, ``macos-aarch64``, ...),
     spelled as hc's release manifest spells it; :class:`PinError` for a host hc
     has no build for."""
+    import platform
+
     sys_name = platform.system() if system is None else system
     arch = platform.machine() if machine is None else machine
     os_part = _SYSTEMS.get(sys_name)

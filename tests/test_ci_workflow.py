@@ -148,3 +148,27 @@ def test_runtime_herdr_core_guards_infrastructure_argv_drift_at_the_conformance_
         for line in active
     ), active
     assert not any("||" in line for line in active), "drift must fail the job"
+
+
+def test_runtime_herdr_core_runs_its_op_import_guard_on_the_newest_python() -> None:
+    # What an op imports can change with the interpreter (CPython 3.14's
+    # typing.NamedTuple imports ast), and the matrix legs run 3.9 and 3.12.
+    workflow = yaml.safe_load(
+        REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["runtime-herdr-core"]["steps"]
+    names = [step.get("name") for step in steps]
+    setup = "Set up the newest Python"
+    guard = "Op import guard on the newest Python"
+    assert setup in names and guard in names, f"runtime-herdr-core lost its newest-Python guard; steps: {names}"
+    assert names.index(setup) + 2 == names.index(guard) == len(names) - 1, (
+        "the newest Python is set up last, so every other step keeps the leg's own Python"
+    )
+    newest = steps[names.index(setup)]["with"]["python-version"]
+    assert newest.startswith("3.14."), newest
+    for name in (setup, guard):
+        step = steps[names.index(name)]
+        assert step.get("if") == "matrix.target == '3.12'", f"{name!r} runs once, on the 3.12 leg"
+        assert "continue-on-error" not in step, f"{name!r} must block merges"
+    # The whole command, so "|| true" or a "-k" filter cannot switch it off.
+    assert steps[-1]["run"].strip() == "python -m pytest tests/unit/test_op_imports.py -q", steps[-1]["run"]

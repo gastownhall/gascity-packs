@@ -23,7 +23,7 @@ and only a start, which clears the mark first, creates one.
 
 from __future__ import annotations
 
-from typing import Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from ..hc.client import HcClient
 from ..hc.errors import HcError, HcRpcError, HcUnreachable
@@ -41,15 +41,19 @@ from ..rpp.wire import (
     readable_name,
     rfc3339_ms,
 )
-from . import activity
-from .attach import attached, viewer_targets
 from .context import Host, OpContext
-from .core import at_rest, kick
-from .corescan import nothing_runs
 from .metastore import Meta, MetaError, MetaStore
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
 from .procs import ProcError, Snapshot, expand_names, find_agent, is_launching, opaque_under
 from .records import box_object, group_by_session, is_intact, newest, object_of
+
+if TYPE_CHECKING:
+    from . import activity
+
+# The core's code (:mod:`.core`, :mod:`.corescan`) is imported only on the
+# paths that find the core down, and attachment and activity
+# (:mod:`.attach`, :mod:`.activity`) only by the ops that report them: gc runs
+# every op as a fresh process, so a read pays only for what it uses.
 
 META_GC_AGE_S: Final = 600.0
 """A metadata file no record carries is removed once it is this old (a
@@ -94,6 +98,8 @@ def unreachable(ctx: OpContext, err: HcError) -> None:
     """A read found the core down or failing: kick a start when it is down
     (never for a city at rest, :func:`.core.kick_due`)."""
     if isinstance(err, HcUnreachable):
+        from .core import kick
+
         kick(ctx)
 
 
@@ -101,7 +107,11 @@ def city_at_rest(ctx: OpContext, err: HcError) -> bool:
     """Whether the core does not answer because the city is at rest
     (parked or never started, with nothing of it running): the city holds
     no session."""
-    return isinstance(err, HcUnreachable) and at_rest(ctx)
+    if not isinstance(err, HcUnreachable):
+        return False
+    from .core import at_rest
+
+    return at_rest(ctx)
 
 
 def agent_state(
@@ -173,6 +183,8 @@ def op_observe(ctx: OpContext) -> OpResult:
 
 
 def _collect_garbage(ctx: OpContext, live_objects: FrozenSet[str]) -> None:
+    from . import activity
+
     store = meta_store(ctx)
     now = ctx.host.now_ms() / 1000.0
     stale = [obj for obj, mtime in store.objects().items() if obj not in live_objects and now - mtime > META_GC_AGE_S]
@@ -193,6 +205,8 @@ def refresh_screens(ctx: OpContext, client: HcClient, records: Sequence[Terminal
     not read, so they report no last activity, never a stale time; their
     stored entries stay for the next comparison. Raises
     :class:`~..rpp.cancel.Cancelled` once the op is canceled."""
+    from . import activity
+
     screens: Dict[str, str] = {}
     unread: List[str] = []
     for record in records:
@@ -215,6 +229,8 @@ def refresh_screens(ctx: OpContext, client: HcClient, records: Sequence[Terminal
 
 
 def op_inventory(ctx: OpContext) -> OpResult:
+    from .attach import viewer_targets
+
     client = ctx.client(read=True)
     try:
         records = list_city(client, ctx)
@@ -253,6 +269,8 @@ def _inventory_entry(
     seen: Dict[str, activity.Seen],
 ) -> InventoryEntry:
     """The inventory entry of ``name``, whose newest record is ``record``."""
+    from .attach import attached
+
     meta, readable = read_meta(ctx, record)
     running = is_intact(record)
     agent: Optional[AgentState] = None
@@ -280,6 +298,8 @@ def _inventory_entry(
 def _last_activity(ctx: OpContext, record: Terminal, seen: Mapping[str, activity.Seen]) -> Optional[str]:
     """A running box's last activity; None (unknown) for one that never
     reported whose screen this pass did not read."""
+    from . import activity
+
     entry = activity.object_seen(record, seen)
     if not record.reported and (entry is None or not entry.changed_ms):
         return None
@@ -301,8 +321,12 @@ def current_record(ctx: OpContext, name: str, *, liveness: bool = False) -> Opti
     try:
         return newest(list_city(ctx.client(read=True), ctx, name), name)
     except HcError as err:
-        if isinstance(err, HcUnreachable) and (nothing_runs(ctx) if liveness else at_rest(ctx)):
-            return None
+        if isinstance(err, HcUnreachable):
+            from .core import at_rest
+            from .corescan import nothing_runs
+
+            if nothing_runs(ctx) if liveness else at_rest(ctx):
+                return None
         unreachable(ctx, err)
         raise OpError(f"cannot read the city's core: {err}") from None
 
@@ -351,6 +375,8 @@ def op_list_running(ctx: OpContext) -> OpResult:
 
 
 def op_is_attached(ctx: OpContext) -> OpResult:
+    from .attach import attached, viewer_targets
+
     name = session_arg(ctx.request)
     record = current_record(ctx, name)
     if record is None:
@@ -363,6 +389,8 @@ def op_is_attached(ctx: OpContext) -> OpResult:
 
 
 def op_get_last_activity(ctx: OpContext) -> OpResult:
+    from . import activity
+
     name = session_arg(ctx.request)
     record = current_record(ctx, name)
     if record is None or not is_intact(record):

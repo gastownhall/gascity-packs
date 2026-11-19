@@ -20,7 +20,6 @@ import re
 import select
 import signal
 import time
-import traceback
 from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO
 
 from .cancel import POLL_INTERVAL_S, CancelToken, Cancelled, Clock, Deadline
@@ -29,8 +28,8 @@ from .ops import OpError, OpRequest, OpResult, OpTable, deadline_for
 from .redact import Redactor
 
 DEADLINE_ENV: Final = "GC_EXEC_DEADLINE_MS"
-"""Milliseconds left before gc stops waiting for the op, when gc says so. No
-gc release sends it yet; the op then has gc's own timeout for it."""
+"""Milliseconds left before gc stops waiting for the op, when gc says so. gc
+sends it (gastownhall/gascity#9012); without it the op has gc's own timeout."""
 
 _DEADLINE_MS: Final = re.compile(r"[0-9]{1,12}")
 _STDIN_CHUNK: Final = 1 << 16
@@ -153,6 +152,8 @@ def run_per_op(
     except Exception as err:  # the op boundary: every failure becomes exit 1
         result = OpResult.fail(f"internal error: {type(err).__name__}: {err}")
         if debug:
+            import traceback
+
             trace = traceback.format_exc()
 
     if len(result.stdout) > spec.stdout_cap:

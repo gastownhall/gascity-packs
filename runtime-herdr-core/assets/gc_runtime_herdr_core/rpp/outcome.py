@@ -20,10 +20,10 @@ outcome gc already acts on; this module adds no meaning of its own.
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
 from typing import Dict, Final, FrozenSet, Literal, Tuple, get_args
 
 from .exitcodes import ExitCode
+from .frozen import frozen
 from .jsonval import dumps
 from .ops import OpResult
 from .redact import Redactor
@@ -62,7 +62,7 @@ def allowed(op: InputOp, word: OutcomeWord) -> bool:
     return op == "nudge" or word not in NUDGE_ONLY_WORDS
 
 
-@dataclass(frozen=True)
+@frozen
 class InputOutcome:
     """One driving op's typed outcome and why (a short, secret-free reason)."""
 

@@ -55,6 +55,28 @@ def test_no_top_level_scripts_dir() -> None:
     assert not (PACK_ROOT / "scripts").exists()
 
 
+def _is_type_checking(test: ast.expr) -> bool:
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+        isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+    )
+
+
+def runtime_imports(tree: ast.Module) -> Iterator[str]:
+    """The absolute modules ``tree`` imports when it runs: everything but
+    the bodies of ``if TYPE_CHECKING:`` blocks (their ``else`` runs)."""
+    stack: List[ast.AST] = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.If) and _is_type_checking(node.test):
+            stack.extend(node.orelse)
+            continue
+        if isinstance(node, ast.Import):
+            yield from (alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            yield node.module
+        stack.extend(ast.iter_child_nodes(node))
+
+
 def test_runtime_imports_only_the_standard_library() -> None:
     names = getattr(sys, "stdlib_module_names", None)  # 3.10+
     if names is None:
@@ -62,18 +84,67 @@ def test_runtime_imports_only_the_standard_library() -> None:
     stdlib = set(names)
     offenders = []
     for path, tree in runtime_sources():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                names = [node.module]
-            else:
-                continue
-            for name in names:
-                top = name.split(".")[0]
-                if top not in stdlib and top != "gc_runtime_herdr_core":
-                    offenders.append(f"{path.relative_to(PACK_ROOT)}: {name}")
+        for name in runtime_imports(tree):
+            top = name.split(".")[0]
+            if top not in stdlib and top != "gc_runtime_herdr_core":
+                offenders.append(f"{path.relative_to(PACK_ROOT)}: {name}")
     assert offenders == []
+
+
+def test_runtime_imports_follow_type_checking_blocks() -> None:
+    tree = ast.parse(
+        "import a\nif TYPE_CHECKING:\n    import b\nelse:\n    import c\nif typing.TYPE_CHECKING:\n    import d\n"
+        "def f():\n    import e\n"
+    )
+    assert sorted(runtime_imports(tree)) == ["a", "c", "e"]
+
+
+def test_runtime_never_imports_dataclasses() -> None:
+    # A frozen dataclass costs about a millisecond per class to define, in
+    # every op process; records use rpp.frozen (see the README's Foundations).
+    offenders = [
+        f"{path.relative_to(PACK_ROOT)}: {name}"
+        for path, tree in runtime_sources()
+        for name in runtime_imports(tree)
+        if name.split(".")[0] == "dataclasses"
+    ]
+    assert offenders == []
+
+
+def test_runtime_never_defines_a_named_tuple() -> None:
+    # On CPython 3.14, defining a typing.NamedTuple class imports
+    # annotationlib and with it ast, in every op process; records use
+    # rpp.frozen.
+    offenders = [
+        f"{path.relative_to(PACK_ROOT)}:{node.lineno}"
+        for path, tree in runtime_sources()
+        for node in ast.walk(tree)
+        if (isinstance(node, ast.Name) and node.id == "NamedTuple")
+        or (isinstance(node, ast.Attribute) and node.attr == "NamedTuple")
+        or (isinstance(node, ast.ImportFrom) and any(alias.name == "NamedTuple" for alias in node.names))
+    ]
+    assert offenders == []
+
+
+def test_only_the_entry_imports_the_op_table() -> None:
+    # The op table names every handler module; a handler-side module that
+    # imports it would turn a later module-level handler import in the
+    # table into a circular import.
+    importers = sorted(
+        str(path.relative_to(PACKAGE))
+        for path, tree in runtime_sources()
+        if path not in SCRIPTS
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.ImportFrom)
+            and (
+                (node.module or "").split(".")[-1] == "ops_table"
+                or any(alias.name == "ops_table" for alias in node.names)
+            )
+        )
+        or (isinstance(node, ast.Import) and any(alias.name.split(".")[-1] == "ops_table" for alias in node.names))
+    )
+    assert importers == ["main.py"]
 
 
 def test_runtime_parses_as_python_3_9() -> None:

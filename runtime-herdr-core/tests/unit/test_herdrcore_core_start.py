@@ -29,6 +29,7 @@ from gc_runtime_herdr_core.hc.paths import HcPaths, ensure_dirs, resolve_paths
 from gc_runtime_herdr_core.herdrcore import core
 from gc_runtime_herdr_core.herdrcore.commands import run_command
 from gc_runtime_herdr_core.herdrcore.context import OpContext
+from gc_runtime_herdr_core.herdrcore.naming import KICK_OP
 from gc_runtime_herdr_core.herdrcore.ops_table import build_ops
 from gc_runtime_herdr_core.rpp.cancel import CancelToken, Deadline
 from gc_runtime_herdr_core.rpp.ops import OpError, OpRequest
@@ -60,7 +61,7 @@ OPS: Dict[str, Tuple[Tuple[str, ...], bytes]] = {
     "attach": (("mc-a",), b""),
     "copy-to": (("mc-a", "/etc/hostname"), b""),
     "server-stop": ((), b""),
-    core.KICK_OP: ((), b""),
+    KICK_OP: ((), b""),
 }
 """Every op but ``protocol``, with arguments and stdin it accepts."""
 

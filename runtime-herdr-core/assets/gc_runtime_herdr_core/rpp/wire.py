@@ -14,11 +14,9 @@ with a message saying why, instead of reaching gc as an unexplained unknown.
 
 from __future__ import annotations
 
-import datetime
-import unicodedata
-from dataclasses import dataclass
 from typing import Dict, Final, Literal, Mapping, Optional, Tuple
 
+from .frozen import frozen
 from .jsonval import JsonObject, JsonShapeError, dumps, loads
 
 Capability = Literal[
@@ -51,7 +49,7 @@ class WireError(ValueError):
 # --- handshake ---------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@frozen
 class Handshake:
     """The ``protocol`` answer: static, reading no state (exec-session-provider.md)."""
 
@@ -68,7 +66,7 @@ class Handshake:
 # --- start config --------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@frozen
 class CopyFile:
     """A file or directory on gc's host to stage at ``rel_dst`` under the work dir."""
 
@@ -76,7 +74,7 @@ class CopyFile:
     rel_dst: str
 
 
-@dataclass(frozen=True)
+@frozen
 class StartConfig:
     """The ``start`` op's stdin (gc ``exec/json.go`` startConfig); every field is optional."""
 
@@ -138,7 +136,7 @@ KillMode = Literal["corpse", "zombie"]
 KillOutcome = Literal["killed", "gone", "renamed", "live", "changed"]
 
 
-@dataclass(frozen=True)
+@frozen
 class BoxObject:
     """A box's backend identity: the same for its life, new for each new box."""
 
@@ -158,7 +156,7 @@ def _identity(identity: Optional[Mapping[str, str]]) -> object:
     return None if identity is None else dict(identity)
 
 
-@dataclass(frozen=True)
+@frozen
 class ObserveAnswer:
     """One ``observe`` answer. ``absent`` and ``unknown`` carry only the state."""
 
@@ -193,10 +191,12 @@ class ObserveAnswer:
 
 def readable_name(name: str) -> bool:
     """A name gc can list: non-empty, untrimmed, no control character."""
+    import unicodedata
+
     return name != "" and name == name.strip() and not any(unicodedata.category(ch) == "Cc" for ch in name)
 
 
-@dataclass(frozen=True)
+@frozen
 class InventoryEntry:
     """One listed name. Without a state it is present with unknown attributes."""
 
@@ -240,7 +240,7 @@ class InventoryEntry:
         return doc
 
 
-@dataclass(frozen=True)
+@frozen
 class InventoryAnswer:
     """The ``inventory`` answer; a name listed twice would fail the whole answer in gc."""
 
@@ -256,7 +256,7 @@ class InventoryAnswer:
         return dumps({"complete": self.complete, "sessions": [entry.to_json() for entry in self.sessions]})
 
 
-@dataclass(frozen=True)
+@frozen
 class KillObjectRequest:
     """``kill-object`` stdin: kill exactly this object, re-checked by mode."""
 
@@ -300,11 +300,13 @@ def rfc3339_ms(epoch_ms: int) -> str:
     if epoch_ms < 0:
         raise ValueError("epoch milliseconds must not be negative")
     seconds, millis = divmod(epoch_ms, 1000)
+    import datetime
+
     stamp = datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc)
     return stamp.strftime("%Y-%m-%dT%H:%M:%S") + f".{millis:03d}Z"
 
 
-@dataclass(frozen=True)
+@frozen
 class WatchStartupEvent:
     """One ``watch-startup`` NDJSON line: the screen as it now reads."""
 

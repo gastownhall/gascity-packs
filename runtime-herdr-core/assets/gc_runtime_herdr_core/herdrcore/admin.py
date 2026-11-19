@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import os
 import socket
-from dataclasses import dataclass, replace
 from typing import Final, List, Mapping, Optional
 
 from ..hc.client import CallTimeouts, CoreEndpoint, HcClient
@@ -21,6 +20,7 @@ from ..hc.errors import HcError, HcUnreachable
 from ..hc.types import StatusResult, Terminal
 from ..hc.version import Version, VersionPolicy
 from ..rpp.cancel import CancelToken, Deadline
+from ..rpp.frozen import frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, loads
 from ..rpp.ops import OpRequest
 from ..rpp.redact import Redactor
@@ -128,7 +128,7 @@ def client_for(ctx: OpContext, socket_path: str, *, any_version: bool = False) -
     )
 
 
-@dataclass(frozen=True)
+@frozen
 class Ownership:
     """Whose core answers on a socket."""
 

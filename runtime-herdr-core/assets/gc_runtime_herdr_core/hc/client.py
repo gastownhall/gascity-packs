@@ -36,14 +36,14 @@ per line; hc ``schema/README.md`` "Connecting").
 
 from __future__ import annotations
 
+import _thread
 import itertools
 import socket
-import threading
 import time
-from dataclasses import dataclass, replace
 from typing import Callable, Dict, Final, FrozenSet, Literal, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from ..rpp.cancel import DEADLINE_MARGIN_S, POLL_INTERVAL_S, CancelToken, Deadline
+from ..rpp.frozen import frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from .errors import (
     HcCancelled,
@@ -106,7 +106,7 @@ MAX_REPLY_BYTES: Final = 16 << 20
 _RECV_BYTES: Final = 1 << 16
 
 
-@dataclass(frozen=True)
+@frozen
 class _Budget:
     """A call's timeout rule: at most ``cap``, ending ``margin`` before the op's deadline."""
 
@@ -114,7 +114,7 @@ class _Budget:
     margin: float = DEADLINE_MARGIN_S
 
 
-@dataclass(frozen=True)
+@frozen
 class CallTimeouts:
     """Per-call timeout caps, before the deadline cut.
 
@@ -160,7 +160,7 @@ class CoreEndpoint:
     def __init__(self, socket_path: str, *, policy: VersionPolicy) -> None:
         self.socket_path = socket_path
         self.policy = policy
-        self._lock = threading.Lock()
+        self._lock = _thread.allocate_lock()  # threading.Lock, without importing threading
         self._ids = itertools.count(1)
 
     def next_id(self) -> int:
