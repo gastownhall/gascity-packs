@@ -28,12 +28,14 @@ if [[ ${#session_ids[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# `--delivery queue` delivers at the lead's next boundary instead of waiting
+# for it to go idle, so a busy lead cannot hold the order past its timeout.
 nudged=0
 for sid in "${session_ids[@]}"; do
-  if gc session nudge "$sid" --message "Triage tick: read your brief, survey your rig, write rollups." >/dev/null 2>&1; then
+  if err=$(gc session nudge "$sid" --delivery queue "Triage tick: read your brief, survey your rig, write rollups." 2>&1 >/dev/null); then
     nudged=$((nudged + 1))
   else
-    echo "nudge failed for $sid" >&2
+    echo "nudge failed for $sid: $err" >&2
   fi
 done
 
