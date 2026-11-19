@@ -85,7 +85,7 @@ runtime-herdr-core/
     live/                          the live tier: the pack against the pinned herdr-core (CI runners only)
     infra_argv_drift.py            CI: the infrastructure argv table equals gc's at the pinned commit
   soak/                            the scratch-city soak: RUNBOOK.md and its harness (runs only on a disposable VM)
-  docs/soak-report.md              the soak report (a template until the first soak runs)
+  docs/soak-report.md              the soak report (the first 24-hour soak)
 ```
 
 ## Install and commands
