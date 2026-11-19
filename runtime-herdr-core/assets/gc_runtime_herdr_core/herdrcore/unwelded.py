@@ -100,6 +100,10 @@ def _nothing_provisioned(name: str) -> OpError:
     return OpError(f"nothing is provisioned for {name!r}: provision it first")
 
 
+def _city_stopped(name: str) -> OpError:
+    return OpError(f"the city is stopped (server-stop parked it); provision {name!r} to start it again")
+
+
 # --- provision -------------------------------------------------------------------------------
 
 
@@ -156,8 +160,9 @@ def _launch(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
     # Never a core for a city at rest. A parked city refuses whatever the
     # record says: server-stop parks it after any provision's ensure_core
     # unparked it, so a record there is stale.
-    if parked(ctx) or (provisioned.read(ctx, name, ctx.host.now_ms()) is None and at_rest(ctx)):
-        raise _nothing_provisioned(name)
+    is_parked = parked(ctx)
+    if is_parked or (provisioned.read(ctx, name, ctx.host.now_ms()) is None and at_rest(ctx)):
+        raise _city_stopped(name) if is_parked else _nothing_provisioned(name)
     hc_bin = ensure_core(ctx)
     client = ctx.client()
     warnings: List[str] = []

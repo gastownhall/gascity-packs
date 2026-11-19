@@ -507,7 +507,7 @@ def test_server_stop_drops_provision_records(city: City) -> None:
     assert done.code == 0, done.stderr
     assert not record_path(city, "mc-a").exists() and not record_path(city, "mc-b").exists()
     late = launch(city)
-    assert late.code == 1 and "nothing is provisioned" in late.stderr
+    assert late.code == 1 and "the city is stopped" in late.stderr, late.stderr
     assert no_core_started(city, wait_s=1.0), "a late launch never revives the city"
 
 
@@ -522,7 +522,8 @@ def test_a_launch_in_a_parked_city_refuses_whatever_the_record_says(city: City) 
     path.write_bytes(stale)
     os.chmod(path, 0o600)
     late = launch(city)
-    assert late.code == 1 and "nothing is provisioned" in late.stderr, late.stderr
+    assert late.code == 1 and "the city is stopped" in late.stderr, late.stderr
+    assert "nothing is provisioned" not in late.stderr, late.stderr
     assert no_core_started(city, wait_s=1.0), "a late launch never revives the city"
 
 
