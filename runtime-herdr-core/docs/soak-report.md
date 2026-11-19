@@ -37,11 +37,13 @@ artifact, now fixed.
   city's bundled `core` and `bd` packs at gascity `e38ce9cc55d1`. bd 1.3.4.
   dolt 2.6.0.
 - herdr-core 0.1.19 (0.1.20 during the upgrade drill only). Pack:
-  gascity-packs `d3a03615`. Harness: this branch at `223263f6` (the harness
-  tree the VM ran during the soak; earlier commits of this branch during
-  bring-up and drills); the numbers below
-  were recomputed with this branch's harness, which adds the op-end classes
-  and the two fixes listed under findings. Python 3.12.3. bpftrace 0.20.2.
+  runtime-herdr-core as of gastownhall/gascity-packs#653 (hc config types)
+  plus #652 (own-core identity) before #652's final review commit, copied to
+  the VM and checked against its SHA256SUMS. Harness: the `soak/` harness in
+  this change, without its post-soak fixes (the VM ran that tree for the
+  soak, and earlier revisions of it during bring-up and the drills); the
+  numbers below were recomputed with the final harness, which adds the
+  op-end classes and the two fixes listed under findings. Python 3.12.3. bpftrace 0.20.2.
 - City: 6 always-on and up to 10 on-demand scripted sessions (about 17 live
   with the formula dispatcher and the store's maintenance pool),
   `[session] provider = "herdr-core"`; store: bd's proxied Dolt for work,
