@@ -11,7 +11,7 @@ import json
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from soakanalysis import (
     ENDED_CANCELED,
@@ -221,17 +221,51 @@ def core_rss_hourly(samples: Sequence[Rec], window: Window) -> Dict[str, Any]:
     return {"medians_kib": medians, "reference_kib": ref, "max_deviation": deviation, "within_20pct": None if deviation is None else deviation <= 0.20}
 
 
-def death_to_restart(faults: Sequence[Rec], incs: Sequence[Incarnation], window: Window) -> List[float]:
-    out: List[float] = []
-    for f in faults:
-        if f.get("kind") != "probe-kill" or not window.has(float(f.get("t", 0))):
-            continue
+def probe_restarts(faults: Sequence[Rec], incs: Sequence[Incarnation]) -> List[Tuple[float, Incarnation, bool]]:
+    """Each probe kill with the incarnation that answered it: ``(kill time,
+    incarnation, whether a new session answered)``.
+
+    The v2 reconciler restarts the killed session under the same id; the
+    legacy one closes it and starts a new session of the same template. So a
+    kill is answered by the next boot of the killed session or, when that
+    session never boots again, by the first boot of a new session of the
+    killed incarnation's template after the kill that no earlier kill took.
+    A kill with no answer is left out.
+    """
+    by_session: Dict[str, List[Incarnation]] = {}
+    for inc in incs:
+        by_session.setdefault(inc.session_id, []).append(inc)
+    for items in by_session.values():
+        items.sort(key=lambda i: i.boot_t)
+    taken: Set[str] = set()
+    out: List[Tuple[float, Incarnation, bool]] = []
+    for f in sorted((f for f in faults if f.get("kind") == "probe-kill"), key=lambda f: float(f.get("t", 0))):
         t = float(f["t"])
         sessions = set(f.get("sessions") or [])
-        later = sorted(i.boot_t for i in incs if i.session_id in sessions and i.boot_t > t)
-        if later:
-            out.append(later[0] - t)
+        pids = set(f.get("pids") or [])
+        killed = [i for i in incs if i.boot_t <= t and (i.session_id in sessions or i.pid in pids)]
+        if not killed:
+            continue
+        victim = max(killed, key=lambda i: i.boot_t)
+        same = [i for i in by_session[victim.session_id] if i.boot_t > t]
+        if same:
+            out.append((t, same[0], False))
+            continue
+        fresh = [
+            items[0]
+            for sid, items in by_session.items()
+            if sid != victim.session_id and items[0].template == victim.template and items[0].boot_t > t and items[0].inc not in taken
+        ]
+        if fresh:
+            first = min(fresh, key=lambda i: i.boot_t)
+            taken.add(first.inc)
+            out.append((t, first, True))
     return out
+
+
+def death_to_restart(faults: Sequence[Rec], incs: Sequence[Incarnation], window: Window) -> List[float]:
+    """Seconds from each probe kill in the window to the boot that answered it."""
+    return [inc.boot_t - t for t, inc, _ in probe_restarts(faults, incs) if window.has(t)]
 
 
 def restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: Window) -> Dict[str, int]:
@@ -239,12 +273,15 @@ def restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: W
 
     A probe kill or a drill naming the session, its pid or everything explains
     a restart; so does a planned operator action (``soak note``) that covers
-    everything, such as a city stop or start.
+    everything, such as a city stop or start. The first boot of a new session
+    that answered a probe kill (the legacy reconciler replaces the killed
+    session, see ``probe_restarts``) counts as a probe restart too.
     """
     by_session: Dict[str, List[Incarnation]] = {}
     for inc in incs:
         by_session.setdefault(inc.session_id, []).append(inc)
     counts = {"starts": 0, "probe": 0, "drill": 0, "operator": 0, "unexplained": 0}
+    new_sessions = {inc.inc for _, inc, replaced in probe_restarts(faults, incs) if replaced}
     for sid, items in by_session.items():
         items.sort(key=lambda i: i.boot_t)
         previous: List[Optional[Incarnation]] = [None]
@@ -254,6 +291,8 @@ def restart_causes(incs: Sequence[Incarnation], faults: Sequence[Rec], window: W
                 continue
             counts["starts"] += 1
             if prev is None:
+                if cur.inc in new_sessions:
+                    counts["probe"] += 1
                 continue
             cause = None
             for f in faults:

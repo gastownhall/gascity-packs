@@ -1150,7 +1150,7 @@ Every number in the report comes from one of these, for each phase window
 | CPU | controller tree (supervisor incl. reaped children), controller-spawned op CPU, all of this user's CPU (`user@<uid>.service`) | samples, op trace |
 | core RSS | hour 2 median (reference), hourly medians, largest deviation; holder RSS | samples |
 | sizes | `R`, the city's hc state directory, `.gc`, `.beads`, events mirror | samples |
-| death-to-restart | probe kill → next `boot` of that session: n, p50, p95, max; under the patrol only, nothing pokes the controller | `faults.jsonl`, agent logs |
+| death-to-restart | probe kill → the boot that answered it (the killed session's next `boot`, or, when gc replaces the session instead of restarting it, as the legacy reconciler does, the first `boot` of a new session of the same template): n, p50, p95, max; under the patrol only, nothing pokes the controller | `faults.jsonl`, agent logs |
 
 Budgets behind S5 and AP5: at most 2 pack spawns per second per 40 sessions
 on v2 (0.05 per session); on legacy about 10 to 15 ops per session per 30 s

@@ -219,3 +219,38 @@ def test_a_restart_across_an_operator_stop_and_start_is_explained() -> None:
     narrow = [{"t": T0 + 100, "kind": "note", "what": "supervisor-restart", "covers": ["supervisor", "controller", "store"]}]
     assert restart_causes(incs, narrow, window)["unexplained"] == 1
     assert restart_causes(incs, [], window)["unexplained"] == 1
+
+
+def replaced_by_a_new_session() -> List[Rec]:
+    """The legacy reconciler's answer to a probe kill: the killed always-on
+    session is closed and a new session of the same template starts."""
+    a, b, c, d = "bt:100:1", "bt:200:2", "bt:300:3", "bt:400:4"
+    return [
+        rec("boot", T0, a, session_id="s1", template="soak-steady"),
+        rec("boot", T0 + 5, b, session_id="s2", template="soak-steady"),
+        # a demand session of another template starts right after the kill
+        rec("boot", T0 + 1810, c, session_id="b1", template="soak-burst"),
+        # s1 was killed at T0 + 1800; gc starts n1 in its place
+        rec("boot", T0 + 1912, d, session_id="n1", template="soak-steady"),
+    ]
+
+
+def test_a_probe_kill_answered_by_a_new_session_is_a_probe_restart() -> None:
+    incs = incarnations(replaced_by_a_new_session(), lambda inc: False)
+    w = Window("x", T0 + 600, T0 + 3600, "legacy")
+    faults = [{"t": T0 + 1800, "kind": "probe-kill", "pids": [100], "sessions": ["s1"]}]
+    assert restart_causes(incs, faults, w) == {"starts": 2, "probe": 1, "drill": 0, "operator": 0, "unexplained": 0}
+    assert death_to_restart(faults, incs, w) == [112.0]
+
+
+def test_one_new_session_answers_one_probe_kill_and_a_same_id_restart_wins() -> None:
+    records = replaced_by_a_new_session() + [rec("boot", T0 + 1850, "bt:500:5", session_id="s2", template="soak-steady")]
+    incs = incarnations(records, lambda inc: False)
+    w = Window("x", T0 + 600, T0 + 3600, "legacy")
+    faults = [
+        {"t": T0 + 1800, "kind": "probe-kill", "pids": [100], "sessions": ["s1"]},
+        {"t": T0 + 1801, "kind": "probe-kill", "pids": [200], "sessions": ["s2"]},
+        {"t": T0 + 1802, "kind": "probe-kill", "pids": [1], "sessions": ["gone"]},
+    ]
+    assert restart_causes(incs, faults, w) == {"starts": 3, "probe": 2, "drill": 0, "operator": 0, "unexplained": 0}
+    assert death_to_restart(faults, incs, w) == [112.0, 49.0]
