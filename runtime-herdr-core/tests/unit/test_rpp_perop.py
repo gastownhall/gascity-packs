@@ -408,3 +408,77 @@ def test_a_sigterm_as_stdin_ends_stops_the_op_before_its_handler() -> None:
     assert proc.returncode == ExitCode.FAIL
     assert proc.stdout == b""
     assert proc.stderr.decode().strip() == "nudge: canceled (terminated)"
+
+
+GONE_HARNESS = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from gc_runtime_herdr_core.rpp.exitcodes import ExitCode
+from gc_runtime_herdr_core.rpp.ops import OpError, OpResult, OpSpec
+from gc_runtime_herdr_core.rpp.perop import run_per_op
+
+def answer(req):
+    return OpResult.answer("{}")
+
+def outcome(req):
+    return OpResult(ExitCode.INPUT_OUTCOME, b'{"outcome":"not-delivered"}\\n')
+
+def stream(req):
+    for _ in range(3):
+        req.emit(b'{"content":"screen"}\\n')
+    return OpResult.ok()
+
+def fail(req):
+    raise OpError("no session 'a'")
+
+def spec(handler):
+    return OpSpec(handler=handler, reads_stdin=False, deadline="default", stdout_cap=1024)
+
+ops = {"answer": spec(answer), "outcome": spec(outcome), "stream": spec(stream), "fail": spec(fail)}
+sys.exit(run_per_op(["x", sys.argv[2]], {}, ops, started=time.monotonic(), stdin=sys.stdin.buffer,
+                    stdout=sys.stdout.buffer, stderr=sys.stderr))
+"""
+"""Ops that answer on stdout every way an op can, and one that fails on stderr."""
+
+
+def run_without_reader(argv: List[str], gone: str) -> Tuple[int, str]:
+    """Run ``argv`` with the read end of its ``gone`` stream (``stdout`` or
+    ``stderr``) closed before the op starts, as when gc has already exited;
+    return the exit status and what the other stream carried."""
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    try:
+        proc = subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=write_end if gone == "stdout" else subprocess.PIPE,
+            stderr=write_end if gone == "stderr" else subprocess.PIPE,
+            timeout=10,
+            start_new_session=True,
+        )
+    finally:
+        os.close(write_end)
+    other = proc.stderr if gone == "stdout" else proc.stdout
+    return proc.returncode, (other or b"").decode()
+
+
+@pytest.mark.parametrize("op", ["answer", "outcome", "stream"])
+def test_an_op_whose_caller_has_gone_exits_1_quietly(op: str) -> None:
+    # Python flushes stdout again at interpreter shutdown; a second
+    # BrokenPipeError there turns exit 1 into 120 and prints a traceback.
+    code, err = run_without_reader([sys.executable, "-I", "-S", "-c", GONE_HARNESS, str(ASSETS), op], "stdout")
+    assert code == ExitCode.FAIL
+    assert err == ""
+
+
+def test_an_op_failing_to_a_closed_stderr_keeps_its_exit_code() -> None:
+    code, out = run_without_reader([sys.executable, "-I", "-S", "-c", GONE_HARNESS, str(ASSETS), "fail"], "stderr")
+    assert code == ExitCode.FAIL
+    assert out == ""
+
+
+def test_the_executable_exits_1_when_gc_has_stopped_reading() -> None:
+    entry = ASSETS / "bin" / "gc-runtime-herdr-core"
+    code, err = run_without_reader([sys.executable, "-I", "-S", str(entry), "protocol"], "stdout")
+    assert code == ExitCode.FAIL
+    assert err == ""

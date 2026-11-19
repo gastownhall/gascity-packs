@@ -7,6 +7,11 @@ runs its handler, and maps every way a handler can end onto an exit code and
 a redacted stderr line. Nothing reaches stdout unless the op succeeded within
 its cap.
 
+gc may stop reading before the op writes (it gave up, or exited). Then the op
+ends with exit 1 and nothing more: the broken stream is pointed at
+``/dev/null``, so Python's own flush at interpreter shutdown cannot fail again
+and turn the exit code into 120.
+
 Reading stdin waits in :data:`~.cancel.POLL_INTERVAL_S` steps, so a SIGTERM
 or the op's deadline ends it, and no handler starts once its op is canceled
 or out of time.
@@ -20,7 +25,7 @@ import re
 import select
 import signal
 import time
-from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO
+from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO, Union
 
 from .cancel import POLL_INTERVAL_S, CancelToken, Cancelled, Clock, Deadline
 from .exitcodes import ExitCode
@@ -79,12 +84,40 @@ def _read_stdin(stdin: BinaryIO, cancel: CancelToken, deadline: Deadline) -> byt
             chunks.append(chunk)
 
 
+class _ReaderGone(Exception):
+    """gc stopped reading the op's stdout while the op streamed to it."""
+
+
+def _discard(stream: Union[BinaryIO, TextIO]) -> None:
+    """Point the file descriptor under ``stream`` at ``/dev/null``.
+
+    Called once its reader has gone: what the stream still buffers then
+    flushes into ``/dev/null`` at interpreter shutdown instead of failing
+    there, which would make the process exit 120. A stream with no
+    descriptor (an in-memory one) is left alone.
+    """
+    try:
+        fd = stream.fileno()
+    except (OSError, ValueError):  # io.UnsupportedOperation is both
+        return
+    try:
+        null = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        os.dup2(null, fd)
+    except OSError:
+        pass  # the descriptor is closed: shutdown has nothing to flush to it
+    finally:
+        os.close(null)
+
+
 def _emit(stderr: TextIO, text: str) -> None:
     try:
         stderr.write(text if text.endswith("\n") else text + "\n")
         stderr.flush()
     except OSError:
-        pass  # stderr is gone: there is nowhere left to report to
+        _discard(stderr)  # stderr is gone: there is nowhere left to report to
 
 
 def run_per_op(
@@ -119,8 +152,12 @@ def run_per_op(
         return int(ExitCode.UNKNOWN_OP)
 
     def emit(data: bytes) -> None:
-        stdout.write(data)
-        stdout.flush()
+        try:
+            stdout.write(data)
+            stdout.flush()
+        except OSError:  # gc stopped reading the stream (BrokenPipeError and kin)
+            _discard(stdout)
+            raise _ReaderGone() from None
 
     cancel = CancelToken()
     if install_signals:
@@ -143,6 +180,8 @@ def run_per_op(
         if deadline.expired():
             raise OpError("no time left before the op's deadline")
         result = spec.handler(request)
+    except _ReaderGone:
+        return int(ExitCode.FAIL)
     except OpError as err:
         result = OpResult.fail(err.message, err.code)
     except Cancelled as err:
@@ -163,6 +202,7 @@ def run_per_op(
             stdout.write(result.stdout)
             stdout.flush()
         except OSError:  # gc stopped reading (BrokenPipeError and kin)
+            _discard(stdout)
             return int(ExitCode.FAIL)
     if result.message:
         _emit(stderr, redactor.redact(f"{op}: {result.message}"))
