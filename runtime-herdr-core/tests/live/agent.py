@@ -12,6 +12,7 @@ status. On request it starts, the way a coding agent's shell does:
   own (as gc's managed store autostart and bd's proxy are): a watchdog with
   gc's ``__gc-managed-dolt-scope-watchdog`` argv that starts a store which
   answers on a Unix socket, and a proxy with bd's ``db-proxy-child`` argv.
+  They are reported only once the store answers, within ``INFRA_READY_S``.
   With ``GC_HC_LIVE_INFRA_UNIT`` and a reachable user manager, the watchdog
   is started in a transient scope of that name under ``gascity-infra.slice``,
   with the ``systemd-run`` argv gc wraps infrastructure in;
@@ -37,6 +38,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -44,6 +46,7 @@ import time
 from typing import Dict, List, Optional
 
 INFRA_SLICE = "gascity-infra.slice"
+INFRA_READY_S = 15.0
 
 
 def _write_json(path: str, doc: Dict[str, object]) -> None:
@@ -70,9 +73,8 @@ def _user_manager() -> bool:
     return bool(runtime) and os.path.exists(os.path.join(runtime, "systemd", "private"))
 
 
-def _wait_for_pid_file(path: str, timeout_s: float = 15.0) -> int:
-    end = time.monotonic() + timeout_s
-    while time.monotonic() < end:
+def _wait_for_pid_file(path: str, deadline: float) -> int:
+    while time.monotonic() < deadline:
         try:
             with open(path, encoding="utf-8") as handle:
                 text = handle.read().strip()
@@ -82,6 +84,24 @@ def _wait_for_pid_file(path: str, timeout_s: float = 15.0) -> int:
             pass
         time.sleep(0.05)
     raise RuntimeError(f"no pid in {path}")
+
+
+def _wait_for_store(path: str, deadline: float) -> None:
+    """Wait until the store answers ``pong`` on ``path``. Its pid is no sign
+    of that: the watchdog writes it as soon as it starts the store, before
+    the store has bound its socket."""
+    while True:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+                conn.settimeout(1.0)
+                conn.connect(path)
+                if conn.recv(16).startswith(b"pong"):
+                    return
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"the store stand-in never answered on {path}")
+        time.sleep(0.05)
 
 
 def spawn_infra(work: str, name: str, standins: str, python: str, errors: List[str]) -> Dict[str, object]:
@@ -100,8 +120,10 @@ def spawn_infra(work: str, name: str, standins: str, python: str, errors: List[s
     out: Dict[str, object] = {"store_socket": store}
     out["watchdog"] = _detached(watchdog, standins)
     out["proxy"] = _detached([python, "db-proxy-child"], standins)
+    deadline = time.monotonic() + INFRA_READY_S
     try:
-        out["dolt"] = _wait_for_pid_file(dolt_pid_file)
+        out["dolt"] = _wait_for_pid_file(dolt_pid_file, deadline)
+        _wait_for_store(store, deadline)
     except RuntimeError as err:
         errors.append(str(err))
     return out

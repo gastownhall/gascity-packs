@@ -7,7 +7,9 @@ verb gc's ``IsCityInfrastructureArgv`` recognises:
   (``dolt sql-server <socket>``) as its child, writes the store's pid, and
   waits on it, like gc's managed-store watchdog;
 * ``dolt sql-server <socket>``: answers ``pong`` to every connection on a
-  Unix socket, standing in for the store the city depends on;
+  Unix socket, standing in for the store the city depends on. With
+  ``GC_HC_LIVE_STORE_DELAY`` (seconds) it waits that long before it binds,
+  as a store slow to start does;
 * ``db-proxy-child``: sleeps, standing in for bd's proxy.
 """
 
@@ -26,13 +28,19 @@ def _store(path: str) -> int:
         os.unlink(path)
     except FileNotFoundError:
         pass
+    delay = os.environ.get("GC_HC_LIVE_STORE_DELAY", "")
+    if delay:
+        time.sleep(float(delay))
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(path)
     server.listen(16)
     while True:
         conn, _ = server.accept()
         with conn:
-            conn.sendall(b"pong\n")
+            try:
+                conn.sendall(b"pong\n")
+            except OSError:
+                pass  # the client gave up waiting; it must not take the store down
 
 
 def _watchdog(sock: str, pid_file: str) -> int:

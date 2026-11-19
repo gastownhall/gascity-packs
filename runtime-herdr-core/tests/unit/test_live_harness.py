@@ -655,6 +655,37 @@ def test_the_store_stand_in_answers_until_killed(scratch: Scratch) -> None:
         agent.wait(timeout=10)
 
 
+def test_the_agent_reports_its_infrastructure_only_once_the_store_answers(scratch: Scratch) -> None:
+    # The watchdog writes the store's pid before the store binds its socket,
+    # so a store slow to start must not be reported until it answers.
+    agent = _agent(scratch, "a6", GC_HC_LIVE_SPAWN="infra", GC_HC_LIVE_STORE_DELAY="1")
+    try:
+        report = scratch.agent_report("a6", timeout_s=20, want=("infra",))
+        assert scratch.ping_store(report.store_socket)
+    finally:
+        agent.kill()
+        agent.wait(timeout=10)
+
+
+def test_the_store_stand_in_outlives_a_client_that_hung_up(scratch: Scratch) -> None:
+    # A ping that times out hangs up before the store answers it; the store
+    # must still answer the next one. Stopping the store queues the hang-up.
+    agent = _agent(scratch, "a7", GC_HC_LIVE_SPAWN="infra")
+    try:
+        report = scratch.agent_report("a7", timeout_s=20, want=("infra",))
+        dolt = report.infra["dolt"]
+        scratch.ownership.signal(dolt, signal.SIGSTOP)
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+                conn.connect(report.store_socket)
+        finally:
+            scratch.ownership.signal(dolt, signal.SIGCONT)
+        assert scratch.ping_store(report.store_socket)
+    finally:
+        agent.kill()
+        agent.wait(timeout=10)
+
+
 def test_secret_scan_finds_a_canary_anywhere_under_the_roots(scratch: Scratch) -> None:
     nested = Path(scratch.state_root) / "herdr-core" / "x"
     nested.mkdir(parents=True)
