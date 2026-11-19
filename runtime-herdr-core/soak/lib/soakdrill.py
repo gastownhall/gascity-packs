@@ -32,6 +32,8 @@ from soakanalysis import (
     hc_role,
     hc_runtime,
     incarnations,
+    is_always_on,
+    is_template,
     store_procs,
 )
 from soakcapture import remains
@@ -68,7 +70,6 @@ WEDGED_STOP_MARKERS = ("teardown", "wedged runtime")
 (gc at the pinned commit) the runtime that did not answer its listing."""
 RECOVERY_STOP_WAIT_S = 30.0
 UPGRADE_LINE = f"handed the city's core over from herdr-core {HC_VERSION} to {UPGRADE_VERSION}; its sessions kept running"
-ALWAYS_ON_TEMPLATES = (STEADY,)
 DISPATCHER_TEMPLATE = "control-dispatcher"
 """The core pack's formula dispatcher is a demand session (``max_active_sessions
 = 1``, no minimum): gc closes a dead one and starts a fresh session, under a new
@@ -160,16 +161,8 @@ class Before:
         }
 
 
-def _is_template(template: str, name: str) -> bool:
-    return template == name or template.endswith("/" + name) or template.endswith("." + name)
-
-
-def is_always_on(template: str) -> bool:
-    return any(_is_template(template, t) for t in ALWAYS_ON_TEMPLATES)
-
-
 def is_dispatcher(template: str) -> bool:
-    return _is_template(template, DISPATCHER_TEMPLATE)
+    return is_template(template, DISPATCHER_TEMPLATE)
 
 
 def new_dispatcher_box(boxes: Sequence[ProcInfo], before_boxes: Dict[int, Tuple[int, str]]) -> Optional[int]:

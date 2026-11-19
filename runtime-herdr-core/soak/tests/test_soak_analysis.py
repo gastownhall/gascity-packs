@@ -270,6 +270,18 @@ def test_store_procs(proc_tree: ProcTree) -> None:
     assert [p.pid for p in store_procs(snap, __import__("os").getuid())] == [40, 41]
 
 
+def test_a_watch_startup_killed_at_its_deadline_is_an_overrun() -> None:
+    runs, _ = parse_optrace(
+        [
+            "E 1000000000 11 77 gc /p/gc-runtime-herdr-core watch-startup soak-1",
+            "X 1000000000 11 9 119500 122000",
+            "E 2000000000 12 77 gc /p/gc-runtime-herdr-core watch-startup soak-1",
+            "X 2000000000 12 9 118000 122000",
+        ]
+    )
+    assert [r.ended_by for r in runs] == [ENDED_OVERRUN, ENDED_CLOSED]
+
+
 def test_an_op_ended_by_a_signal_is_classed_by_who_ended_it() -> None:
     runs, _ = parse_optrace(
         [

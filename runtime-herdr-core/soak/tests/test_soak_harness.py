@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 import pytest
 from .soaktestkit import ProcTree
@@ -157,8 +157,19 @@ def test_the_report_template_is_the_runbooks() -> None:
     runbook = (SOAK / "RUNBOOK.md").read_text(encoding="utf-8")
     block = runbook.split("```markdown\n", 1)[1].split("\n```\n\n## 16. Teardown", 1)[0] + "\n"
     doc = (PACK / "docs" / "soak-report.md").read_text(encoding="utf-8")
-    headings = [line for line in doc.splitlines() if line.startswith(("#", "| "))]
-    assert headings == [line for line in block.splitlines() if line.startswith(("#", "| "))]
+
+    def sections(text: str) -> List[str]:
+        return [line for line in text.splitlines() if line.startswith(("# ", "## "))]
+
+    def row_keys(text: str) -> List[str]:
+        return [line.split("|")[1].strip() for line in text.splitlines() if line.startswith("| ")]
+
+    # A filled report keeps the template's sections and every row the template
+    # asks for, in order; it may add subsections and rows.
+    assert sections(doc) == sections(block)
+    keys = iter(row_keys(doc))
+    missing = [k for k in row_keys(block) if not any(k == d for d in keys)]
+    assert missing == []
 
 
 def test_drill_names_and_always_on_templates() -> None:

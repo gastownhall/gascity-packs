@@ -10,12 +10,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from soakanalysis import incarnations
+from soakanalysis import STEADY_TEMPLATE, incarnations
 from soaklib import City, CmdResult, NotOwned, ProcFS, Rec, append_jsonl, cmd_record, read_jsonl, run, signal_owned, write_atomic
 
 ACTION_TIMEOUT_S = 120.0
 RUNNING_STATES = frozenset({"active", "awake"})
-STEADY = "soak-steady"
+STEADY = STEADY_TEMPLATE
 BURST = "soak-burst"
 
 

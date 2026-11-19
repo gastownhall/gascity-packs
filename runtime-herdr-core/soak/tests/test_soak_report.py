@@ -254,3 +254,30 @@ def test_one_new_session_answers_one_probe_kill_and_a_same_id_restart_wins() -> 
     ]
     assert restart_causes(incs, faults, w) == {"starts": 3, "probe": 2, "drill": 0, "operator": 0, "unexplained": 0}
     assert death_to_restart(faults, incs, w) == [112.0, 49.0]
+
+
+def test_a_new_session_long_after_a_probe_kill_does_not_answer_it() -> None:
+    a, b = "bt:100:1", "bt:400:4"
+    records = [
+        rec("boot", T0, a, session_id="s1", template="soak-steady"),
+        # s1 was killed at T0 + 1800; a new session of its template starts 11 minutes later
+        rec("boot", T0 + 1800 + 660, b, session_id="n1", template="soak-steady"),
+    ]
+    incs = incarnations(records, lambda inc: False)
+    w = Window("x", T0 + 600, T0 + 3600, "legacy")
+    faults = [{"t": T0 + 1800, "kind": "probe-kill", "pids": [100], "sessions": ["s1"]}]
+    assert restart_causes(incs, faults, w)["probe"] == 0
+    assert death_to_restart(faults, incs, w) == []
+
+
+def test_a_new_session_of_a_pool_that_scales_does_not_answer_a_probe_kill() -> None:
+    a, b = "bt:100:1", "bt:400:4"
+    records = [
+        rec("boot", T0, a, session_id="b1", template="soak-burst"),
+        rec("boot", T0 + 1830, b, session_id="b2", template="soak-burst"),
+    ]
+    incs = incarnations(records, lambda inc: False)
+    w = Window("x", T0 + 600, T0 + 3600, "legacy")
+    faults = [{"t": T0 + 1800, "kind": "probe-kill", "pids": [100], "sessions": ["b1"]}]
+    assert restart_causes(incs, faults, w)["probe"] == 0
+    assert death_to_restart(faults, incs, w) == []

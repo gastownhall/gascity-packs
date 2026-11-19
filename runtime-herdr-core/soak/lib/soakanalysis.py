@@ -70,6 +70,21 @@ def _num(rec: Mapping[str, Any], key: str, default: float = 0.0) -> float:
 # --- incarnations and first turns ---------------------------------------------------------
 
 
+STEADY_TEMPLATE: Final = "soak-steady"
+"""The soak's always-on scripted pool: a fixed number of sessions, never scaled."""
+ALWAYS_ON_TEMPLATES: Final = (STEADY_TEMPLATE,)
+
+
+def is_template(template: str, name: str) -> bool:
+    """Whether ``template`` is ``name``, bare or qualified by a pack or rig."""
+    return template == name or template.endswith("/" + name) or template.endswith("." + name)
+
+
+def is_always_on(template: str) -> bool:
+    """Whether ``template`` is one of the soak's always-on pools."""
+    return any(is_template(template, t) for t in ALWAYS_ON_TEMPLATES)
+
+
 @dataclass
 class Incarnation:
     inc: str
@@ -372,12 +387,14 @@ SIGKILL: Final = 9
 SIGTERM: Final = 15
 
 ENDED_CLOSED: Final = "closed"
-"""``watch-startup`` ended by SIGKILL: gc closes every startup watch that way."""
+"""``watch-startup`` ended by SIGKILL before its deadline: gc closes every
+startup watch that way."""
 ENDED_CANCELED: Final = "canceled"
 """Ended by SIGTERM well inside gc's timeout: a caller stopped waiting, or a
 session stop ended an op the session's own gc command started."""
 ENDED_OVERRUN: Final = "overrun"
-"""Ended by SIGTERM at or past gc's timeout less the pack's 1 s margin."""
+"""Ended by SIGTERM, or (``watch-startup``) by SIGKILL, at or past gc's timeout
+less the pack's 1 s margin."""
 ENDED_KILLED: Final = "killed"
 """Any op but ``watch-startup`` ended by SIGKILL: it outlived gc's 2 s grace,
 or something else killed it."""
@@ -389,7 +406,13 @@ ENDED_UNEXPECTED: Final = (ENDED_KILLED, ENDED_OTHER, ENDED_OVERRUN)
 
 GC_OP_TIMEOUT_MS: Final = 30_000
 """gc's own timeout for an op it names no other for."""
-GC_OP_TIMEOUTS_MS: Final[Mapping[str, int]] = {"start": 120_000, "provision": 120_000, "observe": 4_000, "is-attached": 4_000}
+GC_OP_TIMEOUTS_MS: Final[Mapping[str, int]] = {
+    "start": 120_000,
+    "provision": 120_000,
+    "watch-startup": 120_000,
+    "observe": 4_000,
+    "is-attached": 4_000,
+}
 PACK_DEADLINE_MARGIN_MS: Final = 1_000
 """The pack ends every inner wait this long before the op's deadline."""
 
@@ -432,12 +455,13 @@ class OpRun:
         sig = self.signal
         if sig is None:
             return None
+        overran = self.wall_ms is not None and self.wall_ms >= gc_timeout_ms(self.op) - PACK_DEADLINE_MARGIN_MS
         if sig == SIGKILL:
-            return ENDED_CLOSED if self.op == "watch-startup" else ENDED_KILLED
+            if self.op != "watch-startup":
+                return ENDED_KILLED
+            return ENDED_OVERRUN if overran else ENDED_CLOSED
         if sig == SIGTERM:
-            if self.wall_ms is not None and self.wall_ms >= gc_timeout_ms(self.op) - PACK_DEADLINE_MARGIN_MS:
-                return ENDED_OVERRUN
-            return ENDED_CANCELED
+            return ENDED_OVERRUN if overran else ENDED_CANCELED
         return ENDED_OTHER
 
 

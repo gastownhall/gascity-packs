@@ -36,6 +36,7 @@ from soakanalysis import (
     first_turn_counts,
     first_turns,
     incarnations,
+    is_always_on,
     mean_boxes,
     message_ops,
     mono_offset,
@@ -221,6 +222,11 @@ def core_rss_hourly(samples: Sequence[Rec], window: Window) -> Dict[str, Any]:
     return {"medians_kib": medians, "reference_kib": ref, "max_deviation": deviation, "within_20pct": None if deviation is None else deviation <= 0.20}
 
 
+PROBE_REPLACEMENT_WINDOW_S = 600.0
+"""How long after a probe kill a new session of the killed template can be its
+answer (Soak 1's legacy answers came within 172 s)."""
+
+
 def probe_restarts(faults: Sequence[Rec], incs: Sequence[Incarnation]) -> List[Tuple[float, Incarnation, bool]]:
     """Each probe kill with the incarnation that answered it: ``(kill time,
     incarnation, whether a new session answered)``.
@@ -229,8 +235,10 @@ def probe_restarts(faults: Sequence[Rec], incs: Sequence[Incarnation]) -> List[T
     legacy one closes it and starts a new session of the same template. So a
     kill is answered by the next boot of the killed session or, when that
     session never boots again, by the first boot of a new session of the
-    killed incarnation's template after the kill that no earlier kill took.
-    A kill with no answer is left out.
+    killed incarnation's template, within ``PROBE_REPLACEMENT_WINDOW_S`` of the
+    kill, that no earlier kill took. The new-session match holds only for an
+    always-on pool, whose size is fixed: a new session of a pool that scales
+    may be demand, not an answer. A kill with no answer is left out.
     """
     by_session: Dict[str, List[Incarnation]] = {}
     for inc in incs:
@@ -251,10 +259,15 @@ def probe_restarts(faults: Sequence[Rec], incs: Sequence[Incarnation]) -> List[T
         if same:
             out.append((t, same[0], False))
             continue
+        if not is_always_on(victim.template):
+            continue
         fresh = [
             items[0]
             for sid, items in by_session.items()
-            if sid != victim.session_id and items[0].template == victim.template and items[0].boot_t > t and items[0].inc not in taken
+            if sid != victim.session_id
+            and items[0].template == victim.template
+            and t < items[0].boot_t <= t + PROBE_REPLACEMENT_WINDOW_S
+            and items[0].inc not in taken
         ]
         if fresh:
             first = min(fresh, key=lambda i: i.boot_t)

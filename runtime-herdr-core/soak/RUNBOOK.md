@@ -602,15 +602,18 @@ within two minutes; if none do, the city execs another path: read it from
 - **Op trace**: pairs `E`/`X` by pid, maps `mono_ns` to wall time with the
   samples' pairs, and gives per-minute spawns (all, controller-spawned, by
   op = `argv[1]`), wall latency and CPU per op, and ops ended by a signal,
-  classed by who ended them. *closed*: `watch-startup` ended by SIGKILL (gc
-  ends every startup watch that way, one per start of an agent whose
-  provider lists `process_names` or sets `accept_startup_dialogs`).
+  classed by who ended them. *closed*: `watch-startup` ended by SIGKILL
+  before its deadline less 1 s (gc ends every startup watch that way, one
+  per start of an agent whose provider lists `process_names` or sets
+  `accept_startup_dialogs`).
   *canceled*: SIGTERM before gc's timeout for the op less 1 s (a caller
   stopped waiting, or a session's `stop` ended an op its own gc command
-  started). *overrun*: SIGTERM at or past that point. *killed*: SIGKILL on
+  started). *overrun*: SIGTERM, or SIGKILL on `watch-startup`, at or past
+  that point. *killed*: SIGKILL on
   any other op (it outlived gc's 2 s grace, or something else killed it).
-  *other*: any other signal. gc's timeouts: 30 s; 120 s for start and
-  provision; 4 s for observe and is-attached.
+  *other*: any other signal. gc's timeouts: 30 s; 120 s for start,
+  provision and watch-startup (it runs under the start deadline); 4 s for
+  observe and is-attached.
 - **Orphans**: a process of this user whose environment carries
   `GC_INSTANCE_TOKEN=T` and the city's `GC_CITY_PATH`, older than the
   window asked for, where no live box carries `T` (a box is a process whose
@@ -900,7 +903,7 @@ snap=$(~/soak/bin/soak snapshot)
 ~/soak/bin/soak note operator supervisor-restart "switch to the v2 reconciler"
 systemctl --user restart gascity-supervisor.service       # the unit preserves sessions on SIGTERM
 sleep 90
-gc supervisor logs -n 500 | grep -F "city 'hc-bringup': session reconciler: v2 (default: session_reconciler is unset)"
+gc supervisor logs -n 50000 | grep -F "city 'hc-bringup': session reconciler: v2 (default: session_reconciler is unset)"
 gc doctor --check exec-runtime-identity --check ownerless-runtimes --check daemon-session-reconciler --json \
   > ~/soak-data/hc-bringup/v2-after.json
 ~/soak/bin/soak snapshot --compare "$snap"                # which boxes v2 adopted, which it restarted
@@ -1028,7 +1031,7 @@ Timeline (T0 is the `soak-start` note):
 | When | Action |
 |---|---|
 | T0 to T0 + 12 h | legacy reconciler. `soak check` every 5 minutes, digest hourly, probes every 30 minutes |
-| T0 + 12 h | switch to v2 under load: phase 2's commands on `hc-soak` (`soak phase soak-v2`, `toml-del`, the operator note, the supervisor restart, V1 to V3 checked, no agent-kill drill) |
+| T0 + 12 h | switch to v2 under load: `soak-phase2 hc-soak soak-v2` runs phase 2's commands on `hc-soak` (`soak phase soak-v2`, `toml-del`, the operator note, the supervisor restart, V1 to V3 checked, no agent-kill drill); it pauses `soak-probe.timer` from the snapshot before the restart to the snapshot after it, so a probe kill cannot read as a box v2 ended, and reads 50000 supervisor log lines for V1 because 500 cover well under the 90 s wait at soak log volume |
 | T0 + 12 h to T0 + 24 h | v2 |
 | T0 + 24 h | `soak phase soak-end`; stop `soak-load` and `soak-probe.timer`; wait 15 minutes; `soak check --final` (all predicates, the secrets grep and the orphan scan once more); `gc doctor --json > doctor-final.json`; `soak report --city hc-soak --markdown > report.md`; `soak note operator city-stop`; `gc stop ~/cities/hc-soak`; then `soak final-scan` (the secrets grep of `R` once more and the check that no box, holder or core of the city runs) |
 
@@ -1150,7 +1153,7 @@ Every number in the report comes from one of these, for each phase window
 | CPU | controller tree (supervisor incl. reaped children), controller-spawned op CPU, all of this user's CPU (`user@<uid>.service`) | samples, op trace |
 | core RSS | hour 2 median (reference), hourly medians, largest deviation; holder RSS | samples |
 | sizes | `R`, the city's hc state directory, `.gc`, `.beads`, events mirror | samples |
-| death-to-restart | probe kill → the boot that answered it (the killed session's next `boot`, or, when gc replaces the session instead of restarting it, as the legacy reconciler does, the first `boot` of a new session of the same template): n, p50, p95, max; under the patrol only, nothing pokes the controller | `faults.jsonl`, agent logs |
+| death-to-restart | probe kill → the boot that answered it (the killed session's next `boot`, or, when gc replaces the session instead of restarting it, as the legacy reconciler does, the first `boot` of a new session of the same always-on template within 10 minutes of the kill): n, p50, p95, max; under the patrol only, nothing pokes the controller | `faults.jsonl`, agent logs |
 
 Budgets behind S5 and AP5: at most 2 pack spawns per second per 40 sessions
 on v2 (0.05 per session); on legacy about 10 to 15 ops per session per 30 s
@@ -1254,13 +1257,13 @@ workflows open after 30 min <...>.
 | | Legacy | v2 |
 |---|---|---|
 | pack ops / s (all; controller-spawned; per session) | | |
-| top ops by rate | | |
+| top ops by rate (/s) | | |
 | op latency p50 / p95 / p99 (ms), by op | | |
 | op CPU (ms), by op | | |
 | controller-tree CPU (cores), mean / p95 | | |
 | death-to-restart (s): n, p50, p95, max | | |
 | core RSS (MiB): reference, max deviation | | |
-| sizes at the end: R, hc state, .gc, .beads | | |
+| sizes at the end: R, hc state, .gc, .beads, events | | |
 
 ## Deviations and findings
 
