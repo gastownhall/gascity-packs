@@ -68,6 +68,7 @@ runtime-herdr-core/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
     unit/                          the unit tier
     conformance.sh                 gc runtime check + gc runtime conformance against fake-hc
+    live/                          the live tier: the pack against the pinned herdr-core (CI runners only)
     infra_argv_drift.py            CI: the infrastructure argv table equals gc's at the pinned commit
 ```
 
@@ -795,3 +796,68 @@ Check the tag's `crates/herdr-core/src/config.rs` against `HC_CONFIG_KEYS` in
 `tests/fakehc/hcconfig.py` too, and that hc still keeps its records under
 `$XDG_STATE_HOME/herdr-core/<session>` (`paths.rs`) and creates that directory
 before any core or holder runs: a city without it reads empty.
+
+### Live tier
+
+`tests/live` drives the pack against the pinned herdr-core itself, fetched
+by `tests/live/fetch_hc.py` through the pack's own install path (the release
+manifest must agree with `hc-pin.json`, and the archive's sha256 must equal
+the pin's before anything is written). It SIGKILLs hc holders and holder
+cgroups on purpose, so it refuses to run unless `GITHUB_ACTIONS=true`, or
+unless `GC_HC_LIVE_THROWAWAY_HOST` equals `$HOME` on a disposable machine.
+Never run it on a host that runs other cities, a Herdr app or anything you
+want to keep.
+
+The `runtime-herdr-core live` workflow runs it nightly, on demand, and on
+pull requests that change the workflow or `tests/live`. It is not a required
+check yet. It has two placement lanes: `plain` (the core gets a scratch
+runtime directory, so hc places nothing in systemd units) and `systemd` (a
+real user manager started with lingering: the core and holders run in
+`hc-serve-*` and `hc-hold-*` units). A runner without a user manager fails the
+systemd lane and says so in the job summary.
+
+Suites (each in its own scratch `GC_EXEC_STATE_DIR`; teardown stops every
+core under it and fails if any hc process or unit of the run is left):
+
+- `gc runtime check` and `gc runtime conformance --json` against the real hc
+  (gc at the same pinned gascity commit as the fake-hc job), in a named
+  scratch city (`GC_EXEC_CITY_NAME` and `GC_EXEC_CITY_PATH`), since the pack
+  starts no session for an op that names no city: v2-ready, no failed
+  requirement;
+- each lane really is its placement;
+- holder crashes: infrastructure stand-ins with gc's and bd's infrastructure
+  argv, started detached from an agent's shell, under a holder SIGKILL (K1)
+  in four cases (A: launcher strip and re-scope plus an infrastructure
+  scope; B: no re-scope; C: no launcher, the negative control that must lose
+  the infrastructure; D: launcher only), and under a cgroup-wide kill of the
+  holder's unit (K2) on the systemd lane for C and D. In C a witness the
+  agent leaves in the holder's cgroup without `HC_SCOPE` (out of the sweep's
+  reach) survives K1 and dies under K2, so K2's cgroup-wide reach is shown,
+  not assumed. A and B under K2 need
+  gc's own infrastructure scope around a real managed store and are skipped
+  with that reason;
+- a kept terminal restarted after a holder loss reads dead, and gc's
+  reaction (kill the object, start again) brings the session back;
+- a nudge held by a person typing every second for 60 s (an `hc attach` on
+  a pseudo-terminal) is typed exactly once, after they stop, while gc's
+  queue redelivers on anything but a delivery; `observe` stays within 4 s;
+- session secrets leave no trace on disk after the session ends, a `start`
+  killed mid-flight before its `terminal.run` leaves no spawn file past the
+  next op's sweep, and a secret echoed to the screen is gone once the record
+  is (the systemd lane checks the production spawn directory under
+  `/run/user/<uid>`; the plain lane a scratch one);
+- an agent's own `hc` with the city core SIGKILLed: the shim refuses (or
+  reaches the city's own core if a holder restarted it), no hc core or
+  holder carries the agent's environment, and a second session is not
+  refused as foreign;
+- holder-loss orphans: the agent's `setsid sleep` is reaped by the corpse
+  kill while a fenced infrastructure stand-in survives;
+- a core started outside the pack is refused with the `restart-core` fix.
+
+Every kill the harness performs targets a process it started (recorded with
+its start time), a process carrying the run's mark, hc runtime of the run's
+own scratch state root, or the `hc-hold-*` unit read from the cgroup of one
+of its own core's holders, and goes through a pidfd where Python has one. The
+suites drive only the binary `fetch_hc.py` installed and verified against the
+pin. The harness logic itself is unit-tested against fake-hc
+(`tests/unit/test_live_harness.py`).

@@ -197,6 +197,10 @@ class FakeHc:
         self._conns: Set[socket.socket] = set()
         self._accepted = 0
         self._started_at = time.monotonic()
+        # hc starts a holder on demand: for the first terminal.run, or to
+        # recover kept terminals after a core restart. Until then a core lists
+        # none. fake-hc's one holder is the core itself.
+        self._holder_up = False
         # The reported start lies a minute back, so a restart (which clears
         # it) moves the core's start time far past any clock jitter.
         self._uptime_bias_ms = 60_000
@@ -394,6 +398,7 @@ class FakeHc:
             self._started_at = time.monotonic()
             self._uptime_bias_ms = 0
             terminals = list(self._terminals.values())
+            self._holder_up = bool(terminals)
         for terminal in terminals:
             with terminal.lock:
                 terminal.screen = "inexact"
@@ -550,15 +555,18 @@ class FakeHc:
         with self._lock:
             terminals = list(self._terminals.values())
             version = self._version
+            holder_up = self._holder_up
         live = sum(1 for t in terminals if t.state == "live")
-        holder = {"pid": os.getpid(), "instance": self._core["id"][:8], "current": True, "terminals": live}
+        holder: Optional[Dict[str, Any]] = (
+            {"pid": os.getpid(), "instance": self._core["id"][:8], "current": True, "terminals": live} if holder_up else None
+        )
         return {
             "core": dict(self._core),
             "version": version,
             "pid": os.getpid(),
             "uptime_ms": int((time.monotonic() - self._started_at) * 1000) + self._uptime_bias_ms,
             "holder": holder,
-            "holders": [holder],
+            "holders": [] if holder is None else [holder],
             "live": live,
             "finished": len(terminals) - live,
             "installed_by": self._installed_by,
@@ -643,6 +651,7 @@ class FakeHc:
                 raise RpcFailure("spawn_failed", f"cannot start {argv[0]}: {err.strerror}") from None
             terminal.created_seq = self._next_id - 1
             self._terminals[address] = terminal
+            self._holder_up = True
         return terminal.record()
 
     def _lookup(self, params: Params) -> FakeTerminal:

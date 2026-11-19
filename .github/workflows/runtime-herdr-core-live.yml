@@ -1,0 +1,120 @@
+name: runtime-herdr-core live
+
+# The live tier of runtime-herdr-core: the pack against the pinned,
+# sha256-verified herdr-core (assets/hc-pin.json), on throwaway GitHub-hosted
+# runners only. It SIGKILLs hc holders and holder cgroups on purpose, so it
+# never runs anywhere else: the harness refuses unless GITHUB_ACTIONS=true.
+#
+# Two placement lanes: plain (the core gets a scratch runtime directory, so
+# hc places nothing in systemd units) and systemd (a real user manager,
+# started with lingering, so hc places the core and holders in hc-serve-* and
+# hc-hold-* units). A runner that cannot provide a user manager fails the
+# systemd lane loudly; it never passes as a plain run.
+#
+# Not a required check while it settles: nightly, on demand, and on pull
+# requests that change the workflow or the live tier itself.
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/runtime-herdr-core-live.yml
+      - runtime-herdr-core/tests/live/**
+
+permissions:
+  contents: read
+
+# One group per trigger, so a manual dispatch never cancels a nightly run (nor
+# the reverse); only a newer push to the same pull request cancels its run.
+concurrency:
+  group: runtime-herdr-core-live-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  live:
+    name: herdr-core live (${{ matrix.lane }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [plain, systemd]
+    defaults:
+      run:
+        working-directory: runtime-herdr-core
+    env:
+      GC_HC_LIVE: "1"
+      GC_HC_LIVE_LANE: ${{ matrix.lane }}
+      # The gascity commit the fake-hc conformance job in ci.yml pins.
+      GASCITY_PIN: baf57f4ff60ea949d2a0c3922a65be95cf6b7cc1
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.16"
+
+      - name: Install pinned test tools
+        run: python -m pip install pytest==8.4.2
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: slack-full/adapter/go.mod
+          cache: false
+
+      - name: Build gc at the pinned gascity commit
+        run: |
+          go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_PIN}"
+          echo "GC_HC_LIVE_GC_BIN=$(go env GOPATH)/bin/gc" >> "$GITHUB_ENV"
+
+      - name: Start a systemd user manager
+        if: matrix.lane == 'systemd'
+        run: |
+          uid="$(id -u)"
+          run_dir="/run/user/$uid"
+          state="missing"
+          if ! sudo loginctl enable-linger "$USER"; then
+            state="enable-linger failed"
+          else
+            for _ in $(seq 1 60); do
+              if [ -S "$run_dir/systemd/private" ]; then break; fi
+              sleep 1
+            done
+            if [ -S "$run_dir/systemd/private" ]; then
+              state="$(XDG_RUNTIME_DIR="$run_dir" timeout 60 systemctl --user is-system-running --wait 2>&1)" || true
+            fi
+          fi
+          case "$state" in
+            running|degraded) ;;
+            *)
+              {
+                echo "### herdr-core live: systemd lane NOT exercised"
+                echo
+                echo "This runner provides no systemd user manager (state: \`$state\`)."
+                echo "The systemd placement of hc's core and holders was not tested."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::systemd lane: no user manager on this runner (state: $state)"
+              exit 1
+              ;;
+          esac
+          echo "XDG_RUNTIME_DIR=$run_dir" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$run_dir/bus" >> "$GITHUB_ENV"
+
+      # The pack's own install path: the release manifest must agree with the
+      # pin and the archive's sha256 must equal the pin's before anything is
+      # written. Nothing is downloaded any other way.
+      - name: Fetch the pinned herdr-core
+        run: |
+          hc="$(python tests/live/fetch_hc.py "$RUNNER_TEMP/herdr-core")"
+          echo "GC_HC_LIVE_BIN=$hc" >> "$GITHUB_ENV"
+
+      - name: Live suites
+        run: python -m pytest tests/live -v -rs -p no:cacheprovider

@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -172,3 +175,135 @@ def test_runtime_herdr_core_runs_its_op_import_guard_on_the_newest_python() -> N
         assert "continue-on-error" not in step, f"{name!r} must block merges"
     # The whole command, so "|| true" or a "-k" filter cannot switch it off.
     assert steps[-1]["run"].strip() == "python -m pytest tests/unit/test_op_imports.py -q", steps[-1]["run"]
+
+
+# --- runtime-herdr-core live tier -------------------------------------------------
+
+LIVE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "runtime-herdr-core-live.yml"
+LIVE_DIR = REPO_ROOT / "runtime-herdr-core" / "tests" / "live"
+
+
+def _live() -> dict:
+    return yaml.safe_load(LIVE_WORKFLOW.read_text(encoding="utf-8"))
+
+
+def _triggers(workflow: dict) -> dict:
+    # PyYAML reads the bare key `on` as the boolean True.
+    return workflow.get("on", workflow.get(True))
+
+
+def _active(run: str) -> list:
+    return [line.strip() for line in run.splitlines() if line.strip() and not line.strip().startswith("#")]
+
+
+def _live_steps() -> dict:
+    return {step.get("name"): step for step in _live()["jobs"]["live"]["steps"]}
+
+
+def test_live_tier_runs_nightly_on_demand_and_only_on_its_own_pull_requests() -> None:
+    triggers = _triggers(_live())
+    assert set(triggers) == {"schedule", "workflow_dispatch", "pull_request"}, sorted(triggers)
+    assert triggers["schedule"] and all("cron" in entry for entry in triggers["schedule"])
+    assert sorted(triggers["pull_request"]["paths"]) == [
+        ".github/workflows/runtime-herdr-core-live.yml",
+        "runtime-herdr-core/tests/live/**",
+    ]
+    assert "paths-ignore" not in triggers["pull_request"]
+
+
+def test_live_tier_permissions_are_read_only_and_it_uses_no_secrets() -> None:
+    workflow = _live()
+    assert workflow["permissions"] == {"contents": "read"}
+    for job_id, job in workflow["jobs"].items():
+        assert "permissions" not in job, f"{job_id} widens the token's permissions"
+    text = LIVE_WORKFLOW.read_text(encoding="utf-8")
+    assert "secrets." not in text and "pull_request_target" not in text
+    assert "GITHUB_TOKEN" not in text
+    checkout = _live_steps()["Check out repository"]
+    assert checkout["with"]["persist-credentials"] is False
+
+
+def test_live_tier_pins_every_action_and_gc() -> None:
+    workflow = _live()
+    for step in workflow["jobs"]["live"]["steps"]:
+        uses = step.get("uses")
+        if uses:
+            ref = uses.split("@", 1)[1]
+            assert len(ref) == 40 and all(c in "0123456789abcdef" for c in ref), f"{uses} is not pinned to a commit"
+    pin = workflow["jobs"]["live"]["env"]["GASCITY_PIN"]
+    ci = yaml.safe_load(REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8"))
+    conformance = {s.get("name"): s for s in ci["jobs"]["runtime-herdr-core"]["steps"]}["RPP conformance against fake-hc"]
+    assert pin == conformance["env"]["GASCITY_PIN"], "the live tier and the fake-hc conformance use one gc pin"
+    build = _active(_live_steps()["Build gc at the pinned gascity commit"]["run"])
+    assert 'go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_PIN}"' in build
+
+
+def test_live_tier_fetches_hc_only_through_the_pinned_sha256() -> None:
+    pin = json.loads(REPO_ROOT.joinpath("runtime-herdr-core", "assets", "hc-pin.json").read_text(encoding="utf-8"))
+    sha = pin["targets"]["linux-x86_64"]["sha256"]
+    assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
+    steps = _live_steps()
+    fetch = _active(steps["Fetch the pinned herdr-core"]["run"])
+    assert fetch[0] == 'hc="$(python tests/live/fetch_hc.py "$RUNNER_TEMP/herdr-core")"', fetch
+    text = LIVE_WORKFLOW.read_text(encoding="utf-8")
+    for needle in ("curl", "wget", pin["releases"], "sha256sum"):
+        assert needle not in text, f"the live tier must fetch hc only through fetch_hc.py (found {needle!r})"
+
+
+def test_live_tier_runs_both_lanes_and_fails_loudly() -> None:
+    job = _live()["jobs"]["live"]
+    assert job["strategy"]["matrix"]["lane"] == ["plain", "systemd"]
+    assert job["strategy"]["fail-fast"] is False
+    assert job["env"]["GC_HC_LIVE"] == "1" and job["env"]["GC_HC_LIVE_LANE"] == "${{ matrix.lane }}"
+    assert isinstance(job.get("timeout-minutes"), int)
+    assert job["runs-on"] == "ubuntu-24.04"
+    text = LIVE_WORKFLOW.read_text(encoding="utf-8")
+    assert "continue-on-error" not in text, "a live failure must show as a failure"
+    steps = _live_steps()
+    manager = steps["Start a systemd user manager"]
+    assert manager["if"] == "matrix.lane == 'systemd'"
+    lines = _active(manager["run"])
+    # A failing enable-linger must reach the summary-and-exit branch, not end
+    # the step under bash -e before the job summary says why.
+    linger = [line for line in lines if "loginctl" in line]
+    assert linger == ['if ! sudo loginctl enable-linger "$USER"; then'], linger
+    assert 'state="enable-linger failed"' in lines
+    assert "GITHUB_STEP_SUMMARY" in manager["run"] and "exit 1" in lines
+    suites = _active(steps["Live suites"]["run"])
+    assert suites == ["python -m pytest tests/live -v -rs -p no:cacheprovider"], suites
+
+
+def test_live_tier_runs_never_cancel_each_other_across_triggers() -> None:
+    concurrency = _live()["concurrency"]
+    assert "github.event_name" in concurrency["group"], "a dispatch must not cancel a nightly run, nor the reverse"
+    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+
+
+def test_live_tier_is_not_part_of_the_blocking_ci() -> None:
+    ci = yaml.safe_load(REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8"))
+    for job in ci["jobs"].values():
+        for step in job["steps"]:
+            assert "tests/live" not in step.get("run", ""), "the live tier runs only in its own workflow"
+
+
+def _refusal_env(tmp_path: Path) -> dict:
+    env = {k: v for k, v in os.environ.items() if k not in {"GITHUB_ACTIONS", "GC_HC_LIVE_THROWAWAY_HOST"}}
+    env["HOME"] = str(tmp_path)
+    return env
+
+
+def test_live_tier_refuses_outside_ci(tmp_path: Path) -> None:
+    env = _refusal_env(tmp_path)
+    fetched = subprocess.run(
+        [sys.executable, str(LIVE_DIR / "fetch_hc.py"), str(tmp_path / "hc")],
+        env=env, capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert fetched.returncode == 2 and "refuses to run" in fetched.stderr, fetched.stderr
+    assert not (tmp_path / "hc").exists()
+    env["GC_HC_LIVE"] = "1"
+    suites = subprocess.run(
+        [sys.executable, "-m", "pytest", str(LIVE_DIR), "-q", "-p", "no:cacheprovider"],
+        cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert suites.returncode == 2, suites.stdout + suites.stderr
+    assert "refuses to run" in suites.stdout + suites.stderr
