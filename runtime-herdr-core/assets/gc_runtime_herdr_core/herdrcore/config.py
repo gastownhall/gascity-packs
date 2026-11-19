@@ -50,9 +50,21 @@ HC_CONFIG_TOML: Final = """\
 # The core reads this file instead of ~/.config/herdr-core, so personal
 # settings never change how the city's agents run. Edits are overwritten.
 notes = false
-notes_quiet = true
-history_mb = 16
+history_mb = 16.0
 """
+"""The city core's ``config.toml``. Its schema is hc v0.1.19's ``Config``
+(``crates/herdr-core/src/config.rs``), which serde reads with every key
+optional and unknown keys ignored, but a known key of the wrong type fails
+the whole file, and with it every ``terminal.run``:
+
+* ``shell``: list of strings; ``detach_key``, ``headless``, ``socket``: string
+* ``notes``: bool; ``wait_timeout``, ``notes_quiet``, ``history_mb``,
+  ``machine_timeout``: f64 (a TOML float, or an integer)
+
+The pack sets ``notes = false`` (hc types nothing into an agent on its own,
+which makes ``notes_quiet`` moot) and ``history_mb``, written as a float so
+it is an f64 in any TOML reader. fake-hc enforces the same table
+(``tests/fakehc/hcconfig.py``)."""
 
 
 class ConfigError(Exception):

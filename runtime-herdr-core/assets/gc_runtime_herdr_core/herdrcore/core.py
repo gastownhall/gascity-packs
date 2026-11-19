@@ -13,7 +13,18 @@ provider credential reaches the core or its programs.
 A core whose environment differs from that is **foreign** (a person's ``hc``,
 an in-agent CLI during a restart window, the Herdr app's autostart):
 ``start`` refuses to put sessions on it and names the fix. Reads stay
-permissive: they report what the core holds.
+permissive: they report what the core holds. A core hc placed under
+systemd is judged by its unit's environment file, found through
+``RUNTIME_DIRECTORY`` (when the core runs in that unit) or, before systemd
+244, through the core's control group (:func:`foreign_reason`); a file a
+holder wrote when it restarted the core is the pack's by the lineage the
+pack recorded when it accepted that holder's core. A core hc placed under
+launchd (macOS) runs with launchd's environment, so it is judged by who
+started it: the pack's own hc, which the pack names before it waits on it,
+or a holder of the city restarting a crashed core (:mod:`.coreid`). Only a
+start records what it accepts (:func:`check_foreign`). Before its own ``hc
+server start`` the pack removes hc's restart handoff
+(:func:`clear_restart_env`).
 
 A read that finds the core down answers unknown and **kicks** a detached
 start, at most one at a time per city and none for five minutes after a
@@ -49,19 +60,21 @@ import pwd
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, Final, FrozenSet, Mapping, Optional
+from typing import Callable, Dict, Final, FrozenSet, List, Mapping, Optional, Sequence, Set
 
 from ..hc.errors import HcError, HcUnreachable
 from ..hc.paths import ensure_dirs
+from ..hc.types import StatusResult
 from ..rpp.flock import LockTimeout
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.ops import OpError
 from ..rpp.statedir import StateDirError
+from . import coreid
 from .attach import ATTACH_TERMINAL_KEYS
-from .command import run_bounded
+from .command import Completed, run_bounded
 from .config import ConfigError, read_private_file, write_hc_config, write_private_file
 from .context import OpContext
-from .corescan import listener_elsewhere, nothing_runs
+from .corescan import holder_prefix, is_holder_of, listener_elsewhere, nothing_runs
 from .procs import ProcError
 
 CORE_START_WAIT_S: Final = 15.0
@@ -105,9 +118,28 @@ and starts its unit with ``EnvironmentFile=`` it (``platform/systemd.rs``)."""
 HC_RUNTIME_KEY: Final = "HC_RUNTIME"
 """hc marks its own cores and holders with ``HC_RUNTIME=1`` (sweep exemption)."""
 
+HC_MARK_KEYS: Final[FrozenSet[str]] = frozenset({HC_RUNTIME_KEY, "XPC_SERVICE_NAME", "_HC_RESPONSIBLE_PID", "HC_LAUNCHD_DIRECT"})
+"""What hc itself sets in a core's or holder's environment: ``HC_RUNTIME``;
+on macOS ``XPC_SERVICE_NAME=0`` in the environment a launchd core restores
+(``platform/macos_launchd.rs``), ``HC_LAUNCHD_DIRECT`` on a core it serves
+directly when it cannot use launchd (the same file), and
+``_HC_RESPONSIBLE_PID`` in the one a holder re-execs itself with
+(``platform/macos_responsibility.rs``)."""
+
+HC_CORE_UNIT_PREFIX: Final = "hc-serve-"
+SYSTEMD_SERVICE_SUFFIX: Final = ".service"
+UNIT_ID_LEN: Final = 8
+"""hc names a core's unit ``hc-serve-<8 hex>.service`` and gives it the
+runtime directory ``$XDG_RUNTIME_DIR/hc-serve-<8 hex>`` (``platform/systemd.rs``)."""
+
 TEST_RUNTIME_DIR_ENV: Final = "GC_HC_TEST_RUNTIME_DIR"
 """Test-only (``GC_HC_TEST=1``): the runtime directory handed to the core
 instead of ``/run/user/<uid>``."""
+
+RESTART_ENV_FILE: Final = "restart-env.json"
+"""hc's restart handoff in the city's state directory: the environment an
+``hc server restart`` saved, which the next core hc starts restores when it
+is under three minutes old (``restart.rs``)."""
 
 FOREIGN_FIX: Final = "city core was started outside the pack: run `gc herdr-core restart-core`"
 
@@ -153,8 +185,9 @@ def core_env(
 def allowed_core_keys(env: Mapping[str, str]) -> FrozenSet[str]:
     """The variables a core started with ``env`` may carry. A core hc's CLI
     starts while ``attach`` races a core's exit has the viewer's terminal
-    settings too (:data:`.attach.ATTACH_TERMINAL_KEYS`)."""
-    return frozenset(env) | {"LANG", HC_RUNTIME_KEY, "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", *ATTACH_TERMINAL_KEYS}
+    settings too (:data:`.attach.ATTACH_TERMINAL_KEYS`), and hc's own marks
+    (:data:`HC_MARK_KEYS`)."""
+    return frozenset(env) | {"LANG", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", *HC_MARK_KEYS, *ATTACH_TERMINAL_KEYS}
 
 
 def format_environment_file(env: Mapping[str, str]) -> str:
@@ -211,29 +244,93 @@ def read_unit_environment(runtime_directory: str) -> Optional[Dict[str, str]]:
     return parse_environment_file(raw.decode("utf-8", "surrogateescape"))
 
 
+def is_core_unit_name(unit: str) -> bool:
+    """Whether ``unit`` is an hc core unit's name, ``hc-serve-<8 hex>``."""
+    unit_id = unit[len(HC_CORE_UNIT_PREFIX) :]
+    return (
+        unit.startswith(HC_CORE_UNIT_PREFIX)
+        and len(unit_id) == UNIT_ID_LEN
+        and all(c in "0123456789abcdef" for c in unit_id)
+    )
+
+
+def core_unit(cgroup: Optional[str], uid: int) -> Optional[str]:
+    """The name of the hc core unit (``hc-serve-<8 hex>``) of this user's
+    systemd manager that control group path ``cgroup`` is, or None."""
+    if not cgroup:
+        return None
+    if f"/user@{uid}.service/" not in cgroup:
+        return None
+    leaf = cgroup.rstrip("/").rsplit("/", 1)[-1]
+    if not leaf.endswith(SYSTEMD_SERVICE_SUFFIX):
+        return None
+    unit = leaf[: -len(SYSTEMD_SERVICE_SUFFIX)]
+    return unit if is_core_unit_name(unit) else None
+
+
+def unit_directory(actual: Mapping[str, str], cgroup: Optional[str], run_user: str) -> Optional[str]:
+    """The runtime directory of the hc core unit a core with environment
+    ``actual`` and control group ``cgroup`` (None: unreadable) runs as, or
+    None when it runs as none, or when ``RUNTIME_DIRECTORY`` names no hc
+    core unit or not the one its control group is: that is only a variable,
+    and its environment is then judged. Before systemd 244, which sets no
+    ``RUNTIME_DIRECTORY``, the unit is the control group's, in ``run_user``
+    (empty when the user has no runtime directory)."""
+    running_in = core_unit(cgroup, os.getuid())
+    named = actual.get("RUNTIME_DIRECTORY")
+    if named is not None:
+        unit = os.path.basename(os.path.normpath(named))
+        if not is_core_unit_name(unit) or (cgroup is not None and running_in != unit):
+            return None
+        return named
+    if running_in is None:
+        return None
+    return os.path.join(run_user, running_in) if run_user else running_in
+
+
 def foreign_reason(
     actual: Mapping[str, str],
     expected: Mapping[str, str],
     *,
+    cgroup: Optional[str] = None,
     unit_environment: Callable[[str], Optional[Dict[str, str]]] = read_unit_environment,
+    lineage: Optional[coreid.Lineage] = None,
 ) -> Optional[str]:
     """Why a core running with environment ``actual`` is not the pack's, or None.
 
-    A core hc placed under systemd runs with the user manager's environment
-    block, systemd's service variables and its unit's EnvironmentFile (the
-    starter's environment): the starter is judged by that file, never by the
-    manager's block, which the pack does not control and which changes. A
-    core spawned without systemd is judged by its own environment. Only key
-    names are reported, never values.
+    What is judged, by placement:
+
+    * **No service manager:** ``actual``, the core's live environment.
+    * **systemd:** the unit's EnvironmentFile, where hc writes the starter's
+      environment; the manager's block and systemd's service variables in
+      ``actual`` are not the starter's. The file is read only when the core
+      runs as an hc core unit (:func:`unit_directory`): ``RUNTIME_DIRECTORY``
+      names ``hc-serve-<8 hex>`` and the readable control group ``cgroup``
+      is that unit, or, under systemd older than 244, which sets no
+      ``RUNTIME_DIRECTORY``, the control group alone names it. Otherwise
+      ``actual`` is judged.
+    * **launchd** (macOS): judged by its starter (:func:`launchd_reason`),
+      which judges a holder's environment here.
+
+    In what is judged, the discovery tuple must equal the pack's by value.
+    Every other variable is judged **by name only**: it must be one
+    :func:`allowed_core_keys` allows (the allowlist, the locale, the user's
+    runtime directory and bus, hc's marks, ``attach``'s terminal settings),
+    or, in a live environment, a systemd service variable. In a unit file,
+    another name passes only with the value ``lineage`` records for it:
+    what every holder of a systemd core the pack accepted carries, which a
+    holder writes into the file of the core it restarts (:mod:`.coreid`).
+    No live holder is asked, so the holders a foreign core started never
+    vouch for it. Only key names are reported, never values.
     """
     for key in DISCOVERY_KEYS:
         if actual.get(key) != expected.get(key):
             return f"its {key} differs from the pack's"
-    allowed = set(allowed_core_keys(expected)) | SERVICE_KEYS
-    started = actual
-    runtime_directory = actual.get("RUNTIME_DIRECTORY")
-    if runtime_directory is not None:
-        run_user = expected.get("XDG_RUNTIME_DIR", "")
+    run_user = expected.get("XDG_RUNTIME_DIR", "")
+    runtime_directory = unit_directory(actual, cgroup, run_user)
+    if runtime_directory is None:
+        stray = _stray(actual, set(allowed_core_keys(expected)) | SERVICE_KEYS)
+    else:
         if not run_user or os.path.dirname(os.path.normpath(runtime_directory)) != os.path.normpath(run_user):
             return "it runs as a systemd unit outside the user's runtime directory"
         unit_env = unit_environment(runtime_directory)
@@ -242,12 +339,18 @@ def foreign_reason(
         for key in DISCOVERY_KEYS:
             if unit_env.get(key) != expected.get(key):
                 return f"its unit was started with another {key}"
-        started = unit_env
-        allowed = set(allowed_core_keys(expected))
-    stray = sorted(key for key in started if key not in allowed and not key.startswith("LC_"))
+        stray = [
+            key
+            for key in _stray(unit_env, set(allowed_core_keys(expected)))
+            if lineage is None or not lineage.carries(key, unit_env[key])
+        ]
     if stray:
         return "it carries variables the pack never sets: " + ", ".join(stray[:8])
     return None
+
+
+def _stray(env: Mapping[str, str], allowed: Set[str]) -> List[str]:
+    return sorted(key for key in env if key not in allowed and not key.startswith("LC_"))
 
 
 def check_discovery_paths(env: Mapping[str, str], *, lossy: bool) -> None:
@@ -272,20 +375,72 @@ def check_core_lock(ctx: OpContext) -> None:
     )
 
 
+@dataclass(frozen=True)
+class StarterRun:
+    """An hc the pack ran to start the core (:func:`run_starter`)."""
+
+    done: Completed
+    since_ms: int
+    """Wall clock before the pack ran it."""
+
+
+def run_starter(ctx: OpContext, argv: Sequence[str], *, env: Mapping[str, str], timeout_s: float) -> StarterRun:
+    """Run the hc command ``argv`` that starts the core (``server start`` or
+    ``server restart``), adding it to the pending starts before it is
+    waited on and closing its entry once it ends (:mod:`.coreid`)."""
+    since_ms = coreid.wall_ms()
+    noted: List[int] = []
+
+    def pending(pid: int) -> None:
+        try:
+            coreid.begin_start(ctx, starter_pid=pid, since_ms=since_ms)
+        except coreid.PENDING_ERRORS as err:
+            raise OpError(f"cannot note the start of the city's core: {err}") from None
+        noted.append(pid)
+
+    try:
+        done = run_bounded(argv, env=env, cwd=ctx.paths.state_root, timeout_s=timeout_s, cancel=ctx.request.cancel, on_spawn=pending)
+    except OSError as err:
+        raise OpError(f"cannot run {argv[0]} {' '.join(argv[1:])}: {err.strerror or err}") from None
+    finally:
+        if noted:
+            _close_start(ctx, noted[0], since_ms)
+    return StarterRun(done=done, since_ms=since_ms)
+
+
+def _close_start(ctx: OpContext, starter_pid: int, since_ms: int) -> None:
+    try:
+        coreid.close_start(ctx, starter_pid=starter_pid, since_ms=since_ms, until_ms=coreid.wall_ms())
+    except coreid.PENDING_ERRORS as err:
+        raise OpError(f"cannot note the end of the city's core start: {err}") from None
+
+
+def clear_restart_env(ctx: OpContext) -> None:
+    """Remove hc's restart handoff before the pack's own ``hc server
+    start``: a restart someone else asked for in the last three minutes
+    would otherwise hand its environment to the core the pack starts. Never
+    before an ``hc server restart``, whose handoff it is."""
+    try:
+        os.unlink(os.path.join(ctx.paths.state_dir, RESTART_ENV_FILE))
+    except FileNotFoundError:
+        return
+    except OSError as err:
+        raise OpError(f"cannot clear hc's restart environment before starting the city's core: {err.strerror}") from None
+
+
 def start_core(ctx: OpContext, hc_bin: str) -> None:
-    """``hc server start`` under the allowlist, then wait for the core's hello."""
+    """``hc server start`` under the allowlist, with hc's restart handoff
+    cleared (:func:`clear_restart_env`), wait for the core's hello, then
+    record the core that answers when that hc started it under launchd
+    (:mod:`.coreid`)."""
     ensure_dirs(ctx.paths)
     write_hc_config(ctx.paths)
     budget = ctx.request.deadline.budget(CORE_START_WAIT_S)
     if budget <= 0:
         raise OpError("no time left to start the city's core")
-    done = run_bounded(
-        [hc_bin, "server", "start"],
-        env=core_env(ctx, hc_bin),
-        cwd=ctx.paths.state_root,
-        timeout_s=budget,
-        cancel=ctx.request.cancel,
-    )
+    clear_restart_env(ctx)
+    run = run_starter(ctx, [hc_bin, "server", "start"], env=core_env(ctx, hc_bin), timeout_s=budget)
+    done = run.done
     if not done.ok:
         detail = done.output.splitlines()[-1] if done.output else "no output"
         state = "timed out" if done.returncode is None else f"exited {done.returncode}"
@@ -294,11 +449,27 @@ def start_core(ctx: OpContext, hc_bin: str) -> None:
     while True:
         try:
             ctx.client().hello()
-            return
+            break
         except HcUnreachable:
             if time.monotonic() >= end:
                 raise OpError("the city's core did not answer after hc server start") from None
             ctx.request.cancel.pause(0.05)
+    record_started_core(ctx, run)
+
+
+def record_started_core(ctx: OpContext, run: StarterRun) -> None:
+    """Record the core that answers now as the one the pack started, when the
+    hc the pack ran asked launchd for it, and drop that start's pending
+    entry: it finished. Any other core is not recorded (:mod:`.coreid`)."""
+    try:
+        status = ctx.client().server_status()
+    except HcError:
+        return
+    coreid.record(ctx, status, starter_pid=run.done.pid, since_ms=run.since_ms)
+    try:
+        coreid.finish_start(ctx, starter_pid=run.done.pid, since_ms=run.since_ms)
+    except coreid.PENDING_ERRORS as err:
+        raise OpError(f"cannot note the end of the city's core start: {err}") from None
 
 
 # --- parking ---------------------------------------------------------------------------
@@ -330,24 +501,116 @@ def unpark(ctx: OpContext) -> None:
         raise OpError(f"cannot clear the city's stopped mark: {err}") from None
 
 
-def check_foreign(ctx: OpContext, hc_bin: str) -> None:
-    """Refuse the running core unless the pack started it with its allowlist."""
-    status = ctx.client().server_status()
+@dataclass(frozen=True)
+class Foreign:
+    """Why the city's core is not taken as the pack's (:func:`foreign_core`)."""
+
+    reason: str
+    unknown: bool = False
+    """Its process or environment cannot be read, so who started it cannot
+    be told; a start refuses it all the same."""
+
+
+def foreign_core(ctx: OpContext, status: StatusResult, hc_bin: str, *, record: bool = False) -> Optional[Foreign]:
+    """Why the core behind ``status`` is not the pack's, or None. A core hc
+    placed under launchd is judged by who started it (:func:`launchd_reason`);
+    any other core by its environment (:func:`foreign_reason`), a systemd
+    core's unit file against the lineage the pack recorded. One whose
+    process or environment cannot be read is not the pack's either
+    (:attr:`Foreign.unknown`). ``record``: a start checks the core, and
+    records the one it accepts (:mod:`.coreid`); ``status``, doctor and
+    ``upgrade`` only read."""
+    expected = core_env(ctx, hc_bin)
+    try:
+        proc = ctx.host.procs.process(status.pid)
+    except ProcError as err:
+        return Foreign(f"its process cannot be read: {err}", unknown=True)
+    if proc is None:
+        return Foreign("its process cannot be found", unknown=True)
+    started = coreid.launchd_start(proc.argv)
+    if started is not None:
+        reason = launchd_reason(ctx, status, started, expected, record=record)
+        return None if reason is None else Foreign(reason)
     try:
         actual = ctx.host.procs.environ(status.pid)
     except ProcError as err:
-        raise OpError(f"cannot read the city core's environment ({err}); {FOREIGN_FIX}") from None
+        return Foreign(f"its environment cannot be read: {err}", unknown=True)
     if actual is None:
-        raise OpError(f"cannot read the city core's environment (pid {status.pid}); {FOREIGN_FIX}")
-    reason = foreign_reason(actual, core_env(ctx, hc_bin))
+        return Foreign("its environment cannot be read", unknown=True)
+    cgroup = ctx.host.procs.cgroup(status.pid)
+    reason = foreign_reason(actual, expected, cgroup=cgroup, lineage=coreid.read_lineage(ctx))
     if reason is not None:
-        raise OpError(f"{FOREIGN_FIX} ({reason})")
+        return Foreign(reason)
+    if record and unit_directory(actual, cgroup, expected.get("XDG_RUNTIME_DIR", "")) is not None:
+        record_lineage(ctx, actual)
+    return None
+
+
+def record_lineage(ctx: OpContext, actual: Mapping[str, str]) -> None:
+    """Record, for the systemd core a start accepted, running with
+    ``actual``, what every holder of that core carries: its environment less
+    systemd's service variables (hc writes that into a holder's unit file,
+    and the holder's whole environment into the file of a core it restarts).
+    Best effort: with no record, a core one of those holders restarts is
+    refused, and ``restart-core`` mends that."""
+    try:
+        coreid.write_lineage(ctx, coreid.Lineage.of({k: v for k, v in actual.items() if k not in SERVICE_KEYS}))
+    except (OSError, StateDirError):
+        return
+
+
+def launchd_reason(
+    ctx: OpContext, status: StatusResult, started: coreid.LaunchdStart, expected: Mapping[str, str], *, record: bool = False
+) -> Optional[str]:
+    """Why a core hc placed under launchd is not the pack's, or None: it is
+    the core the pack's own hc started (its recorded identity, or a pending
+    start that names its starter), or one a holder of the city restarted,
+    judged by that holder's environment (:func:`holder_reason`). ``record``:
+    a start accepts it, and records it (:func:`.coreid.pin`), so it stays
+    the pack's once that start's entry, or that holder, is gone."""
+    if coreid.started_by_pack(ctx, status):
+        return None
+    pending = coreid.pending_start(ctx, started)
+    reason = None if pending is not None else holder_reason(ctx, started, expected)
+    if reason is None and record:
+        coreid.pin(ctx, status, superseding=pending)
+    return reason
+
+
+def holder_reason(ctx: OpContext, started: coreid.LaunchdStart, expected: Mapping[str, str]) -> Optional[str]:
+    """Why the launchd core ``started`` names was not restarted by a holder
+    of the city whose environment is the pack's, or None."""
+    starter = coreid.live(ctx, started.starter_pid)
+    if starter is None or starter.uid != os.getuid() or not is_holder_of(starter, holder_prefix(ctx.paths)):
+        return "it was started through launchd by an hc the pack did not run"
+    holder_started_ms = ctx.host.procs.started_ms(starter)
+    if holder_started_ms is None or holder_started_ms > started.asked_ns // 1_000_000:
+        return "it was asked for before the holder its start names began: that pid was another process's"
+    try:
+        holder_env = ctx.host.procs.environ(starter.pid)
+    except ProcError as err:
+        return f"the environment of the holder that started it cannot be read: {err}"
+    if holder_env is None:
+        return f"the holder that started it (pid {starter.pid}) is gone"
+    reason = foreign_reason(holder_env, expected)
+    return None if reason is None else f"the holder that started it was not the pack's: {reason}"
+
+
+def check_foreign(ctx: OpContext, hc_bin: str) -> None:
+    """Refuse the running core unless the pack started it; record the one it
+    accepts where its environment cannot show that (:func:`foreign_core`)."""
+    found = foreign_core(ctx, ctx.client().server_status(), hc_bin, record=True)
+    if found is not None:
+        raise OpError(f"{FOREIGN_FIX} ({found.reason})")
 
 
 def ensure_core(ctx: OpContext) -> str:
     """The city's core, started if down and checked as the pack's own.
     Returns the hc binary. It clears the stopped mark first, whatever then
-    becomes of the start: a start is the way out of a parked city."""
+    becomes of the start: a start is the way out of a parked city. Once the
+    core is the pack's own, it rewrites the pack-owned hc config where it
+    differs: hc reads that file on every ``terminal.run``, so the start runs
+    on the current file even under a core an earlier release started."""
     unpark(ctx)  # before any record: a parked city holds none
     try:
         hc_bin = ctx.hc_binary()
@@ -362,6 +625,7 @@ def ensure_core(ctx: OpContext) -> str:
             raise OpError("the backend is unavailable (GC_RPP_FAULT=unavailable)") from None
         start_core(ctx, hc_bin)
     check_foreign(ctx, hc_bin)
+    write_hc_config(ctx.paths)
     return hc_bin
 
 

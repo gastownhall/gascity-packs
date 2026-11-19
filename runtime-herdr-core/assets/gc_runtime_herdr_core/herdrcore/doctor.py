@@ -37,7 +37,7 @@ from ..rpp.statedir import DOCTOR_CITY_ENV, StateDirError
 from .admin import admin_context, admin_host, city_running, controller_socket, lock_socket
 from .config import BINARY_NAME, ConfigError, install_root, pinned_binary, read_pack_config
 from .context import Host, OpContext
-from .core import FOREIGN_FIX, KICK_BACKOFF_MS, core_env, foreign_reason, parked, read_kick
+from .core import FOREIGN_FIX, KICK_BACKOFF_MS, core_env, foreign_core, parked, read_kick
 from .infra_argv import BD_PROXY_CHILD_VERB, MANAGED_DOLT_SCOPE_WATCHDOG_VERB, infrastructure_prefix
 from .install import verify_installed, writable
 from .pin import PinError, host_target, load_pin
@@ -241,17 +241,9 @@ def check_core(ctx: OpContext, *, linger_dir: str = LINGER_DIR, platform: str = 
         report.note(Status.WARNING, f"the core's hc came from {status.installed_by}, which updates it outside the pin")
     expected = core_env(ctx, hc_bin or pinned)
     procs = ctx.host.procs
-    try:
-        actual = procs.environ(status.pid)
-    except ProcError as err:
-        actual = None
-        report.note(Status.ERROR, f"cannot read the core's environment ({err}); {FOREIGN_FIX}")
-    if actual is not None:
-        reason = foreign_reason(actual, expected)
-        if reason is not None:
-            report.note(Status.ERROR, f"{FOREIGN_FIX} ({reason})")
-    elif report.status < Status.ERROR:
-        report.note(Status.ERROR, f"cannot read the core's environment (pid {status.pid}); {FOREIGN_FIX}")
+    found = foreign_core(ctx, status, hc_bin or pinned)
+    if found is not None:
+        report.note(Status.ERROR, f"{FOREIGN_FIX} ({found.reason})")
     exe = procs.exe(status.pid)
     problem = _exe_problem(exe, root, operator_bin) if exe else None
     if problem is not None:

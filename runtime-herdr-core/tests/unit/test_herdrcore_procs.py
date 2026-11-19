@@ -560,15 +560,15 @@ def test_linux_procs_read_exe_cgroup_and_socket_holders(tmp_path: Path) -> None:
 
 
 def test_a_process_start_reads_as_wall_clock_ms(tmp_path: Path) -> None:
-    """Linux: ``btime`` plus the start time's ticks; ps: ``lstart``, local
-    time. A start that cannot be told is None."""
+    """Linux: ``btime`` plus the start time's ticks; ps: ``lstart``, which
+    the pack has ps print in UTC. A start that cannot be told is None."""
     tick = os.sysconf("SC_CLK_TCK")
     add_proc(tmp_path, 71, ppid=1, argv=["cat"], start=5 * tick)
     source = LinuxProcs(str(tmp_path))
     assert source.started_ms(source.snapshot()[71]) is None, "no btime"
     (tmp_path / "stat").write_text("cpu  1 2 3\nbtime 1700000000\n")
     assert source.started_ms(source.snapshot()[71]) == 1_700_000_005_000
-    lstart = time.strftime("%a %b %d %H:%M:%S %Y", time.localtime(1_700_000_000))
+    lstart = time.strftime("%a %b %d %H:%M:%S %Y", time.gmtime(1_700_000_000))
     assert PsProcs().started_ms(Proc(72, 1, 0, " ".join(lstart.split()), "cat", ("cat",))) == 1_700_000_000_000
     assert PsProcs().started_ms(Proc(73, 1, 0, "", "cat", ("cat",))) is None
     assert ProcSource().started_ms(Proc(74, 1, 0, "1", "cat", ("cat",))) is None

@@ -70,11 +70,25 @@ def test_status_reports_a_core_started_outside_the_pack(city: City) -> None:
     assert code == 0 and "started:   outside the pack" in "\n".join(out)
 
 
+def test_status_cannot_tell_who_started_a_core_whose_environment_cannot_be_read(city: City) -> None:
+    city.procs.core_environ = None
+    code, out, _ = run(city, "status")
+    text = "\n".join(out)
+    assert code == 0 and "started:   cannot tell (its environment cannot be read)" in text
+    assert "outside the pack" not in text
+
+
 # --- restart-core ----------------------------------------------------------------------
+
+
+def other_state(city: City) -> None:
+    """The core answering is of another state: its core id is not the one in the city's core.json."""
+    (Path(city.paths.state_dir) / "core.json").write_text(json.dumps({"id": "0" * 32, "name": "x"}))
 
 
 def test_restart_core_refuses_a_core_that_is_not_the_citys(city: City) -> None:
     assert city.procs.core_environ is not None
+    other_state(city)
     city.procs.core_environ["HC_SESSION"] = "someone-elses"
     code, _, err = run(city, "restart-core")
     assert code == 1 and "not this city's core" in err[0] and "HC_SESSION" in err[0]
@@ -83,6 +97,7 @@ def test_restart_core_refuses_a_core_that_is_not_the_citys(city: City) -> None:
 
 def test_restart_core_refuses_a_core_of_another_state_root(city: City) -> None:
     assert city.procs.core_environ is not None
+    other_state(city)
     city.procs.core_environ["XDG_STATE_HOME"] = "/elsewhere"
     code, _, err = run(city, "restart-core")
     assert code == 1 and "XDG_STATE_HOME" in err[0]
@@ -206,8 +221,11 @@ def test_upgrade_hands_the_core_over_and_keeps_its_sessions(city: City, set_pin:
     pinned = {"GC_HC_TEST_BIN": ""}  # sessions start with the pinned binary
     assert city.run("start", "mc-a", stdin=b'{"command":"cat"}', extra=pinned).code == 0
     core.set_version("0.1.18")  # an older build, below the pin's minimum
+    handoff = Path(city.paths.state_dir) / "restart-env.json"
+    handoff.write_text("{}")  # hc's own restart handoff: hc server restart writes and reads it
     code, out, err = run(city, "upgrade", env=env)
     assert code == 0, err
+    assert handoff.exists(), "upgrade's hc server restart keeps hc's restart handoff"
     assert out[-1] == "handed the city's core over from herdr-core 0.1.18 to 0.1.19; its sessions kept running"
     assert core.call_count("server.restart") == 1 and core.call_count("server.stop") == 0
     assert [t["labels"] for t in city.terminals(all_records=False) if t["state"] == "live"] != []
