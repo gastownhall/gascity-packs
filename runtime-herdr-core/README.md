@@ -366,8 +366,10 @@ checked against the app yet, so the sessions may not appear there.
   over any record exits 73 and touches nothing; a launch with no provision
   record and no record of the name exits 1 (a `stop` between the two ops
   wins: it drops the record, as `server-stop` drops the city's), and one
-  into a city at rest exits 1 without starting a core. Without
-  `fresh_only`, `launch` replaces a running agent: it ends the old
+  into a parked city (whatever record it finds) or a never-started city
+  without a record exits 1 without starting a core. Without
+  `fresh_only`, `launch` replaces a running agent: it checks `work_dir`
+  first (a launch that cannot start ends nothing), ends the old
   incarnation's tree as `stop` does (refused while its processes may
   survive), creates the new terminal, and only then removes the old
   record, so the name reads dead, never absent, in between. The new
@@ -383,7 +385,10 @@ checked against the app yet, so the sessions may not appear there.
   queued first turn against the live launch just before the send, not at
   the keystroke; and an agent that reports `blocked` (its own question)
   refuses the turn (`pending_interaction`, nothing typed) until it is
-  answered, while gc's queue keeps it first.
+  answered, while gc's queue keeps it first; and a provision over a live
+  intact session refuses with "already exists" (exit 1), which gc at
+  f5302d1 maps to a session collision only for `start`, so its non-fresh
+  start paths read it as a plain provider error.
 - **Start** (the welded start every gc without gastownhall/gascity#9226
   calls) stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
