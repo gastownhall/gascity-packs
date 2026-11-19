@@ -288,10 +288,20 @@ def test_a_launch_whose_config_carries_no_token_keeps_the_boxs(city: City) -> No
     assert city.run("get-meta", "mc-a", "GC_INSTANCE_TOKEN").text == TOKEN
 
 
-def test_replace_never_reads_absent(city: City) -> None:
+@pytest.mark.parametrize(
+    "held",
+    [
+        # Held after the new terminal exists: a launch that removed the old
+        # record before creating the new one would read absent here.
+        "terminal.rm",
+        # Held while the new terminal is created.
+        "terminal.run",
+    ],
+)
+def test_replace_never_reads_absent(city: City, held: str) -> None:
     assert provision(city, fresh_only=True).code == 0
     assert launch(city, fresh_only=True).code == 0
-    city.fake.delay_reply("terminal.run", 1.0)  # type: ignore[union-attr]
+    city.fake.delay_reply(held, 1.0)  # type: ignore[union-attr]
     results: List[Any] = []
     thread = in_thread(lambda: results.append(launch(city)))
     missing: List[str] = []
