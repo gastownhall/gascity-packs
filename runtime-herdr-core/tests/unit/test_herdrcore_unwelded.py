@@ -28,7 +28,7 @@ from test_herdrcore_inputs import answer
 from test_herdrcore_server import no_core_started
 
 from gc_runtime_herdr_core.hc.paths import resolve_paths
-from gc_runtime_herdr_core.herdrcore import provisioned
+from gc_runtime_herdr_core.herdrcore import core, provisioned
 from gc_runtime_herdr_core.herdrcore.lifecycle import STARTUP_UNCONFIRMED_KEY
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, scan_environ
 from gc_runtime_herdr_core.herdrcore.reads import META_GC_AGE_S
@@ -525,6 +525,21 @@ def test_a_launch_in_a_parked_city_refuses_whatever_the_record_says(city: City) 
     assert late.code == 1 and "the city is stopped" in late.stderr, late.stderr
     assert "nothing is provisioned" not in late.stderr, late.stderr
     assert no_core_started(city, wait_s=1.0), "a late launch never revives the city"
+
+
+def test_a_provision_after_server_stop_unparks_the_city_and_a_launch_starts(city: City) -> None:
+    assert provision(city, fresh_only=True).code == 0
+    assert launch(city, fresh_only=True).code == 0
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert core.parked(city.context())
+    again = provision(city, fresh_only=True)
+    assert again.code == 0, again.stderr
+    assert not core.parked(city.context()), "a provision starts the core: the city is not parked"
+    started = launch(city, fresh_only=True)
+    assert started.code == 0, started.stderr
+    answer = observe(city, "mc-a", "cat")
+    assert answer["state"] == "running" and answer["agent"] == "alive", answer
 
 
 def test_a_concurrent_launch_and_stop_leave_no_agent(city: City) -> None:
