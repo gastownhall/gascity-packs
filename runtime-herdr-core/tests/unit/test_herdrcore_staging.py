@@ -231,6 +231,55 @@ def test_watch_startup_streams_the_screen_on_change(city: City) -> None:
     assert len(lines) == len(set(lines)), "a line per change, never a repeat"
 
 
+def test_watch_startup_ends_itself_before_gcs_deadline(city: City) -> None:
+    """Unless gc kills it first, watch-startup exits 0 one second before its
+    deadline (within one 250 ms poll), having streamed a static screen once."""
+    assert city.start("mc-a", json.dumps({"command": "exec cat"})).code == 0
+    began = time.monotonic()
+    done = city.run("watch-startup", "mc-a", deadline_ms=2500)
+    elapsed = time.monotonic() - began
+    assert done.code == 0 and done.stderr == ""
+    lines = done.text.splitlines()
+    assert len(lines) == 1 and set(json.loads(lines[0])) == {"content"}
+    assert 1.2 <= elapsed <= 1.9, elapsed
+
+
+def test_watch_startup_starts_nothing_and_writes_nothing(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    """gc ends every watch-startup with SIGKILL alone, so it must leave nothing
+    behind: it starts no process and writes no file (only unlinking a killed
+    start's stale spawn files, every op's housekeeping, is allowed)."""
+    import subprocess
+
+    from gc_runtime_herdr_core.herdrcore import activity, config, coreid, core, lifecycle, metastore, shim
+
+    assert city.start("mc-a", json.dumps({"command": "exec cat"})).code == 0
+    calls: List[str] = []
+
+    def spy(label: str) -> object:
+        def record(*_args: object, **_kwargs: object) -> None:
+            calls.append(label)
+            raise AssertionError(f"watch-startup called {label}")
+
+        return record
+
+    monkeypatch.setattr(subprocess, "Popen", spy("subprocess.Popen"))
+    for attr in ("fork", "posix_spawn", "posix_spawnp", "rename", "replace"):
+        if hasattr(os, attr):
+            monkeypatch.setattr(os, attr, spy(f"os.{attr}"))
+    for module in (activity, config, coreid, core, lifecycle, metastore, shim):
+        monkeypatch.setattr(module, "write_private_file", spy(f"{module.__name__}.write_private_file"))
+    done = city.run("watch-startup", "mc-a", deadline_ms=1600)
+    monkeypatch.undo()
+    assert calls == []
+    assert done.code == 0 and done.stderr == "" and done.text.count("\n") == 1
+
+
+def test_watch_startup_has_the_start_deadline_class(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.ops_table import build_ops
+
+    assert build_ops(city.host)["watch-startup"].deadline == "start"
+
+
 def test_copy_to_stays_in_the_work_dir(city: City) -> None:
     work = city.root / "w"
     work.mkdir()

@@ -4,7 +4,10 @@
 every change, read every 250 ms) while gc clears startup dialogs, which
 saves gc one ``peek`` process per poll. It reads only the screen, never
 history: reading a full-screen program's history scrolls it by sending it
-input.
+input. gc ends the stream with SIGKILL once it has the screens it needs;
+otherwise it exits 0 one second before its deadline. It starts no process,
+writes no file and writes nothing to stderr while it streams, so the kill
+leaves nothing behind.
 
 ``copy-to`` copies a file or directory into the session's work directory,
 never outside it: nothing is written through a symlink (see ``staging``).

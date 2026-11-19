@@ -3,7 +3,9 @@
 gc cancels a per-op process with SIGTERM to its process group and SIGKILL two
 seconds later (gascity ``docs/reference/exec-session-provider.md``
 "Cancellation"); a long-lived transport would cancel one request of many.
-Either way the op learns of it through a :class:`CancelToken`. A token is a plain flag that waiters poll every
+``watch-startup`` is the exception: once gc has the screens it needs it ends
+that op with SIGKILL alone, no SIGTERM first, so it must leave nothing to
+clean up. Either way the op learns of it through a :class:`CancelToken`. A token is a plain flag that waiters poll every
 :data:`POLL_INTERVAL_S`: a signal handler can set it at any bytecode
 boundary, where taking a lock (as ``threading.Event.set`` does) could
 deadlock against the interrupted code.
