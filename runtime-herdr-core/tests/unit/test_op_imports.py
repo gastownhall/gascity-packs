@@ -185,11 +185,13 @@ def test_op_loads_only_its_own_code(city: City, tmp_path: Path, label: str) -> N
 
 
 def test_every_op_in_the_table_resolves() -> None:
-    # The table names each handler by module and function; a typo would
-    # otherwise fail only when gc runs that op.
+    # The table names each handler, and each no-city answer, by module and
+    # function; a typo would otherwise fail only when gc runs that op.
     for op, spec in OP_SPECS.items():
         module = importlib.import_module(f"{PACKAGE}.herdrcore.{spec.module}")
         assert callable(getattr(module, spec.function)), op
+        if spec.no_city:
+            assert callable(getattr(module, spec.no_city)), op
 
 
 def test_the_table_builds_every_op(city: City) -> None:

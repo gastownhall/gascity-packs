@@ -40,6 +40,7 @@ from ..rpp.statedir import (
     OP_CITY_ENV,
     city_id,
     city_key,
+    city_named,
     ensure_private_dir,
     machine_identity,
     state_root,
@@ -78,6 +79,10 @@ class HcPaths:
     core_lock: str
     config_home: str
     config_file: str
+    scoped: bool
+    """Whether the call names a city (:func:`~..rpp.statedir.city_named`).
+    Without one the paths are the fixed bucket's, and no core is started
+    or read for them."""
 
     def discovery_env(self) -> Dict[str, str]:
         """The variables the core is started with and its clients use to find it."""
@@ -135,6 +140,7 @@ def resolve_paths(
         core_lock=os.path.join(state_dir, "core.lock"),
         config_home=config_home,
         config_file=os.path.join(config_home, "herdr-core", "config.toml"),
+        scoped=city_named(env, city_var),
     )
 
 

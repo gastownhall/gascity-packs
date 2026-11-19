@@ -13,8 +13,8 @@ it declares `observe.v1`, `report-attachment`, `report-activity`,
 `city-scoped`, `conformance-faults`, `server-lifecycle`, `carrier.ops`,
 `idle-boundary`, `input-outcome` and `fs.host` (locality `local`; see
 [Host work](#how-sessions-run)), and passes
-`gc runtime check` and `gc runtime conformance` against fake-hc (see
-[Tests](#tests)). The pack is not in `registry.toml` yet: it is published
+`gc runtime check` and `gc runtime conformance` against fake-hc in a
+scratch city (see [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
 pinned herdr-core with `gc herdr-core install` (see
 [Install and commands](#install-and-commands)); `gc doctor` runs the
@@ -104,7 +104,9 @@ source = "<this pack>"
   core (version, pid, live terminals, whether the pack started it).
   `status --env` prints the core's discovery tuple:
   `env $(gc herdr-core status --env) herdr-app` connects the Herdr app to
-  the city's core.
+  the city's core. Run outside a city (`GC_CITY_PATH` unset or empty), it
+  refuses: the fixed bucket's tuple would let herdr-core's own CLI start a
+  core for no city.
 - **`gc herdr-core upgrade`** installs the pin, then hands the city's core
   over with `herdr-core server restart` under the pack's allowlist
   environment: hc keeps every program and its screen across a planned
@@ -134,7 +136,7 @@ warns). They only read: a check never starts a core or writes state.
 |---|---|---|
 | `hc-python` | no `python3`, or one older than 3.9 | |
 | `hc-binary` | not installed; changed since install; from another release; `hc_bin` without `allow_unpinned` | installed without `gc herdr-core install`; writable; `hc_bin` with `allow_unpinned` |
-| `hc-core` | down while the city runs (once a read found it down, and not stopped by `server-stop`: a city `gc stop` parked stays down, OK, until a session start); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build installed before the pin moved; an untested version; a package manager's hc; on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
+| `hc-core` | down while the city runs (once a read found it down, and not stopped by `server-stop`: a city `gc stop` parked stays down, OK, until a session start); a failed start in the last 5 minutes; a core of the session on another socket; older than the minimum; started outside the pack; running a binary from outside the pack's install root (or other than `hc_bin` when the city sets one) | version differs from the pin (`upgrade`), including a core still running a build the pack installed before the pin moved (named as an older install of the pack, recognised by its real path under the install root and its `install.json`); an untested version; a package manager's hc (hc reports any binary in a folder it cannot write as from a `system package manager`; the pack's own read-only install of the pinned build is recognised by its real path under the install root, its `install.json` and the pin's sha256, so a symlink at the pinned path is not); on Linux, no systemd user manager or lingering off (lingering on is disclosed as a note); inside gc's service cgroup; still running while the city is stopped |
 | `hc-scope-hygiene` | the city's supervisor or controller, Dolt server or watchdog, or bd proxy carries `HC_SCOPE`, runs under a herdr-core holder or core, or in an `hc-hold-*`/`hc-serve-*` cgroup | its environment cannot be read |
 | `hc-state-perms` | hc's state directories are not this user's 0700 directories, or `terminals.json` is readable by others through them (hc writes it with the umask's mode, which 0700 directories keep private) | |
 
@@ -224,7 +226,8 @@ checked against the app yet, so the sessions may not appear there.
   with whitespace is refused. A read that
   finds the core down answers unknown and starts it in the background, at
   most one at a time and none for five minutes after a failed start, and
-  none while `server-stop` has parked the city (below).
+  none for a city at rest: one `server-stop` parked, or one no core has
+  ever run for (below).
 - **The pack-owned hc config** (`R/hc-config/herdr-core/config.toml`): no
   typed notes into agents (`notes = false`), 16 MB history
   (`history_mb = 16.0`), nothing from `~/.config/herdr-core`. hc reads it
@@ -549,6 +552,16 @@ checked against the app yet, so the sessions may not appear there.
   With the core down and nothing of it running, `is-running` and
   `process-alive` answer `false` and `stop` ends what the metadata still
   names, parked or not, without starting a core.
+- **A city that never started reads empty.** hc keeps every record of a
+  session, live or finished, under `$XDG_STATE_HOME/herdr-core/<session>`,
+  which it creates before any core or holder of the session runs. While
+  that directory does not exist and nothing of the core runs, the city is
+  at rest like a parked one: every read answers an empty city and none
+  starts a core, so `gc doctor` before `gc start` starts nothing. Its first
+  session start brings the core up. A directory that cannot be examined,
+  or a holder of the session still running, is not taken for a city that
+  never started: reads answer unknown and kick, as for any core that is
+  down.
 - **Not implemented**: `exec`, `provision` and `check-image` (exit 2 without
   reading stdin), `program-status` and session events.
 
@@ -610,7 +623,13 @@ send held past the deadline) and `dead` (every record reads finished).
 - **Deterministic discovery.** Every gc process of a city (supervisor, CLI,
   cron, ssh, sudo) must find the same core. The city key is the raw
   `GC_EXEC_CITY_PATH` (`GC_CITY_PATH` for doctor and pack commands), or the
-  fixed bucket `unscoped` when it is unset: never the cwd. The city id is
+  fixed bucket `unscoped` when it is unset: never the cwd. That bucket only
+  identifies: an op whose `GC_EXEC_CITY_PATH` is unset or empty names no
+  city, and no core is started or read for it. `observe` answers unknown,
+  `inventory` incomplete, every other op but `protocol` exits 1 naming the
+  variable; `restart-core` and `upgrade` refuse without `GC_CITY_PATH`, and
+  `status` reports only the pin and the install (`status --env` refuses).
+  See [Running outside a city](#running-outside-a-city). The city id is
   `sha256(machine + "\0" + key)`, where `machine` is what herdr-core itself
   keys a machine on: `/etc/machine-id`, or on macOS the hardware UUID
   (IOPlatformUUID, read in process). Only when `/etc/machine-id` is missing,
@@ -685,6 +704,32 @@ send held past the deadline) and `dead` (every record reads finished).
   `annotationlib` and `ast`.
   `tests/bench_ops.py` measures each op's CPU (see Tests).
 
+## Running outside a city
+
+The pack needs `GC_EXEC_CITY_PATH` on every op that can start a session or
+its core (`start`, every op that reads or drives a session, `server-stop`):
+it names the city, and the pack keys the core and its state on it. gc sets
+it, with `GC_EXEC_CITY_NAME`, on every op it runs for a city, so a city's
+supervisor, reconciler and CLI never meet the refusal. Doctor checks and
+`gc herdr-core` commands use `GC_CITY_PATH`, which gc sets on them.
+
+`gc runtime check` and `gc runtime conformance` run the pack outside any
+city, so until their runners give the provider a private city, run them
+with a scratch one, as `tests/conformance.sh` does:
+
+```sh
+scratch="$(mktemp -d)"
+export GC_EXEC_CITY_NAME=scratch GC_EXEC_CITY_PATH="$scratch/city"
+export GC_EXEC_STATE_DIR="$scratch/state"
+gc runtime check <pack>/assets/bin/gc-runtime-herdr-core
+gc runtime conformance <pack>/assets/bin/gc-runtime-herdr-core
+```
+
+The scratch city and the conformance kit's own city keys each get their
+own core under the scratch state directory: stop each before removing the
+directory, as the script's teardown does. Never give them a live city's
+path: the conformance kit starts and ends sessions in the city it is given.
+
 ## Tests
 
 The unit tier never builds, installs or runs a real herdr-core (its
@@ -716,9 +761,10 @@ build on `PATH` or in `GC_BIN`; `PYTHON` is an interpreter with
 GC_BIN=/path/to/gc PYTHON=python tests/conformance.sh --json
 ```
 
-It runs `gc runtime check` and `gc runtime conformance` and fails unless
-every requirement passes or is skipped and the report is v2-ready. All state
-goes to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
+It runs `gc runtime check` and `gc runtime conformance` in a scratch city
+(`GC_EXEC_CITY_PATH` under its scratch directory) and fails unless every
+requirement passes or is skipped and the report is v2-ready. All state goes
+to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
 default state root instead. Without `--json` it reads the text report, for a
 gc that cannot encode it.
 
@@ -745,4 +791,6 @@ Python 3.14, since what an op imports can change with the interpreter.
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new
 tag and update its provenance file; the network check then proves the copy.
 Check the tag's `crates/herdr-core/src/config.rs` against `HC_CONFIG_KEYS` in
-`tests/fakehc/hcconfig.py` too.
+`tests/fakehc/hcconfig.py` too, and that hc still keeps its records under
+`$XDG_STATE_HOME/herdr-core/<session>` (`paths.rs`) and creates that directory
+before any core or holder runs: a city without it reads empty.

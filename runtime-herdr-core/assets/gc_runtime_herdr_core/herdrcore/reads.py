@@ -11,12 +11,14 @@ core, reachable, holds no record of the name, live or finished (rule 7).
 the core down and nothing of it running (no holder, no core process), they
 answer ``false`` and kick nothing.
 
-A city whose core ``server-stop`` stopped (parked, :mod:`.core`) stays
-stopped: no read kicks a start, and with nothing of the core running every
-read answers an empty city (``observe`` absent, ``inventory`` complete and
+A city at rest (:func:`.core.at_rest`) stays at rest: one whose core
+``server-stop`` stopped (parked), or one no core has ever run for, while
+nothing of the core runs. No read kicks a start for it, and every read
+answers an empty city (``observe`` absent, ``inventory`` complete and
 empty, no session running, attached or on screen). That is the truth: the
-pack ended and removed every record before it stopped the core, and only a
-start, which clears the mark first, creates one.
+pack ended and removed every record before it stopped the core, hc keeps
+every record under a state directory a never-started city does not have,
+and only a start, which clears the mark first, creates one.
 """
 
 from __future__ import annotations
@@ -94,22 +96,22 @@ def read_meta(ctx: OpContext, record: Terminal) -> Tuple[Optional[Meta], bool]:
 
 def unreachable(ctx: OpContext, err: HcError) -> None:
     """A read found the core down or failing: kick a start when it is down
-    (never while it is parked)."""
+    (never for a city at rest, :func:`.core.kick_due`)."""
     if isinstance(err, HcUnreachable):
         from .core import kick
 
         kick(ctx)
 
 
-def city_stopped(ctx: OpContext, err: HcError) -> bool:
-    """Whether the core does not answer because ``server-stop`` stopped it,
-    and nothing of it runs: the city holds no session."""
+def city_at_rest(ctx: OpContext, err: HcError) -> bool:
+    """Whether the core does not answer because the city is at rest
+    (parked or never started, with nothing of it running): the city holds
+    no session."""
     if not isinstance(err, HcUnreachable):
         return False
-    from .core import parked
-    from .corescan import nothing_runs
+    from .core import at_rest
 
-    return parked(ctx) and nothing_runs(ctx)
+    return at_rest(ctx)
 
 
 def agent_state(
@@ -136,6 +138,16 @@ def try_snapshot(host: Host) -> Optional[Snapshot]:
         return None
 
 
+def observe_unknown() -> OpResult:
+    """``observe``'s answer when it cannot be told (an op that names no city)."""
+    return OpResult.answer(ObserveAnswer(state="unknown").encode())
+
+
+def inventory_unknown() -> OpResult:
+    """``inventory``'s answer when it cannot be told (an op that names no city)."""
+    return OpResult.answer(InventoryAnswer(complete=False, sessions=()).encode())
+
+
 # --- observe ------------------------------------------------------------------------------
 
 
@@ -152,7 +164,7 @@ def op_observe(ctx: OpContext) -> OpResult:
     except (LockTimeout, LockFileError):
         return OpResult.answer(ObserveAnswer(state="unknown").encode())
     except HcError as err:
-        if city_stopped(ctx, err):
+        if city_at_rest(ctx, err):
             return OpResult.answer(ObserveAnswer(state="absent").encode())
         unreachable(ctx, err)
         return OpResult.answer(ObserveAnswer(state="unknown").encode())
@@ -223,7 +235,7 @@ def op_inventory(ctx: OpContext) -> OpResult:
     try:
         records = list_city(client, ctx)
     except HcError as err:
-        if city_stopped(ctx, err):
+        if city_at_rest(ctx, err):
             return OpResult.answer(InventoryAnswer(complete=True, sessions=()).encode())
         unreachable(ctx, err)
         return OpResult.answer(InventoryAnswer(complete=False, sessions=()).encode())
@@ -305,15 +317,15 @@ def current_record(ctx: OpContext, name: str, *, liveness: bool = False) -> Opti
     socket, no core process: :func:`.corescan.nothing_runs`) answers no
     record, and kicks no start: nothing of the name runs, and a core started
     for that answer would outlive a stopped city. Every read answers no
-    record for a parked city (:func:`city_stopped`)."""
+    record for a city at rest (:func:`city_at_rest`)."""
     try:
         return newest(list_city(ctx.client(read=True), ctx, name), name)
     except HcError as err:
         if isinstance(err, HcUnreachable):
-            from .core import parked
+            from .core import at_rest
             from .corescan import nothing_runs
 
-            if (liveness or parked(ctx)) and nothing_runs(ctx):
+            if nothing_runs(ctx) if liveness else at_rest(ctx):
                 return None
         unreachable(ctx, err)
         raise OpError(f"cannot read the city's core: {err}") from None
@@ -350,7 +362,7 @@ def op_list_running(ctx: OpContext) -> OpResult:
     try:
         records = list_city(ctx.client(read=True), ctx, finished=False)
     except HcError as err:
-        if city_stopped(ctx, err):
+        if city_at_rest(ctx, err):
             return OpResult.ok()
         unreachable(ctx, err)
         raise OpError(f"cannot read the city's core: {err}") from None
@@ -478,6 +490,8 @@ def op_remove_meta(ctx: OpContext) -> OpResult:
 
 
 __all__ = [
+    "inventory_unknown",
+    "observe_unknown",
     "op_get_last_activity",
     "op_get_meta",
     "op_inventory",

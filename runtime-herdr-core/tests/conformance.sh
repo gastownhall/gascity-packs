@@ -16,9 +16,13 @@
 # home is ephemeral. --json reads `gc runtime conformance --json` instead of
 # the text report (needs a gc whose --json report encodes).
 #
-# Teardown stops every core under the state root (the city key, `unscoped`
-# and the conformance kit's own city keys each start one), fails if fake-hc
-# saw a request or sent a result outside hc's schema, and removes the root.
+# The checks run in a scratch city (GC_EXEC_CITY_NAME and GC_EXEC_CITY_PATH
+# under the scratch directory): an op that names no city starts and reads no
+# core; protocol answers, observe answers unknown, inventory incomplete, and
+# every other op refuses. Teardown stops every core under the state root
+# (the scratch city and the conformance kit's own city keys each start
+# one), fails if fake-hc saw a request or sent a result outside hc's schema,
+# and removes the root.
 #
 # PYTHON names the interpreter fake-hc runs under (it needs jsonschema, and
 # tomli below Python 3.11); default: python3.
@@ -60,7 +64,9 @@ fi
 export GC_HC_TEST=1
 export GC_HC_TEST_BIN="$bin/herdr-core"
 export GC_HC_TEST_SPAWN_ROOT="$scratch/spawn"
-unset GC_EXEC_CITY_PATH GC_EXEC_CITY_NAME GC_RPP_FAULT
+unset GC_RPP_FAULT
+# A scratch city: the pack starts no core for an op that names none.
+export GC_EXEC_CITY_PATH="$scratch/city" GC_EXEC_CITY_NAME="hcconf"
 
 teardown() {
   local status=$?

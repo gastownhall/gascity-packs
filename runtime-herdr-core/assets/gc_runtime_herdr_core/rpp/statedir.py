@@ -12,7 +12,8 @@ of them cannot find reads absent, so reconciler v2 starts a twin. Therefore:
   checks and pack commands, which gc runs without the exec variables), and
   the fixed bucket :data:`UNSCOPED_CITY_KEY` when that is unset: never the
   cwd, which is whatever directory ``gc runtime check`` or ``gc runtime
-  conformance`` was started from;
+  conformance`` was started from. The bucket only identifies: an op that
+  names no city (:func:`city_named`) starts and reads no core for it;
 * the city id hashes the machine's identity with the key, so two machines
   sharing an NFS home never read each other's state. The identity is the one
   herdr-core itself keys a machine on: the machine id (``/etc/machine-id``),
@@ -40,8 +41,9 @@ OP_CITY_ENV: Final = "GC_EXEC_CITY_PATH"
 DOCTOR_CITY_ENV: Final = "GC_CITY_PATH"
 
 UNSCOPED_CITY_KEY: Final = "unscoped"
-"""The bucket for ops gc runs without a city (``gc runtime check``). gc only
-ever sends absolute city paths, which cannot equal it."""
+"""The key of a call that names no city. gc only ever sends absolute city
+paths, which cannot equal it. It only identifies: no op starts or reads a
+core for it."""
 
 
 class StateDirError(Exception):
@@ -56,6 +58,13 @@ def city_key(env: Mapping[str, str], var: str = OP_CITY_ENV) -> str:
     """The raw city path from ``var``, or :data:`UNSCOPED_CITY_KEY` when unset or empty."""
     raw = env.get(var, "")
     return raw if raw else UNSCOPED_CITY_KEY
+
+
+def city_named(env: Mapping[str, str], var: str = OP_CITY_ENV) -> bool:
+    """Whether ``env`` names a city: ``var`` is set and not empty. gc sets
+    ``GC_EXEC_CITY_PATH`` on every op of a city, and ``GC_CITY_PATH`` on
+    every doctor check and pack command."""
+    return bool(env.get(var, ""))
 
 
 def city_id(machine: str, key: str) -> str:

@@ -13,7 +13,7 @@ from typing import Callable, Dict, List, Tuple
 
 import pytest
 
-from fakehc import FakeHc
+from fakehc import FakeHc, hc_installed_by
 from fakehc.rawclient import raw_call
 
 
@@ -295,3 +295,35 @@ def test_a_lone_surrogate_escape_is_a_parse_error_that_answers_no_request(fake_h
     assert reply["id"] is None
     assert reply["error"]["code"] == -32700
     assert fake_hc.input_log(address) == []
+
+
+def test_fake_hc_reports_installed_by_as_hc_does(short_tmp: Path) -> None:
+    """hc v0.1.19 ``client.rs`` ``installed_by_path``: a path mark names its
+    manager; otherwise a binary in a folder this user cannot write is from a
+    ``system package manager``, and one in a folder it can write is from none."""
+    for mark, manager in (("opt/homebrew/Cellar", "homebrew"), ("nix/store", "nix"), ("mise/installs", "mise")):
+        binary = short_tmp / mark / "herdr-core" / "herdr-core"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"")
+        assert hc_installed_by(str(binary)) == manager
+    writable = short_tmp / "bin" / "herdr-core"
+    writable.parent.mkdir()
+    writable.write_bytes(b"")
+    assert hc_installed_by(str(writable)) is None
+    pinned = short_tmp / "pinned" / "0.1.19" / "herdr-core"
+    pinned.parent.mkdir(parents=True)
+    pinned.write_bytes(b"")
+    pinned.chmod(0o555)
+    pinned.parent.chmod(0o555)
+    try:
+        if os.getuid() != 0:  # root may write any folder
+            assert hc_installed_by(str(pinned)) == "system package manager"
+        fake = FakeHc(str(short_tmp / "hc.sock"), installed_by="homebrew")
+        fake.start()
+        try:
+            assert raw_call(fake.socket_path, "server.status", {})["result"]["installed_by"] == "homebrew"
+        finally:
+            fake.close()
+        assert fake.schema_violations == []
+    finally:
+        pinned.parent.chmod(0o755)

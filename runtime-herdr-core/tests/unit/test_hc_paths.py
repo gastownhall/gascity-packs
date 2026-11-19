@@ -95,6 +95,16 @@ def test_unset_city_path_is_unscoped_never_the_cwd(
     assert paths.session != resolve({"GC_EXEC_CITY_PATH": str(city)}, home_dir).session
 
 
+@pytest.mark.parametrize("var", ["GC_EXEC_CITY_PATH", "GC_CITY_PATH"])
+def test_paths_are_scoped_only_for_a_named_city(home_dir: Path, var: str) -> None:
+    def scoped(env: Dict[str, str]) -> bool:
+        return resolve_paths(env, machine="machine-a", home=lambda: str(home_dir), uid=os.getuid(), city_var=var).scoped
+
+    assert scoped({var: "/srv/city"})
+    assert not scoped({})
+    assert not scoped({var: ""})
+
+
 def test_the_machine_is_in_the_key(home_dir: Path) -> None:
     # Two machines sharing an NFS home keep apart: their machine ids differ.
     env = {"GC_EXEC_CITY_PATH": "/srv/city"}

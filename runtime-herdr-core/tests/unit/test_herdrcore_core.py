@@ -248,15 +248,16 @@ def test_start_rewrites_the_hc_config_under_a_core_already_running(short_tmp: Pa
         teardown_cores(Path(paths.state_root))
 
 
-def test_unscoped_ops_use_the_unscoped_bucket_never_the_cwd(short_tmp: Path, home_dir: Path) -> None:
+def test_an_op_without_a_city_path_starts_no_core_and_never_reads_the_cwd(short_tmp: Path, home_dir: Path) -> None:
     env = entry_env(short_tmp, home_dir)
     del env["GC_EXEC_CITY_PATH"]
     paths = resolve_paths(env)
-    assert paths.city_key == "unscoped"
+    assert paths.city_key == "unscoped" and not paths.scoped
     try:
         done = invoke(env, "start", "mc-a", stdin=b'{"command":"cat"}')
-        assert done.returncode == 0, done.stderr
-        assert invoke(env, "is-running", "mc-a").stdout.strip() == b"true"
+        assert done.returncode == 1, done.stderr
+        assert b"GC_EXEC_CITY_PATH" in done.stderr
+        assert not os.path.exists(paths.state_dir)
     finally:
         teardown_cores(Path(paths.state_root))
 

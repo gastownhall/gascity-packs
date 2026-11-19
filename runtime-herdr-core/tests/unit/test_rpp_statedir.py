@@ -19,6 +19,7 @@ from gc_runtime_herdr_core.rpp.statedir import (
     StateDirError,
     city_id,
     city_key,
+    city_named,
     darwin_host_uuid,
     ensure_private_dir,
     format_host_uuid,
@@ -40,6 +41,14 @@ def test_city_key_is_the_raw_city_path() -> None:
 def test_unset_city_path_is_the_unscoped_bucket(env: dict[str, str]) -> None:
     assert UNSCOPED_CITY_KEY == "unscoped"
     assert city_key(env) == "unscoped"
+
+
+@pytest.mark.parametrize("var", ["GC_EXEC_CITY_PATH", "GC_CITY_PATH"])
+def test_a_city_is_named_only_by_a_set_non_empty_city_path(var: str) -> None:
+    assert city_named({var: "/srv/city"}, var)
+    assert not city_named({}, var)
+    assert not city_named({var: ""}, var)
+    assert not city_named({"GC_EXEC_CITY_PATH" if var == "GC_CITY_PATH" else "GC_CITY_PATH": "/srv/city"}, var)
 
 
 def test_unset_city_path_never_reads_the_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -20,6 +20,12 @@
   core that is not the city's (another user's, or one with another hc
   session or state root): the pack never stops a core it cannot tell is
   its own.
+
+gc runs every pack command with ``GC_CITY_PATH``. ``restart-core`` and
+``upgrade`` refuse a call without it, which names no city, before they
+touch any core, and so does ``status --env`` (hc's own CLI, given the fixed
+bucket's tuple, would start a core for it); ``status`` then reports the pin
+and the install only.
 """
 
 from __future__ import annotations
@@ -114,6 +120,9 @@ def cmd_install(ctx: OpContext, args: Sequence[str], out: Out) -> None:
 
 def cmd_status(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     if args == ["--env"]:
+        if not ctx.paths.scoped:
+            # The fixed bucket's tuple would let hc's own CLI autostart a core for no city.
+            raise CommandError(ctx.no_city)
         for key, value in sorted(ctx.paths.discovery_env().items()):
             out(f"{key}={value}")
         return
@@ -136,6 +145,9 @@ def cmd_status(ctx: OpContext, args: Sequence[str], out: Out) -> None:
             problem = str(err)
         binary = pinned_binary(ctx.host.home, str(pin.version))
         out(f"installed: {problem}" if problem else f"installed: {binary} (matches the pin)")
+    if not ctx.paths.scoped:
+        out(f"core:      no city ({ctx.city_var} is unset or empty)")
+        return
     out(f"core:      session {ctx.paths.session}, socket {ctx.paths.socket}")
     client = client_for(ctx, ctx.paths.socket, any_version=True)
     try:
@@ -183,6 +195,8 @@ def _wait_gone(client: HcClient, cancel: CancelToken) -> None:
 def cmd_restart_core(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     if args:
         raise CommandError("usage: gc herdr-core restart-core")
+    if not ctx.paths.scoped:
+        raise CommandError(ctx.no_city)
     try:
         hc_bin = ctx.hc_binary()
     except ConfigError as err:
@@ -229,6 +243,8 @@ def cmd_restart_core(ctx: OpContext, args: Sequence[str], out: Out) -> None:
 def cmd_upgrade(ctx: OpContext, args: Sequence[str], out: Out) -> None:
     if args:
         raise CommandError("usage: gc herdr-core upgrade (installs the pinned version and hands the core over)")
+    if not ctx.paths.scoped:
+        raise CommandError(ctx.no_city)
     pin = _pin()
     try:
         config = read_pack_config(ctx.pack_state)
