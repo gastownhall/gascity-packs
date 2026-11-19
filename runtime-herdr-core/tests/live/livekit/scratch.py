@@ -71,6 +71,8 @@ class HcProbe:
 class InputLine:
     at: float
     text: str
+    phase: str = "prompt"
+    """``dialog`` while the agent's startup dialog showed, ``prompt`` after."""
 
 
 def _private_dir(path: str) -> str:
@@ -278,7 +280,13 @@ class Scratch:
         for line in raw.splitlines():
             doc = JsonObject.of(loads(line))
             at = doc.raw("at")
-            out.append(InputLine(at=float(at) if isinstance(at, (int, float)) else 0.0, text=doc.req_str("text")))
+            out.append(
+                InputLine(
+                    at=float(at) if isinstance(at, (int, float)) else 0.0,
+                    text=doc.req_str("text"),
+                    phase=doc.str_or("phase", "prompt"),
+                )
+            )
         return out
 
     def input_text(self, name: str) -> str:

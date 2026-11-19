@@ -62,6 +62,11 @@ class HcRpc:
     def terminal(self, address: str) -> TerminalView:
         return _view(self.call("terminal.get", {"terminal": address}))
 
+    def status_word(self, address: str) -> Optional[str]:
+        """The program's own OSC 7501 word (hc's ``status.state``); None when it never reported."""
+        status = self.call("terminal.get", {"terminal": address}).opt_obj("status")
+        return None if status is None else status.req_str("state")
+
     def has_terminal(self, name: str) -> bool:
         """Whether hc has a terminal (live or finished) by that name or address."""
         try:

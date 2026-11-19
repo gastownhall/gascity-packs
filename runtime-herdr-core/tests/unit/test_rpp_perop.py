@@ -590,3 +590,85 @@ def test_the_executable_exits_1_when_gc_has_stopped_reading() -> None:
     code, err = run_without_reader([sys.executable, "-I", "-S", str(entry), "protocol"], "stdout")
     assert code == ExitCode.FAIL
     assert err == ""
+
+
+# --- the test-only op log ----------------------------------------------------------------------
+
+
+def test_the_op_log_is_honoured_only_under_test_mode(tmp_path: Path) -> None:
+    log = str(tmp_path / "ops.log")
+    assert perop.oplog_path({"GC_HC_TEST_OPLOG": log}) is None
+    assert perop.oplog_path({"GC_HC_TEST": "0", "GC_HC_TEST_OPLOG": log}) is None
+    assert perop.oplog_path({"GC_HC_TEST": "1", "GC_HC_TEST_OPLOG": "relative.log"}) is None
+    assert perop.oplog_path({"GC_HC_TEST": "1", "GC_HC_TEST_OPLOG": log}) == log
+    assert perop.oplog_path({"GC_HC_TEST": "1"}) is None
+
+
+def test_the_op_log_records_op_session_exit_and_outcome_only(tmp_path: Path) -> None:
+    import json
+
+    canary = "sk-oplog-canary-0123456789"
+    refused = b'{"outcome":"pending_interaction","detail":"a dialog shows"}\n'
+
+    def nudge(request: OpRequest) -> OpResult:
+        if request.stdin == b"refuse":
+            return OpResult(ExitCode.INPUT_OUTCOME, refused)
+        return OpResult.ok()
+
+    def start(request: OpRequest) -> OpResult:
+        return OpResult(ExitCode.FRESH_COLLISION, b"", f"already exists {canary}")
+
+    table: OpTable = {"nudge": spec(nudge, reads_stdin=True), "start": spec(start, reads_stdin=True)}
+    log = tmp_path / "ops.log"
+
+    def logged(*argv: str, stdin: bytes) -> int:
+        return run_per_op(
+            ["gc-runtime-herdr-core", *argv],
+            {"SECRET_TOKEN": canary},
+            table,
+            started=time.monotonic(),
+            stdin=io.BytesIO(stdin),
+            stdout=io.BytesIO(),
+            stderr=io.StringIO(),
+            install_signals=False,
+            oplog=str(log),
+        )
+
+    assert logged("nudge", "mc-a", stdin=canary.encode()) == 0
+    assert logged("nudge", "mc-a", stdin=b"refuse") == 80
+    assert logged("start", "mc-b", "extra-arg", stdin=json.dumps({"env": {"K": canary}}).encode()) == 73
+    assert logged("frobnicate", stdin=b"") == 2
+    text = log.read_text()
+    assert canary not in text and "extra-arg" not in text and "a dialog shows" not in text
+    lines = [json.loads(line) for line in text.splitlines()]
+    assert [(d["op"], d["session"], d["exit"], d["outcome"]) for d in lines] == [
+        ("nudge", "mc-a", 0, "delivered"),
+        ("nudge", "mc-a", 80, "pending_interaction"),
+        ("start", "mc-b", 73, ""),
+        ("frobnicate", "", 2, ""),
+    ]
+    assert all(d["begun_ms"] <= d["ended_ms"] for d in lines)
+    assert set(lines[0]) == {"op", "session", "exit", "outcome", "begun_ms", "ended_ms"}
+    assert oct(log.stat().st_mode & 0o777) == "0o600"
+
+
+def test_without_an_op_log_nothing_is_written(tmp_path: Path) -> None:
+    def ok(request: OpRequest) -> OpResult:
+        return OpResult.ok()
+
+    before = sorted(os.listdir(tmp_path))
+    assert run({"stop": spec(ok)}, "stop", "mc-a", env={"GC_HC_TEST_OPLOG": str(tmp_path / "ops.log")}).code == 0
+    assert sorted(os.listdir(tmp_path)) == before
+
+
+def test_the_entry_logs_ops_under_test_mode_only(tmp_path: Path) -> None:
+    import json
+
+    entry = ASSETS / "bin" / "gc-runtime-herdr-core"
+    log = tmp_path / "ops.log"
+    base = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "GC_HC_TEST_OPLOG": str(log)}
+    for env in (base, dict(base, GC_HC_TEST="1")):
+        done = subprocess.run([sys.executable, "-I", "-S", str(entry), "frobnicate", "mc-a"], env=env, capture_output=True, timeout=30, check=False)
+        assert done.returncode == 2
+    [line] = log.read_text().splitlines()
+    assert json.loads(line)["op"] == "frobnicate"

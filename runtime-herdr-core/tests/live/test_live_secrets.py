@@ -11,9 +11,10 @@ On the systemd lane the spawn files go where they go in production
 
 (a) after a session ends, no secret value is anywhere under the state root,
     the spawn directory or the scratch runtime directory;
-(b) a ``start`` SIGKILLed mid-flight, before its ``terminal.run`` (its spawn
-    file still there, hc with no terminal of that name, so no launcher will
-    unlink it), leaves no spawn file behind once the next op's sweep is due;
+(b) a ``start``, or gc's un-welded ``launch`` after a ``provision``,
+    SIGKILLed mid-flight, before its ``terminal.run`` (its spawn file still
+    there, hc with no terminal of that name, so no launcher will unlink it),
+    leaves no spawn file behind once the next op's sweep is due;
 (c) a secret the agent echoes to its screen is gone from hc's state once the
     session is stopped (its record removed); what is found is reported.
 """
@@ -79,8 +80,18 @@ def newest_mtime(paths: List[str]) -> Optional[float]:
 
 
 def test_a_start_killed_mid_flight_leaves_no_spawn_file(scratch: Scratch) -> None:
+    _killed_mid_flight(scratch, "start")
+
+
+def test_a_launch_killed_mid_flight_leaves_no_spawn_file(scratch: Scratch) -> None:
+    """gc's un-welded start writes the spawn file in ``launch``, after a
+    ``provision`` that wrote none."""
+    _killed_mid_flight(scratch, "launch")
+
+
+def _killed_mid_flight(scratch: Scratch, op_name: str) -> None:
     pack = Pack(scratch, rescope=scratch.lane == "systemd")
-    assert pack.start_agent("live-warm").code == 0  # the core is up: start reaches its spawn file fast
+    assert pack.start_agent("live-warm").code == 0  # the core is up: the op reaches its spawn file fast
     rpc = HcRpc(scratch.paths().socket)
     city_id = scratch.paths().city_id
     secret = _secret()
@@ -89,8 +100,14 @@ def test_a_start_killed_mid_flight_leaves_no_spawn_file(scratch: Scratch) -> Non
     for attempt in range(KILL_ATTEMPTS):
         name = f"live-cut{attempt}"
         names.append(name)
-        config = pack.start_config(name, scratch.agent_command(), env=scratch.agent_env(name, GC_HC_LIVE_TOKEN_UNDER_TEST=secret))
-        op = pack.popen("start", name, stdin=config)
+        if op_name == "launch":
+            config = pack.unwelded_config(name, fresh_only=True, GC_HC_LIVE_TOKEN_UNDER_TEST=secret)
+            provisioned = pack.provision(name, config)
+            assert provisioned.code == 0, provisioned.stderr
+            assert _spawn_files(scratch) == [], "provision wrote a spawn file"
+        else:
+            config = pack.start_config(name, scratch.agent_command(), env=scratch.agent_env(name, GC_HC_LIVE_TOKEN_UNDER_TEST=secret))
+        op = pack.popen(op_name, name, stdin=config)
         wait_until(lambda: bool(_spawn_files(scratch)) or op.poll() is not None, 30, step_s=0.002)
         if op.poll() is None:
             scratch.ownership.signal(op.pid, signal.SIGKILL)
@@ -103,11 +120,11 @@ def test_a_start_killed_mid_flight_leaves_no_spawn_file(scratch: Scratch) -> Non
         # Too late: the launcher has (or will have) the file. Start over clean.
         pack.stop(name)
         wait_until(lambda: not _spawn_files(scratch), 30)
-    scratch.note("start killed before terminal.run, spawn file on disk", {"attempts": len(names), "caught": bool(caught)})
+    scratch.note(f"{op_name} killed before terminal.run, spawn file on disk", {"attempts": len(names), "caught": bool(caught)})
     if not caught:
         for name in names:
             pack.stop(name)
-        pytest.skip(f"no SIGKILL in {KILL_ATTEMPTS} attempts landed between the spawn file and terminal.run")
+        pytest.skip(f"no SIGKILL of {op_name} in {KILL_ATTEMPTS} attempts landed between the spawn file and terminal.run")
     newest = newest_mtime(caught)
     assert newest is not None, f"the spawn files vanished with no launcher to take them: {caught}"
     time.sleep(max(0.0, newest + MAX_AGE_S + 1 - time.time()))

@@ -23,7 +23,7 @@ from typing import Final, Sequence
 from . import PACK_NAME, PACK_VERSION
 from .rpp.jsonval import dumps
 from .rpp.ops import OpTable, handshake_op
-from .rpp.perop import run_per_op
+from .rpp.perop import oplog_path, run_per_op
 from .handshake import HANDSHAKE
 
 DEBUG_ENV: Final = "GC_HERDR_CORE_DEBUG"
@@ -72,4 +72,5 @@ def main(argv: Sequence[str], *, started: float) -> int:
         stdout=sys.stdout.buffer,
         stderr=sys.stderr,
         debug=os.environ.get(DEBUG_ENV) == "1",
+        oplog=oplog_path(os.environ),
     )

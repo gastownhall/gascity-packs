@@ -97,6 +97,22 @@ class Pack:
     def start(self, name: str, command: str, *, env: Optional[Mapping[str, str]] = None) -> OpAnswer:
         return self.op("start", name, stdin=self.start_config(name, command, env=env))
 
+    def unwelded_config(self, name: str, *, fresh_only: bool = False, **extra: str) -> bytes:
+        """The live agent's start config as gc sends it to ``provision`` and
+        ``launch`` (``fresh_only`` for a fresh start)."""
+        doc = json.loads(self.start_config(name, self.scratch.agent_command(), env=self.scratch.agent_env(name, **extra)))
+        if fresh_only:
+            doc["fresh_only"] = True
+        return json.dumps(doc).encode("utf-8")
+
+    def provision(self, name: str, config: bytes) -> OpAnswer:
+        """gc's ``provision``: the name prepared, no agent started."""
+        return self.op("provision", name, stdin=config)
+
+    def launch(self, name: str, config: bytes) -> OpAnswer:
+        """gc's ``launch``: the agent started in what ``provision`` prepared."""
+        return self.op("launch", name, stdin=config)
+
     def start_agent(self, name: str, **extra: str) -> OpAnswer:
         """Start the live agent as session ``name`` (see ``agent.py``)."""
         return self.start(name, self.scratch.agent_command(), env=self.scratch.agent_env(name, **extra))

@@ -29,7 +29,7 @@ import re
 import select
 import signal
 import time
-from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO, Union
+from typing import BinaryIO, Final, List, Mapping, Optional, Sequence, TextIO, Tuple, Union
 
 from .cancel import POLL_INTERVAL_S, CancelToken, Cancelled, Clock, Deadline
 from .exitcodes import ExitCode
@@ -39,6 +39,13 @@ from .redact import Redactor
 DEADLINE_ENV: Final = "GC_EXEC_DEADLINE_MS"
 """Milliseconds left before gc stops waiting for the op, when gc says so. gc
 sends it (gastownhall/gascity#9012); without it the op has gc's own timeout."""
+
+OPLOG_ENV: Final = "GC_HC_TEST_OPLOG"
+"""Test-only: a file each op appends one line to (:func:`append_oplog`),
+honoured only under ``GC_HC_TEST=1`` (:func:`oplog_path`)."""
+TEST_ENV: Final = "GC_HC_TEST"
+DRIVING_OPS: Final = frozenset({"nudge", "send-keys", "interrupt", "clear-scrollback"})
+"""The ops whose answer carries an input outcome word (:mod:`.outcome`)."""
 
 _DEADLINE_MS: Final = re.compile(r"[0-9]{1,12}")
 _STDIN_CHUNK: Final = 1 << 16
@@ -53,6 +60,65 @@ def parse_deadline_ms(raw: Optional[str]) -> Optional[int]:
     if raw is None or _DEADLINE_MS.fullmatch(raw) is None:
         return None
     return int(raw)
+
+
+def oplog_path(env: Mapping[str, str]) -> Optional[str]:
+    """The op log a test run asked for: :data:`OPLOG_ENV`, an absolute path,
+    only under ``GC_HC_TEST=1``; None otherwise."""
+    if env.get(TEST_ENV) != "1":
+        return None
+    path = env.get(OPLOG_ENV, "")
+    return path if os.path.isabs(path) else None
+
+
+def _outcome_word(op: str, code: int, answer: bytes) -> str:
+    """A driving op's outcome word: ``delivered`` or the word its answer
+    names; empty for every other op and for an answer without one."""
+    if op not in DRIVING_OPS:
+        return ""
+    if code == int(ExitCode.OK) and not answer.strip():
+        return "delivered"
+    if code not in (int(ExitCode.OK), int(ExitCode.INPUT_OUTCOME)):
+        return ""
+    from .jsonval import JsonObject, JsonShapeError, loads
+
+    try:
+        word = JsonObject.of(loads(answer)).str_or("outcome", "")
+    except JsonShapeError:
+        return ""
+    return word if word.isidentifier() else ""
+
+
+def append_oplog(path: str, argv: Sequence[str], code: int, answer: bytes, *, begun_ms: int, ended_ms: int) -> None:
+    """Append one line to the test op log: the op, its first argument (the
+    session; empty for an op without one), its exit code, a driving op's
+    outcome word, and when it began and ended. Never stdin, stdout, a later
+    argument or an environment value. A log that cannot be written is
+    skipped: it is a test aid, never a reason to fail an op."""
+    from .jsonval import dumps
+
+    op = argv[1] if len(argv) > 1 else ""
+    line = dumps(
+        {
+            "op": op,
+            "session": argv[2] if len(argv) > 2 else "",
+            "exit": code,
+            "outcome": _outcome_word(op, code, answer),
+            "begun_ms": begun_ms,
+            "ended_ms": ended_ms,
+        }
+    )
+    data = (line + "\n").encode("utf-8", "surrogateescape")
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    except OSError:
+        return
+    try:
+        os.write(fd, data)  # one write of one short line: appends never interleave
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _install_sigterm(cancel: CancelToken) -> None:
@@ -144,24 +210,59 @@ def run_per_op(
     debug: bool = False,
     install_signals: bool = True,
     clock: Clock = time.monotonic,
+    oplog: Optional[str] = None,
 ) -> int:
     """Run the op ``argv`` names and return its exit code.
 
     ``started`` is when the process began (the op's deadline counts from it);
-    ``debug`` adds a redacted traceback to unexpected failures.
+    ``debug`` adds a redacted traceback to unexpected failures; ``oplog``
+    (tests only, :func:`oplog_path`) names a file each op appends one line
+    to (:func:`append_oplog`).
     """
+    begun_ms = int(time.time() * 1000)
+    code, answer = _run_per_op(
+        argv,
+        environ,
+        ops,
+        started=started,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        debug=debug,
+        install_signals=install_signals,
+        clock=clock,
+    )
+    if oplog:
+        append_oplog(oplog, argv, code, answer, begun_ms=begun_ms, ended_ms=int(time.time() * 1000))
+    return code
+
+
+def _run_per_op(
+    argv: Sequence[str],
+    environ: Mapping[str, str],
+    ops: OpTable,
+    *,
+    started: float,
+    stdin: BinaryIO,
+    stdout: BinaryIO,
+    stderr: TextIO,
+    debug: bool,
+    install_signals: bool,
+    clock: Clock,
+) -> Tuple[int, bytes]:
+    """:func:`run_per_op`'s work: the exit code, and the stdout the op answered."""
     env = dict(environ)
     redactor = Redactor()
     redactor.add_process_env(env)
     if len(argv) < 2 or not argv[1]:
         program = os.path.basename(argv[0]) if argv else "runtime"
         _emit(stderr, f"usage: {program} <op> [args...]")
-        return int(ExitCode.UNKNOWN_OP)
+        return int(ExitCode.UNKNOWN_OP), b""
     op = argv[1]
     spec = ops.get(op)
     if spec is None:
         _emit(stderr, redactor.redact(f"{op}: unknown operation"))
-        return int(ExitCode.UNKNOWN_OP)
+        return int(ExitCode.UNKNOWN_OP), b""
 
     gone = False  # stdout's reader has gone; set once, read after the handler
 
@@ -199,7 +300,7 @@ def run_per_op(
             raise OpError("no time left before the op's deadline")
         result = spec.handler(request)
     except _ReaderGone:
-        return int(ExitCode.FAIL)
+        return int(ExitCode.FAIL), b""
     except OpError as err:
         result = OpResult.fail(err.message, err.code)
     except Cancelled as err:
@@ -214,7 +315,7 @@ def run_per_op(
             trace = traceback.format_exc()
 
     if gone:  # the handler swallowed _ReaderGone: nobody is left to read its answer
-        return int(ExitCode.FAIL)
+        return int(ExitCode.FAIL), b""
     if len(result.stdout) > spec.stdout_cap:
         result = OpResult.fail(f"answer of {len(result.stdout)} bytes is over the {spec.stdout_cap}-byte cap")
     if result.stdout:
@@ -223,9 +324,9 @@ def run_per_op(
             stdout.flush()
         except OSError:  # the gc that ran the op has exited (BrokenPipeError and kin)
             _discard(stdout)
-            return int(ExitCode.FAIL)
+            return int(ExitCode.FAIL), b""
     if result.message:
         _emit(stderr, redactor.redact(f"{op}: {result.message}"))
     if trace:
         _emit(stderr, redactor.redact(trace))
-    return int(result.code)
+    return int(result.code), result.stdout

@@ -1,7 +1,8 @@
 """gc's own checks of the runtime, against the pinned hc instead of fake-hc:
 ``gc runtime check`` and ``gc runtime conformance --json``, which must report
-v2-ready with no failed requirement. gc is built at the pinned gascity
-commit, the same one the fake-hc conformance job uses."""
+v2-ready with no failed requirement and the provision group passing. gc is
+built at the pinned gascity commit, the same one the fake-hc conformance job
+uses."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from livekit.pack import ENTRY
 from livekit.scratch import Scratch
 
 TIMEOUT_S = 900
+PROVISION_GROUP = tuple(f"RPP-PROVISION-00{n}" for n in range(1, 6))
 
 
 def _gc_env(scratch: Scratch) -> Dict[str, str]:
@@ -56,3 +58,8 @@ def test_gc_runtime_conformance_is_v2_ready(scratch: Scratch, gc_bin: str) -> No
     assert not failed, f"failed requirements: {failed}\n{done.stderr[-4000:]}"
     assert report["v2_ready"] is True, "not v2-ready"
     assert done.returncode == 0, done.stderr[-4000:]
+    # The pack un-welds start (proc.provision with proc.launch): its provision
+    # group must pass against the real hc, never skip.
+    by_code = {r["code"]: r["status"].lower() for r in results}
+    unproven = {code: by_code.get(code) for code in PROVISION_GROUP if by_code.get(code) != "pass"}
+    assert not unproven, f"the provision group must pass, not skip: {unproven}"

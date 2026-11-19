@@ -896,7 +896,17 @@ core under it and fails if any hc process or unit of the run is left):
   (gc at the same pinned gascity commit as the fake-hc job), in a named
   scratch city (`GC_EXEC_CITY_NAME` and `GC_EXEC_CITY_PATH`), since the pack
   starts no session for an op that names no city: v2-ready, no failed
-  requirement;
+  requirement, the provision group passing;
+- gc's own start ladder: the pinned gc's controller (`gc start
+  --foreground`) over a scratch city that imports the pack runs each agent
+  as an always-on named session. A workspace-trust dialog at launch is
+  answered by gc before the first turn, which is typed once at the prompt,
+  and `start` is never called (the pack's test op log, `GC_HC_TEST_OPLOG`,
+  honoured only under `GC_HC_TEST=1`, records each op's name, session,
+  exit code and outcome word, never a payload). A first turn the agent
+  refuses with OSC 7501 `blocked` is answered `pending_interaction`, types
+  nothing, and is typed exactly once after the person answers, with
+  nothing dead-lettered;
 - each lane really is its placement;
 - holder crashes: infrastructure stand-ins with gc's and bd's infrastructure
   argv, started detached from an agent's shell, under a holder SIGKILL (K1)
@@ -915,8 +925,8 @@ core under it and fails if any hc process or unit of the run is left):
   a pseudo-terminal) is typed exactly once, after they stop, while gc's
   queue redelivers on anything but a delivery; `observe` stays within 4 s;
 - session secrets leave no trace on disk after the session ends, a `start`
-  killed mid-flight before its `terminal.run` leaves no spawn file past the
-  next op's sweep, and a secret echoed to the screen is gone once the record
+  (or a `launch` after `provision`) killed mid-flight before its
+  `terminal.run` leaves no spawn file past the next op's sweep, and a secret echoed to the screen is gone once the record
   is (the systemd lane checks the production spawn directory under
   `/run/user/<uid>`; the plain lane a scratch one);
 - an agent's own `hc` with the city core SIGKILLed: the shim refuses (or
