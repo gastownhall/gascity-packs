@@ -64,7 +64,7 @@ from ..rpp.exitcodes import ExitCode
 from ..rpp.flock import LockFileError, LockTimeout
 from ..rpp.ops import OpError, OpResult
 from ..rpp.statedir import StateDirError
-from . import corescan
+from . import corescan, provisioned
 from .config import ConfigError
 from .context import OpContext
 from .core import CORE_START_WAIT_S, KICK_LOCK, check_core_lock, park, start_core, unpark
@@ -94,6 +94,7 @@ def op_server_stop(ctx: OpContext) -> OpResult:
         # A kick in flight finishes first, and none starts until server-stop
         # is done: a core it started after the last look would outlive the stop.
         with ctx.lock(KICK_LOCK, shared=False, wait_s=max(0.0, ctx.request.deadline.budget(KICK_WAIT_S))):
+            provisioned.drop_all(ctx)  # a launch after the stop finds nothing to start
             try:
                 problems = _stop_with_core(ctx, client, warnings)
             except HcUnreachable:

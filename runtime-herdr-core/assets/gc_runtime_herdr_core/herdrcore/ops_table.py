@@ -3,11 +3,13 @@
 The handshake (:mod:`..handshake`) declares observe.v1 with
 ``report-attachment`` (v2-ready), ``report-activity``, ``city-scoped`` (each
 city key has its own core), ``conformance-faults``, ``server-lifecycle``
-(``server-stop``), ``carrier.ops``, ``idle-boundary``, ``input-outcome`` and
-``fs.host``. It never declares ``proc.exec``, ``proc.provision`` or
-``input-fence``: under ``proc.exec`` gc would drive the box by piping tmux
-commands to ``exec``. ``exec``, ``provision`` and ``check-image`` are absent
-from the table, so they exit 2 without reading stdin.
+(``server-stop``), ``carrier.ops``, ``idle-boundary``, ``input-outcome``,
+``fs.host``, and ``proc.provision`` with ``proc.launch`` (``provision`` and
+``launch``, :mod:`.unwelded`; the welded ``start`` stays for every gc that
+calls it). It never declares ``proc.exec`` or ``input-fence``: under
+``proc.exec`` gc would drive the box by piping tmux commands to ``exec``.
+``exec`` and ``check-image`` are absent from the table, so they exit 2
+without reading stdin.
 
 An op that names no city (``GC_EXEC_CITY_PATH`` unset or empty: ``gc
 runtime check`` or ``conformance`` run outside a city, or a direct call) is
@@ -77,6 +79,8 @@ class OpDecl:
 
 OP_SPECS: Final[Mapping[str, OpDecl]] = {
     "start": OpDecl("lifecycle", "op_start", stdin=True, deadline="start"),
+    "provision": OpDecl("unwelded", "op_provision", stdin=True, deadline="start"),
+    "launch": OpDecl("unwelded", "op_launch", stdin=True, deadline="start"),
     "stop": OpDecl("lifecycle", "op_stop"),
     "kill-object": OpDecl("lifecycle", "op_kill_object", stdin=True),
     "observe": OpDecl("reads", "op_observe", stdin=True, deadline="probe", cap=OBSERVE_STDOUT_CAP, no_city="observe_unknown"),

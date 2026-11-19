@@ -11,8 +11,9 @@ library only, Python 3.9 or later, so it needs no binary of its own.
 The executable implements gc's runtime ops on herdr-core and is v2-ready:
 it declares `observe.v1`, `report-attachment`, `report-activity`,
 `city-scoped`, `conformance-faults`, `server-lifecycle`, `carrier.ops`,
-`idle-boundary`, `input-outcome` and `fs.host` (locality `local`; see
-[Host work](#how-sessions-run)), and passes
+`idle-boundary`, `input-outcome`, `fs.host` (locality `local`; see
+[Host work](#how-sessions-run)), and `proc.provision` with `proc.launch`
+(see [Provision and launch](#how-sessions-run)), and passes
 `gc runtime check` and `gc runtime conformance` against fake-hc in a
 scratch city (see [Tests](#tests)). The pack is not in `registry.toml` yet: it is published
 once it has run real cities on a pinned herdr-core. To use it, install the
@@ -33,6 +34,17 @@ the user's own shells and editors), and drain-ack escalation can take such
 a pane for a wedged session's agent and end it. The pack cannot refuse such
 a gc: its handshake is fixed, gc passes its ops no version, and nothing
 enforces a gc floor.
+
+gc starts this pack's sessions through its un-welded start (`provision`,
+then `launch`, then gc's own dialog pass and a queued first turn) only
+when it contains gastownhall/gascity#9226 (and gastownhall/gascity#9225,
+which binds the queued turn to its launch). An older gc never calls
+`provision` or `launch` for a pack without `proc.exec`, so it keeps the
+welded `start`, which still types the first turn itself; so does a current
+gc whose handshake read failed, and one that cached the handshake before
+the pack was upgraded, until it restarts. A pack downgraded in place under
+a gc that cached `proc.launch` fails every start (`provision` and `launch`
+exit 2) until gc restarts.
 
 The runtime is named `herdr-core`, never `herdr`: `herdr` is a gc builtin,
 and declaring it is a composition error (RUNTIME-SEL-007).
@@ -61,13 +73,15 @@ runtime-herdr-core/
       herdrcore/                   runtime semantics
         ops_table.py context.py config.py core.py command.py naming.py
         records.py metastore.py procs.py attach.py activity.py reads.py
-        lifecycle.py staging.py spawnfile.py envplan.py launch.py shim.py
+        lifecycle.py unwelded.py provisioned.py staging.py spawnfile.py
+        envplan.py launch.py shim.py
         inputs.py screen.py readiness.py server.py corescan.py coreid.py
         pin.py install.py admin.py commands.py doctor.py appvis.py infra_argv.py
   tests/
     fakehc/                        hc double (in process, or as a herdr-core binary) + vendored schema
     unit/                          the unit tier
     conformance.sh                 gc runtime check + gc runtime conformance against fake-hc
+    gccontract/                    gc's un-welded launch contract through gc's exec provider (fake-hc)
     live/                          the live tier: the pack against the pinned herdr-core (CI runners only)
     infra_argv_drift.py            CI: the infrastructure argv table equals gc's at the pinned commit
 ```
@@ -242,8 +256,10 @@ checked against the app yet, so the sessions may not appear there.
   incarnation nonce (`gc.obj`). The hc terminal name is a digest of the city
   and gc name, which makes a second `terminal.run` of a live session fail.
   Identity (`GC_SESSION_ID`, `GC_RUNTIME_EPOCH`, `GC_INSTANCE_TOKEN`,
-  `GT_PROCESS_NAMES`) is written to `R/pack/<city id>/meta/<gc.obj>.json`
-  (0600) before the terminal exists; the metadata ops read and write it.
+  `GT_PROCESS_NAMES`) and `GC_CONTINUATION_EPOCH` are written to
+  `R/pack/<city id>/meta/<gc.obj>.json` (0600) before the terminal exists;
+  the metadata ops read and write it, so `get-meta` answers the launch's
+  epochs and token from the moment its box exists.
 - **Dead boxes.** A finished record, and a live one no longer running the
   program the pack started (a kept terminal's replacement shell, a lost
   holder), is a dead box: `peek` still reads its screen, `kill-object corpse`
@@ -330,7 +346,46 @@ checked against the app yet, so the sessions may not appear there.
   (unless the session environment sets it), so the transcripts gc reads
   under its own home are the ones the agent writes; the core keeps the
   password-database home.
-- **Start** stages `pack_overlay_dirs`, `overlay_dir` (with
+- **Provision and launch (gc's un-welded start).** `provision` does what
+  `start` does before its terminal: it starts or checks the core, refuses
+  a `fresh_only` provision over any record of the name (exit 73) and a
+  live session (`already exists`, nothing staged), recycles finished and
+  broken records, stages and runs `pre_start` exactly as the config
+  carries them (under `fs.host` gc does that itself into a vacant name),
+  and writes a small provision record (`R/pack/<city id>/provision/`,
+  0600): the identity to seed, and `session_setup` and the setup script
+  when the config carries them. It creates no terminal, spawn file or
+  process, so `is-running` answers false, `observe` absent and
+  `inventory` leaves the name out until `launch`. `launch` creates the
+  terminal as `start` does (metadata first, then the shims, the spawn file
+  and `terminal.run`), waits for the agent's processes, runs the deferred
+  session steps (or its own config's, never both) once the agent runs, and
+  types nothing: gc answers startup dialogs through `watch-startup`,
+  `peek` and `send-keys` and queues the first turn, which its nudge queue
+  sends through `nudge` once the agent takes input. A `fresh_only` launch
+  over any record exits 73 and touches nothing; a launch with no provision
+  record and no record of the name exits 1 (a `stop` between the two ops
+  wins: it drops the record, as `server-stop` drops the city's), and one
+  into a city at rest exits 1 without starting a core. Without
+  `fresh_only`, `launch` replaces a running agent: it ends the old
+  incarnation's tree as `stop` does (refused while its processes may
+  survive), creates the new terminal, and only then removes the old
+  record, so the name reads dead, never absent, in between. The new
+  incarnation keeps the old one's metadata (a warm box keeps its keys)
+  less the pack's own per-incarnation keys, with the provision record's
+  identity and the launch env's over it: a key the config does not carry
+  keeps the box's value, and `get-meta` answers the new launch from the
+  moment `launch` returns, before gc writes it. Known limits: a provision
+  record is good for 10 minutes (a gc that crashed between the two ops
+  provisions again); an agent that exits during startup fails the launch
+  and leaves its box for gc's stop, which gc runs only when the box
+  carries that start's token; the pack cannot fence input, so gc checks a
+  queued first turn against the live launch just before the send, not at
+  the keystroke; and an agent that reports `blocked` (its own question)
+  refuses the turn (`pending_interaction`, nothing typed) until it is
+  answered, while gc's queue keeps it first.
+- **Start** (the welded start every gc without gastownhall/gascity#9226
+  calls) stages `pack_overlay_dirs`, `overlay_dir` (with
   `per-provider/<GC_PROVIDER>/`) and `copy_files`, runs `pre_start`
   (fatal), creates the terminal in `work_dir` (which must exist by then;
   the home without one), runs `session_setup` and the setup script
@@ -765,10 +820,28 @@ GC_BIN=/path/to/gc PYTHON=python tests/conformance.sh --json
 
 It runs `gc runtime check` and `gc runtime conformance` in a scratch city
 (`GC_EXEC_CITY_PATH` under its scratch directory) and fails unless every
-requirement passes or is skipped and the report is v2-ready. All state goes
+requirement passes or is skipped, the report is v2-ready, and the provision
+group (`RPP-PROVISION-001` to `005`) passes rather than skips. All state goes
 to a scratch `GC_EXEC_STATE_DIR`; `--default-root` (CI only) proves the
 default state root instead. Without `--json` it reads the text report, for a
 gc that cannot encode it.
+
+gc's un-welded launch contract (`runtimetest.RunUnweldedLaunchContract`)
+runs through gc's own exec provider against fake-hc, with the pinned
+gascity module (or a local checkout in `GASCITY_SRC`):
+
+```bash
+GASCITY_PIN=<commit> PYTHON=python tests/gccontract/run.sh
+```
+
+It copies the module to a scratch directory, installs
+`tests/gccontract/unwelded_test.go.in` there as a test of gc's
+`internal/runtime/exec` package, and runs it: the launch is identified from
+the moment the start returns, the first turn is handed back and queued, a
+startup dialog is answered before it, the queue delivers it once, a refused
+turn is retried, a fresh start over a held name collides, and an agent that
+dies during startup leaves no box. The packs repository never compiles the
+template itself.
 
 `tests/bench_ops.py` measures each op's CPU the way gc runs it: a fresh
 process per run, against fake-hc on a scratch state root it removes after.
@@ -785,9 +858,9 @@ The process-table ops (`observe` with names, `is-attached`, `inventory`,
 `process-alive`, `start`, `stop`) scale with the host's process count, which
 the bench prints.
 
-CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12,
-with gc pinned to a gascity commit, and the unit tier again in the shared
-pytest step. The 3.12 leg also runs `tests/unit/test_op_imports.py` on
+CI runs all of this in the `runtime-herdr-core` job on Python 3.9 and 3.12
+(the contract harness on the 3.12 leg), with gc pinned to a gascity commit,
+and the unit tier again in the shared pytest step. The 3.12 leg also runs `tests/unit/test_op_imports.py` on
 Python 3.14, since what an op imports can change with the interpreter.
 
 When the hc pin moves, re-vendor `tests/fakehc/hc.openrpc.json` from the new

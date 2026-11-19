@@ -91,6 +91,21 @@ def test_runtime_herdr_core_runs_gc_conformance_against_a_pinned_gc() -> None:
     assert not any("||" in line for line in active), "a conformance failure must fail the job"
 
 
+def test_runtime_herdr_core_runs_gcs_unwelded_launch_contract_at_the_conformance_pin() -> None:
+    workflow = yaml.safe_load(
+        REPO_ROOT.joinpath(".github", "workflows", "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = {step.get("name"): step for step in workflow["jobs"]["runtime-herdr-core"]["steps"]}
+    step = steps.get("gc un-welded launch contract against fake-hc")
+    assert step is not None, f"runtime-herdr-core lost its contract step; steps: {sorted(steps)}"
+    assert "continue-on-error" not in step, "the contract must block merges"
+    conformance = steps["RPP conformance against fake-hc"]
+    assert step["env"]["GASCITY_PIN"] == conformance["env"]["GASCITY_PIN"], "contract and conformance use one gc pin"
+    active = [line.strip() for line in step["run"].splitlines() if line.strip() and not line.strip().startswith("#")]
+    assert active == ["PYTHON=python tests/gccontract/run.sh"], active
+    assert REPO_ROOT.joinpath("runtime-herdr-core", "tests", "gccontract", "unwelded_test.go.in").is_file()
+
+
 def test_runtime_herdr_core_has_a_merge_blocking_aggregator() -> None:
     # A ruleset can require one stable check name; matrix legs are named per
     # Python version. The aggregator must run even when a leg fails or is

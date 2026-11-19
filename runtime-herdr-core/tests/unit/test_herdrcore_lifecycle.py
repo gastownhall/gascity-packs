@@ -661,3 +661,23 @@ def test_an_agent_that_dies_during_startup_fails_the_start(city: City) -> None:
     assert done.code == 1 and "exited during startup" in done.stderr
     one_shot = city.start("mc-b", start_config(command="exit 0", lifecycle="one_shot"))
     assert one_shot.code == 0, one_shot.stderr
+
+
+def test_stop_of_a_provisioned_only_name_drops_its_record_and_exits_0(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.provisioned import record_path
+
+    assert city.run("provision", "mc-a", stdin=start_config().encode()).code == 0
+    path = Path(record_path(city.context(), "mc-a"))
+    assert path.exists()
+    done = city.run("stop", "mc-a")
+    assert done.code == 0, done.stderr
+    assert not path.exists()
+    assert city.run("stop", "mc-a").code == 0
+
+
+def test_a_welded_start_drops_a_stale_provision_record(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.provisioned import record_path
+
+    assert city.run("provision", "mc-a", stdin=start_config().encode()).code == 0
+    assert city.start("mc-a", start_config()).code == 0
+    assert not Path(record_path(city.context(), "mc-a")).exists()

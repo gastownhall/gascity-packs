@@ -30,16 +30,27 @@ Capability = Literal[
     "carrier.ops",
     "idle-boundary",
     "input-outcome",
+    "proc.provision",
+    "proc.launch",
 ]
 """Tokens of gc's capability table this pack may declare (exec-session-provider.md
-"Protocol Handshake"). ``proc.exec``, ``input-fence``, ``proc.provision`` and
-``tty.attach`` are deliberately absent: the pack never declares them. Under
-``proc.exec`` gc would send its input as tmux commands over ``exec``."""
+"Protocol Handshake"). ``proc.exec``, ``input-fence`` and ``tty.attach`` are
+deliberately absent: the pack never declares them. Under ``proc.exec`` gc
+would send its input as tmux commands over ``exec``. ``proc.provision`` is
+declared only with ``proc.launch`` (gc launches through the pack's own
+``launch`` op) and ``carrier.ops``."""
 
 Locality = Literal["local"]
 
 IDENTITY_KEYS: Final = ("GC_SESSION_ID", "GC_RUNTIME_EPOCH", "GC_INSTANCE_TOKEN", "GT_PROCESS_NAMES")
 """The identity a box keeps for its life (observe.v1 rule 4)."""
+
+LAUNCH_KEYS: Final = ("GC_SESSION_ID", "GC_RUNTIME_EPOCH", "GC_INSTANCE_TOKEN", "GT_PROCESS_NAMES", "GC_CONTINUATION_EPOCH")
+"""What a new incarnation's metadata is seeded with from its start env: the
+identity (:data:`IDENTITY_KEYS`), and the continuation epoch gc writes with a launch's identity, so
+``get-meta`` answers a launch's ``GC_RUNTIME_EPOCH``,
+``GC_CONTINUATION_EPOCH`` and ``GC_INSTANCE_TOKEN`` from the moment the box
+exists (gc's queued first turn is bound to them)."""
 
 
 class WireError(ValueError):
