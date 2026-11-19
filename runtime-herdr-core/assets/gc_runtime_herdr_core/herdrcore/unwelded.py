@@ -25,10 +25,11 @@ spawn file and no process, so ``is-running`` answers false, ``observe``
 absent, and ``inventory`` leaves the name out, as while a welded start
 stages and runs ``pre_start``. ``session_live`` is never run.
 
-**launch** is the welded start's create without the first turn. Without an
-unexpired provision record in a city at rest (parked or never started) it
-exits 1 and starts no core: a late launch after ``gc stop`` or
-``server-stop`` never revives the city. Under the name's lock, with every
+**launch** is the welded start's create without the first turn. In a
+parked city, or without an unexpired provision record in a city never
+started, it exits 1 and starts no core: a late launch after ``gc stop`` or
+``server-stop`` never revives the city, even when a provision's last write
+landed after ``server-stop`` dropped the records. Under the name's lock, with every
 record of the name (finished ones too):
 
 * ``fresh_only`` and any record: exit 73, touching nothing;
@@ -67,7 +68,7 @@ from ..rpp.ops import OpError, OpResult
 from ..rpp.wire import StartConfig, WireError, parse_start_config
 from . import provisioned
 from .context import OpContext
-from .core import at_rest, ensure_core
+from .core import at_rest, ensure_core, parked
 from .lifecycle import (
     SESSION_LIVE_SKIPPED,
     Plan,
@@ -152,8 +153,11 @@ def op_launch(ctx: OpContext) -> OpResult:
 
 
 def _launch(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
-    if provisioned.read(ctx, name, ctx.host.now_ms()) is None and at_rest(ctx):
-        raise _nothing_provisioned(name)  # never a core for a city at rest
+    # Never a core for a city at rest. A parked city refuses whatever the
+    # record says: server-stop parks it after any provision's ensure_core
+    # unparked it, so a record there is stale.
+    if parked(ctx) or (provisioned.read(ctx, name, ctx.host.now_ms()) is None and at_rest(ctx)):
+        raise _nothing_provisioned(name)
     hc_bin = ensure_core(ctx)
     client = ctx.client()
     warnings: List[str] = []
