@@ -1,0 +1,32 @@
+Upstream base: 520e95cb22992a8a1017f7a60da267f203497c7e; regression tests added before adapting source.
+GC_NO_INSTALL=1; GC_TEMPLATE unset; ICU CGO flags as fork-go.txt; private incident fixture enabled.
+go -C slack-full/adapter test ./... -count=1 -v -run TestReadBackInvestorDigest|TestAcceptedPublishSurvivesReadbackFailure
+=== RUN   TestReadBackInvestorDigest
+    publish_acceptance_test.go:65: Using private recorded incident fixture (body omitted)
+    publish_acceptance_test.go:78: Slack readback content mismatch for message 1791976711.647429
+--- FAIL: TestReadBackInvestorDigest (0.00s)
+=== RUN   TestAcceptedPublishSurvivesReadbackFailure
+=== RUN   TestAcceptedPublishSurvivesReadbackFailure/absent
+2026/10/15 06:22:53 slack readback failed: Slack message 1700.001 not present in channel C123 readback
+    publish_acceptance_test.go:112: accepted post reported as failure: {Conversation:{ScopeID: Provider: AccountID: ConversationID: ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed truncated:true]}
+=== RUN   TestAcceptedPublishSurvivesReadbackFailure/mismatch
+2026/10/15 06:22:53 slack readback failed: Slack readback content mismatch for message 1700.001
+    publish_acceptance_test.go:112: accepted post reported as failure: {Conversation:{ScopeID: Provider: AccountID: ConversationID: ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed truncated:true]}
+=== RUN   TestAcceptedPublishSurvivesReadbackFailure/auth
+2026/10/15 06:22:53 slack readback failed: Slack readback rejected: missing_scope
+    publish_acceptance_test.go:112: accepted post reported as failure: {Conversation:{ScopeID: Provider: AccountID: ConversationID: ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:auth Metadata:map[readback:readback_auth truncated:true]}
+=== RUN   TestAcceptedPublishSurvivesReadbackFailure/unavailable
+2026/10/15 06:22:53 slack readback failed: Slack readback rejected: internal_error
+    publish_acceptance_test.go:112: accepted post reported as failure: {Conversation:{ScopeID: Provider: AccountID: ConversationID: ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:transient Metadata:map[readback:readback_unavailable truncated:true]}
+=== RUN   TestAcceptedPublishSurvivesReadbackFailure/malformed
+2026/10/15 06:22:53 slack readback failed: decode Slack readback response: invalid character 'o' in literal null (expecting 'u')
+    publish_acceptance_test.go:112: accepted post reported as failure: {Conversation:{ScopeID: Provider: AccountID: ConversationID: ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:transient Metadata:map[readback:readback_unavailable truncated:true]}
+--- FAIL: TestAcceptedPublishSurvivesReadbackFailure (0.00s)
+    --- FAIL: TestAcceptedPublishSurvivesReadbackFailure/absent (0.00s)
+    --- FAIL: TestAcceptedPublishSurvivesReadbackFailure/mismatch (0.00s)
+    --- FAIL: TestAcceptedPublishSurvivesReadbackFailure/auth (0.00s)
+    --- FAIL: TestAcceptedPublishSurvivesReadbackFailure/unavailable (0.00s)
+    --- FAIL: TestAcceptedPublishSurvivesReadbackFailure/malformed (0.00s)
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.245s
+FAIL

@@ -73,50 +73,6 @@ func TestSlackReadbackTimingDefaults(t *testing.T) {
 	}
 }
 
-// TestSlackReadbackReceiptFailureMapsOntoGCVocabulary pins the wire contract.
-//
-// gc's PublishFailureKind is a closed set, but it is a string typedef, so an
-// adapter-invented kind deserializes without error and every consumer written
-// against the documented enum silently takes its default arm. The bug that
-// causes is invisible from this side — nothing here would fail — so the mapping
-// is pinned against the literal gc vocabulary instead, and the adapter's own
-// classification is asserted to survive in metadata rather than on the wire.
-func TestSlackReadbackReceiptFailureMapsOntoGCVocabulary(t *testing.T) {
-	gcVocabulary := map[string]bool{
-		"unsupported": true, "transient": true, "rate_limited": true,
-		"permanent": true, "auth": true, "not_found": true,
-	}
-	tests := []struct {
-		readback string
-		wantKind string
-	}{
-		{slackReadbackUnconfirmed, "permanent"},
-		{slackReadbackUnavailable, "transient"},
-		{slackReadbackAuth, "auth"},
-	}
-	for _, test := range tests {
-		t.Run(test.readback, func(t *testing.T) {
-			kind, detail := slackReadbackReceiptFailure(
-				readbackFailure(test.readback, false, "readback failed"))
-			if kind != test.wantKind {
-				t.Errorf("failure kind = %q, want %q", kind, test.wantKind)
-			}
-			if !gcVocabulary[kind] {
-				t.Errorf("failure kind %q is outside gc's PublishFailureKind set %v", kind, gcVocabulary)
-			}
-			if detail != test.readback {
-				t.Errorf("metadata detail = %q, want %q: the closed enum cannot carry it, so metadata must",
-					detail, test.readback)
-			}
-		})
-	}
-	// An untyped error is the "we do not know" case and must not claim more
-	// than transient.
-	if kind, detail := slackReadbackReceiptFailure(errors.New("unknown")); kind != "transient" || detail != slackReadbackUnavailable {
-		t.Errorf("untyped error mapped to (%q, %q), want (transient, %q)", kind, detail, slackReadbackUnavailable)
-	}
-}
-
 func TestReadBackPublishedMessageFromChannelHistory(t *testing.T) {
 	newSlackReadbackServer(t, "/conversations.history", func(query url.Values) {
 		assertSlackReadbackQuery(t, query, "C123", "1700.001", "1")
@@ -415,44 +371,30 @@ func TestNewSlackReadbackRequestRejectsMissingIdentity(t *testing.T) {
 	}
 }
 
-func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+func TestHandlePublishReportsAcceptanceAndExactSlackReadback(t *testing.T) {
 	fastReadbackTimings(t)
 	tests := []struct {
-		name          string
-		history       string
-		wantDelivered bool
-		wantFailure   string
-		wantReadback  string
+		name         string
+		history      string
+		wantReadback string
 	}{
 		{
-			name:          "exact message is delivered",
-			history:       `{"ok":true,"messages":[{"ts":"1700.001","text":"hello"}]}`,
-			wantDelivered: true,
+			name:    "exact message is delivered",
+			history: `{"ok":true,"messages":[{"ts":"1700.001","text":"hello"}]}`,
 		},
 		{
-			// The read path answered and the message was not there. Re-posting
-			// the identical payload cannot change that, so the kind a caller's
-			// retry policy reads is permanent — with the adapter's own
-			// classification alongside it, since gc's enum cannot say it.
-			name:         "missing message fails loudly",
+			name:         "missing message reports readback unconfirmed",
 			history:      `{"ok":true,"messages":[]}`,
-			wantFailure:  "permanent",
 			wantReadback: slackReadbackUnconfirmed,
 		},
 		{
-			// A token that cannot read history is a provisioning fault, and
-			// gc's vocabulary already has the word for it. Distinguishing this
-			// from the case above is the point: one says "fix the token", the
-			// other says "the message is not there".
 			name:         "broken read path is distinct from absent acknowledgement",
 			history:      `{"ok":false,"error":"missing_scope"}`,
-			wantFailure:  "auth",
 			wantReadback: slackReadbackAuth,
 		},
 		{
 			name:         "unavailable read path is retryable",
 			history:      `{"ok":false,"error":"internal_error"}`,
-			wantFailure:  "transient",
 			wantReadback: slackReadbackUnavailable,
 		},
 	}
@@ -485,8 +427,8 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
 			if err := json.Unmarshal(recorder.Body.Bytes(), &receipt); err != nil {
 				t.Fatalf("decode receipt %q: %v", recorder.Body.String(), err)
 			}
-			if receipt.Delivered != test.wantDelivered || receipt.FailureKind != test.wantFailure {
-				t.Fatalf("receipt = %+v, want delivered=%v failure=%q", receipt, test.wantDelivered, test.wantFailure)
+			if !receipt.Delivered || receipt.FailureKind != "" {
+				t.Fatalf("receipt = %+v, want accepted without a publish failure", receipt)
 			}
 			if got := receipt.Metadata[receiptMetadataKeyReadback]; got != test.wantReadback {
 				t.Fatalf("receipt metadata[%q] = %q, want %q", receiptMetadataKeyReadback, got, test.wantReadback)
@@ -540,8 +482,8 @@ func TestHandlePublishReplaysPostedButUnconfirmedReceipt(t *testing.T) {
 	}
 
 	first := publish()
-	if first.Delivered || first.MessageID != "1700.001" {
-		t.Fatalf("first receipt = %+v, want undelivered with the real ts Slack answered", first)
+	if !first.Delivered || publishReadbackConfirmed(first) || first.MessageID != "1700.001" {
+		t.Fatalf("first receipt = %+v, want accepted but unconfirmed with the real ts Slack answered", first)
 	}
 
 	second := publish()
@@ -556,12 +498,8 @@ func TestHandlePublishReplaysPostedButUnconfirmedReceipt(t *testing.T) {
 	}
 }
 
-// TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage is the other
-// side of F2, and the reason the remembered receipt is not simply replayed. If
-// the re-verification positively reports the message absent, the key must be
-// released so the caller's retry actually posts — remembering it forever would
-// turn one lost message into permanent silence on that key.
-func TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage(t *testing.T) {
+// A later empty read must not release an accepted timestamp for re-posting.
+func TestHandlePublishKeepsTheKeyWhenSlackReadbackDoesNotFindTheMessage(t *testing.T) {
 	fastReadbackTimings(t)
 	var posts, reads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -569,7 +507,7 @@ func TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage(t *testing.T)
 		if strings.HasPrefix(r.URL.Path, "/conversations.") {
 			// First publish: the read leg is down, so the receipt is
 			// remembered. Afterwards the read works and reports the message
-			// absent, which releases the key.
+			// absent, which still must not release the key.
 			if reads.Add(1) <= int32(slackReadbackTimings.attempts) {
 				w.WriteHeader(http.StatusBadGateway)
 				return
@@ -597,8 +535,8 @@ func TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage(t *testing.T)
 		t.Fatalf("chat.postMessage called %d times on the first publish, want 1", got)
 	}
 	publish()
-	if got := posts.Load(); got != 2 {
-		t.Fatalf("chat.postMessage called %d times, want 2: a readback that proves the message absent must free the key", got)
+	if got := posts.Load(); got != 1 {
+		t.Fatalf("chat.postMessage called %d times, want 1: an empty read cannot undo acceptance", got)
 	}
 }
 

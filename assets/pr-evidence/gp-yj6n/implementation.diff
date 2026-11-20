@@ -1,0 +1,666 @@
+diff --git a/slack-full/CHANGELOG.md b/slack-full/CHANGELOG.md
+index 9c21d99c..7e858fdb 100644
+--- a/slack-full/CHANGELOG.md
++++ b/slack-full/CHANGELOG.md
+@@ -12,0 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
++- **Accepted text posts no longer fail when readback is unconfirmed** (gp-yj6n).
++  A Slack message timestamp now preserves `delivered=true` with no publish
++  failure kind. Readback absence, text mismatch, transport failure, and auth
++  failures remain visible in receipt metadata and the durable evidence store.
++  Keyed retries recheck the accepted timestamp without reposting; confirmation
++  bookkeeping remains once-only. The three text publish/reply CLIs include
++  metadata in terse JSON, exit zero on a timestamp (including legacy receipts),
++  and report unconfirmed reads on stderr. See [delivery evidence](docs/delivery-evidence.md).
++  The gp-obim normalizer already handles the incident's two mailto wrappers;
++  this change preserves that comparator and adds recorded-incident coverage.
++
+diff --git a/slack-full/README.md b/slack-full/README.md
+index 7cf1361a..7e66e419 100644
+--- a/slack-full/README.md
++++ b/slack-full/README.md
+@@ -525,0 +526,5 @@ name the owner again.
++Text publishes report Slack acceptance separately from readback confirmation.
++Receipts with a message timestamp remain successful; readback uncertainty is
++visible in metadata and CLI stderr. See the [delivery-evidence contract](docs/delivery-evidence.md)
++for receipt fields, retry behavior, and durable receipt lookup.
++
+diff --git a/slack-full/adapter/main.go b/slack-full/adapter/main.go
+index a519fce7..e99e6811 100644
+--- a/slack-full/adapter/main.go
++++ b/slack-full/adapter/main.go
+@@ -1295 +1295 @@ type publishReceipt struct {
+-	// named fields above cannot express — currently only "truncated". gc
++	// named fields above cannot express — truncation, readback and storage. gc
+@@ -2475,13 +2475,2 @@ func (r publishReceipt) clone() publishReceipt {
+-// publishReceiptBlocksRepost reports whether a retry on the same idempotency
+-// key must be answered from this receipt instead of posting again.
+-//
+-// A delivered receipt replays outright. The harder case is a write Slack
+-// accepted — ok:true with a real ts — whose readback then failed. If the read
+-// leg itself was unavailable, or the token cannot read history at all, nothing
+-// is known about the message except that Slack took it, so re-posting would
+-// duplicate a message that is very probably in the channel. Those receipts are
+-// remembered and re-verified (replayPublishReceipt) rather than replayed as-is.
+-//
+-// readback_unconfirmed stays strict and is never remembered: there the read
+-// path answered and the message was not in the channel, so the key must be
+-// free to post again.
++// publishReceiptBlocksRepost keeps every accepted timestamp in the dedup
++// cache. A readback miss cannot authorize posting an accepted message again.
+@@ -2489,8 +2478 @@ func publishReceiptBlocksRepost(receipt publishReceipt) bool {
+-	if receipt.Delivered {
+-		return true
+-	}
+-	switch receipt.Metadata[receiptMetadataKeyReadback] {
+-	case slackReadbackUnavailable, slackReadbackAuth:
+-		return receipt.MessageID != ""
+-	}
+-	return false
++	return receipt.Delivered || receipt.MessageID != ""
+@@ -2502 +2484 @@ func publishReceiptBlocksRepost(receipt publishReceipt) bool {
+-// A delivered receipt is never replaced by an undelivered one: a slower retry
++// A confirmed receipt is never replaced by an unconfirmed one: a slower retry
+@@ -2505 +2487 @@ func publishReceiptBlocksRepost(receipt publishReceipt) bool {
+-// unconfirmed-to-delivered transition commitReVerified claims once (the
++// unconfirmed-to-confirmed transition commitReVerified claims once (the
+@@ -2514 +2496 @@ func (c *publishDedupCache) Put(key string, receipt publishReceipt) {
+-	if e, ok := c.entries[key]; !ok || receipt.Delivered || !e.receipt.Delivered {
++	if e, ok := c.entries[key]; !ok || publishReadbackConfirmed(receipt) || !publishReadbackConfirmed(e.receipt) {
+@@ -2525,2 +2507,2 @@ func (c *publishDedupCache) Put(key string, receipt publishReceipt) {
+-// has just re-verified as delivered — under key, and reports whether THIS
+-// caller made the unconfirmed-to-delivered transition. Two retries of one key
++// has just confirmed by readback — under key, and reports whether THIS
++// caller made the unconfirmed-to-confirmed transition. Two retries of one key
+@@ -2532 +2514 @@ func (c *publishDedupCache) Put(key string, receipt publishReceipt) {
+-// delivered keeps that receipt and answers false; a key no longer cached
++// confirmed keeps that receipt and answers false; a key no longer cached
+@@ -2535 +2517 @@ func (c *publishDedupCache) commitReVerified(key string, receipt publishReceipt)
+-	if key == "" || !receipt.Delivered {
++	if key == "" || !publishReadbackConfirmed(receipt) {
+@@ -2540 +2522 @@ func (c *publishDedupCache) commitReVerified(key string, receipt publishReceipt)
+-	if e, ok := c.entries[key]; ok && e.receipt.Delivered {
++	if e, ok := c.entries[key]; ok && publishReadbackConfirmed(e.receipt) {
+@@ -2547,3 +2529 @@ func (c *publishDedupCache) commitReVerified(key string, receipt publishReceipt)
+-// Delete forgets key. It is how a remembered posted-but-unconfirmed receipt is
+-// released once a later readback proves the message is not in the channel: the
+-// key has to be free to post again at that point.
++// Delete explicitly forgets key. Readback failures never release a key.
+@@ -2701,10 +2681,3 @@ func handlePublish(cfg config, reg *identityRegistry, userAliases *userAliasMap,
+-			// The truncation warning is recorded before the readback so the
+-			// wire fact survives either outcome: it is what Slack reported
+-			// about this write, while Delivered below is what the read API can
+-			// confirm. Truncation also fails the readback, so a truncated
+-			// publish now reports Delivered:false with FailureKind "permanent"
+-			// (metadata["readback"]="readback_unconfirmed") *and*
+-			// metadata["truncated"] — strictly more than either half could say
+-			// alone. Permanent is the honest kind there: the same oversized
+-			// payload truncates identically on every retry, so re-sending it
+-			// can only add another visible partial message.
++			// Slack accepted this timestamp even if it truncated the body.
++			// Preserve the warning and report readback separately; re-posting
++			// would only create another partial message.
+@@ -2727 +2700 @@ func handlePublish(cfg config, reg *identityRegistry, userAliases *userAliasMap,
+-		if receipt.Delivered {
++		if publishReadbackConfirmed(receipt) {
+@@ -2730,3 +2703,3 @@ func handlePublish(cfg config, reg *identityRegistry, userAliases *userAliasMap,
+-		// Remember delivered receipts so a subsequent retry with the same
+-		// idempotency key replays this receipt instead of re-posting. Put
+-		// ignores empty keys and non-delivered receipts.
++		// Remember accepted receipts so a retry replays or re-verifies the
++		// original timestamp instead of re-posting. Put ignores empty keys
++		// and receipts without acceptance evidence.
+@@ -2754,2 +2727,2 @@ func handlePublish(cfg config, reg *identityRegistry, userAliases *userAliasMap,
+-// /publish reads its message back and only then sets Delivered (see
+-// confirmPublishReceipt), while this path still reports Delivered on Slack's
++// /publish also records a separate readback result (see confirmPublishReceipt),
++// while this path reports Delivered on Slack's
+diff --git a/slack-full/adapter/main_test.go b/slack-full/adapter/main_test.go
+index a8378d27..22e21917 100644
+--- a/slack-full/adapter/main_test.go
++++ b/slack-full/adapter/main_test.go
+@@ -1191,14 +1191,4 @@ func TestHandlePublishSurfacesSlackTruncationOnTheReceipt(t *testing.T) {
+-	// Truncation used to leave Delivered true, because chat.postMessage's own
+-	// answer was the only evidence. The readback is now the evidence, and a
+-	// truncated message reads back as different text, so the delivery is
+-	// reported unconfirmed. The two signals are complementary and both must
+-	// survive: "truncated" says what Slack did to the write, Delivered says
+-	// what the read API could confirm afterwards.
+-	//
+-	// "permanent" is the kind on the wire because that is gc's word for it: the
+-	// same oversized payload truncates identically on every retry, so re-sending
+-	// can only add another visible partial message. The adapter's finer-grained
+-	// classification rides in metadata, which is the only additive channel gc
+-	// forwards.
+-	if receipt.Delivered || receipt.FailureKind != "permanent" {
+-		t.Fatalf("receipt delivered=%t failure_kind=%q, want a permanent failure: the readback cannot find the text that was posted once Slack truncates it, and re-posting it truncates the same way",
++	// The partial message was posted. Preserve both Slack's truncation
++	// warning and the unconfirmed readback without telling callers to repost.
++	if !receipt.Delivered || receipt.FailureKind != "" {
++		t.Fatalf("receipt delivered=%t failure_kind=%q, want accepted without a publish failure",
+diff --git a/slack-full/adapter/publish_dedup_metadata_test.go b/slack-full/adapter/publish_dedup_metadata_test.go
+index 558baa26..f93796b1 100644
+--- a/slack-full/adapter/publish_dedup_metadata_test.go
++++ b/slack-full/adapter/publish_dedup_metadata_test.go
+@@ -74,2 +74,2 @@ func TestReplayPublishReceiptConcurrentReVerifiesDoNotRace(t *testing.T) {
+-			if !ok || receipt.Delivered {
+-				t.Errorf("replay = %+v, %v; want the remembered undelivered receipt", receipt, ok)
++			if !ok || !receipt.Delivered || publishReadbackConfirmed(receipt) {
++				t.Errorf("replay = %+v, %v; want the accepted but unconfirmed receipt", receipt, ok)
+@@ -82 +82 @@ func TestReplayPublishReceiptConcurrentReVerifiesDoNotRace(t *testing.T) {
+-	if !ok || cached.Delivered || cached.MessageID != "1700.001" || cached.Metadata[receiptMetadataKeyReadback] != slackReadbackUnavailable {
++	if !ok || !cached.Delivered || publishReadbackConfirmed(cached) || cached.MessageID != "1700.001" || cached.Metadata[receiptMetadataKeyReadback] != slackReadbackUnavailable {
+diff --git a/slack-full/adapter/publish_readback.go b/slack-full/adapter/publish_readback.go
+index 7d0b8ad3..5adfa684 100644
+--- a/slack-full/adapter/publish_readback.go
++++ b/slack-full/adapter/publish_readback.go
+@@ -1,2 +1,3 @@
+-// Publish readback requires exact message timestamp equality and canonicalized
+-// text equality for keyed and unkeyed messages alike. Thread replies are read
++// Publish readback confirms exact message timestamp equality and canonicalized
++// text equality for keyed and unkeyed messages alike. Slack acceptance with a ts
++// is delivery; a failed readback is diagnostic metadata, never a failed post. Thread replies are read
+@@ -24,4 +25,3 @@ const slackReadbackResponseLimit = 1 << 20
+-// Readback classifications. These are the adapter's own vocabulary and never
+-// reach the wire on their own: slackReadbackReceiptFailure maps them onto gc's
+-// closed PublishFailureKind set and carries the value here as receipt metadata
+-// instead. See that function for why.
++// Readback classifications live in receipt metadata. gc's PublishFailureKind
++// is closed (gascity internal/extmsg/types.go); a read failure after Slack
++// accepted a post is not a publish failure of any kind.
+@@ -29,3 +29,4 @@ const (
+-	slackReadbackUnconfirmed = "readback_unconfirmed"
+-	slackReadbackUnavailable = "readback_unavailable"
+-	slackReadbackAuth        = "readback_auth"
++	slackReadbackUnconfirmed   = "readback_unconfirmed"
++	slackReadbackUnavailable   = "readback_unavailable"
++	slackReadbackAuth          = "readback_auth"
++	receiptMetadataKeyReadback = "readback"
+@@ -34,16 +34,0 @@ const (
+-// gc's PublishFailureKind vocabulary, as far as this file needs it
+-// (gascity internal/extmsg/types.go: unsupported|transient|rate_limited|
+-// permanent|auth|not_found). Named here so the mapping below reads as a
+-// mapping rather than as bare strings.
+-const (
+-	publishFailureTransient = "transient"
+-	publishFailurePermanent = "permanent"
+-	publishFailureAuth      = "auth"
+-)
+-
+-// receiptMetadataKeyReadback carries the readback classification that
+-// PublishFailureKind cannot express. Metadata is the only additive channel gc
+-// actually forwards (see publishReceipt.Metadata), so it is where the detail
+-// the closed enum would drop has to live.
+-const receiptMetadataKeyReadback = "readback"
+-
+@@ -130,33 +114,0 @@ func slackReadbackIsRetryable(err error) bool {
+-// slackReadbackReceiptFailure maps a readback failure onto gc's
+-// PublishFailureKind vocabulary and returns the adapter-level detail to record
+-// under receiptMetadataKeyReadback.
+-//
+-// gc's PublishFailureKind is a closed, documented set. Because it is a string
+-// typedef, an adapter-invented value deserializes silently and every consumer
+-// written against the documented enum falls through its default arm — the
+-// receipt would carry a kind no retry policy can read. So the wire gets a value
+-// from gc's vocabulary and the metadata carries which readback outcome produced
+-// it, which is strictly more than an unknown enum value would have told anyone:
+-//
+-//   - unconfirmed → permanent. The read path answered and the message was not
+-//     there (or was different text). Re-posting the identical payload cannot
+-//     change that; the truncation path is the clearest case, since an oversized
+-//     body truncates the same way every time.
+-//   - unavailable → transient. The read leg failed, so nothing is known about
+-//     the message; retrying is the right response and is safe because
+-//     handlePublish caches this receipt for re-verification rather than
+-//     re-posting (see publishReceiptBlocksRepost).
+-//   - auth      → auth. A token missing history scope is a configuration
+-//     fault, and gc's vocabulary already has the word for it.
+-func slackReadbackReceiptFailure(err error) (kind, detail string) {
+-	detail = slackReadbackFailureKind(err)
+-	switch detail {
+-	case slackReadbackUnconfirmed:
+-		return publishFailurePermanent, detail
+-	case slackReadbackAuth:
+-		return publishFailureAuth, detail
+-	default:
+-		return publishFailureTransient, detail
+-	}
+-}
+-
+@@ -609,8 +561,3 @@ func readBackPublishedMessageOnce(client *http.Client, token string, target slac
+-// It cannot be a byte compare against what was posted. Slack canonicalizes text
+-// at ingestion, so a delivered message containing `&`, `<`, `>` or a bare URL
+-// reads back as different bytes than were sent — and agent traffic through this
+-// adapter is mostly PR links, dashboards and shell snippets, so that is the
+-// common shape, not a corner. A byte compare therefore reports Delivered:false
+-// for messages that are sitting in the channel, and because a non-delivered
+-// receipt is not cached (publishReceiptBlocksRepost), the caller's retry
+-// re-posts and fails the same deterministic way.
++// Slack canonicalizes text at ingestion. A byte compare would misclassify
++// delivered messages containing entities, auto-links or emoji as unconfirmed.
++// Content confirmation remains separate from the accepted delivery receipt.
+@@ -631,4 +578,11 @@ func matchReadbackMessage(message slackReadbackMessage, target slackReadbackTarg
+-// confirmPublishReceipt runs the readback for a write Slack accepted and
+-// records what it proved on the receipt. It is the only place Delivered is set
+-// for a successful post: chat.postMessage's own answer is not delivery
+-// evidence, which is the premise this whole path exists to enforce.
++// publishReadbackConfirmed separates the read proof from Slack acceptance.
++// Successful reads omit metadata.readback for wire compatibility. An accepted
++// but unconfirmed receipt must remain eligible for re-verification, including
++// the once-only busy-reaction and own-thread bookkeeping on confirmation.
++func publishReadbackConfirmed(receipt publishReceipt) bool {
++	return receipt.Delivered && receipt.Metadata[receiptMetadataKeyReadback] == ""
++}
++
++// confirmPublishReceipt preserves Slack's accepted write even when its read
++// API is unavailable, has not indexed the message, or returns different text.
++// Callers must not retry a posted message as though Slack rejected it.
+@@ -635,0 +590,8 @@ func confirmPublishReceipt(token string, receipt *publishReceipt, target slackRe
++	if receipt.MessageID == "" {
++		// ok without a ts is not evidence of acceptance.
++		receipt.Delivered = false
++		receipt.FailureKind = "transient"
++		return
++	}
++	receipt.Delivered = true
++	receipt.FailureKind = ""
+@@ -638,5 +599,0 @@ func confirmPublishReceipt(token string, receipt *publishReceipt, target slackRe
+-		receipt.Delivered = true
+-		receipt.FailureKind = ""
+-		// A re-verified receipt must not keep the detail from the read that
+-		// failed, or a caller would see a delivered receipt still blaming the
+-		// readback.
+@@ -647,3 +603,0 @@ func confirmPublishReceipt(token string, receipt *publishReceipt, target slackRe
+-	kind, detail := slackReadbackReceiptFailure(err)
+-	receipt.Delivered = false
+-	receipt.FailureKind = kind
+@@ -653 +607 @@ func confirmPublishReceipt(token string, receipt *publishReceipt, target slackRe
+-	receipt.Metadata[receiptMetadataKeyReadback] = detail
++	receipt.Metadata[receiptMetadataKeyReadback] = slackReadbackFailureKind(err)
+@@ -656,8 +610,3 @@ func confirmPublishReceipt(token string, receipt *publishReceipt, target slackRe
+-// publishReplay is what replayPublishReceipt answers a retry with: the receipt
+-// to return, and whether THIS replay is the one that proved the message
+-// delivered. A receipt that was already delivered when it was cached replays
+-// as it stands and proves nothing new; a posted-but-unconfirmed receipt whose
+-// re-verification now reads the message back is the first time anything knows
+-// the message landed, and the delivery-success bookkeeping the fresh-post path
+-// runs (the busy reaction, the own-thread registry) is owed exactly then (gf-xid
+-// finding 3f; the gf-pu2 vs-main gate's Major at main.go:2744).
++// publishReplay carries the accepted receipt and whether this retry first
++// confirmed it by readback. The busy-reaction and own-thread bookkeeping is
++// owed only to the retry that claims that confirmation transition.
+@@ -667 +616 @@ type publishReplay struct {
+-	// receipt into a delivered one.
++	// receipt into a confirmed one.
+@@ -674,8 +623,5 @@ type publishReplay struct {
+-// A delivered receipt is returned as it stands. A posted-but-unconfirmed one —
+-// a write Slack accepted whose read leg was unavailable — is re-verified
+-// instead: the message very probably exists, so the one thing this must not do
+-// is post it a second time. Only a readback that positively reports the message
+-// absent releases the key, and then by returning ok=false so the caller's
+-// normal post path runs. A re-verification that proves delivery is reported
+-// as such (publishReplay.reVerified) so the caller runs the delivery-success
+-// bookkeeping it skipped when the first readback failed.
++// A confirmed receipt is returned as it stands. An accepted but unconfirmed
++// receipt is re-read, never re-posted. Even an empty read cannot undo the
++// accepted write: indexing lag, scope changes and deletions do not authorize
++// the adapter to send the same message again. A successful re-verification
++// claims the existing once-only delivery bookkeeping transition.
+@@ -695 +641 @@ func replayPublishReceipt(
+-	if cached.Delivered {
++	if publishReadbackConfirmed(cached) {
+@@ -704,8 +650 @@ func replayPublishReceipt(
+-	if !cached.Delivered && cached.Metadata[receiptMetadataKeyReadback] == slackReadbackUnconfirmed {
+-		log.Printf("publish: dedup re-verify idem=%s ts=%s -> Slack does not have the message; releasing the key",
+-			key, cached.MessageID)
+-		dedup.Delete(key)
+-		// Let the handler persist this readback even if the next post fails.
+-		return publishReplay{receipt: cached}, false
+-	}
+-	if cached.Delivered {
++	if publishReadbackConfirmed(cached) {
+diff --git a/slack-full/adapter/publish_readback_test.go b/slack-full/adapter/publish_readback_test.go
+index 8df6b4af..a6ec40a0 100644
+--- a/slack-full/adapter/publish_readback_test.go
++++ b/slack-full/adapter/publish_readback_test.go
+@@ -76,44 +75,0 @@ func TestSlackReadbackTimingDefaults(t *testing.T) {
+-// TestSlackReadbackReceiptFailureMapsOntoGCVocabulary pins the wire contract.
+-//
+-// gc's PublishFailureKind is a closed set, but it is a string typedef, so an
+-// adapter-invented kind deserializes without error and every consumer written
+-// against the documented enum silently takes its default arm. The bug that
+-// causes is invisible from this side — nothing here would fail — so the mapping
+-// is pinned against the literal gc vocabulary instead, and the adapter's own
+-// classification is asserted to survive in metadata rather than on the wire.
+-func TestSlackReadbackReceiptFailureMapsOntoGCVocabulary(t *testing.T) {
+-	gcVocabulary := map[string]bool{
+-		"unsupported": true, "transient": true, "rate_limited": true,
+-		"permanent": true, "auth": true, "not_found": true,
+-	}
+-	tests := []struct {
+-		readback string
+-		wantKind string
+-	}{
+-		{slackReadbackUnconfirmed, "permanent"},
+-		{slackReadbackUnavailable, "transient"},
+-		{slackReadbackAuth, "auth"},
+-	}
+-	for _, test := range tests {
+-		t.Run(test.readback, func(t *testing.T) {
+-			kind, detail := slackReadbackReceiptFailure(
+-				readbackFailure(test.readback, false, "readback failed"))
+-			if kind != test.wantKind {
+-				t.Errorf("failure kind = %q, want %q", kind, test.wantKind)
+-			}
+-			if !gcVocabulary[kind] {
+-				t.Errorf("failure kind %q is outside gc's PublishFailureKind set %v", kind, gcVocabulary)
+-			}
+-			if detail != test.readback {
+-				t.Errorf("metadata detail = %q, want %q: the closed enum cannot carry it, so metadata must",
+-					detail, test.readback)
+-			}
+-		})
+-	}
+-	// An untyped error is the "we do not know" case and must not claim more
+-	// than transient.
+-	if kind, detail := slackReadbackReceiptFailure(errors.New("unknown")); kind != "transient" || detail != slackReadbackUnavailable {
+-		t.Errorf("untyped error mapped to (%q, %q), want (transient, %q)", kind, detail, slackReadbackUnavailable)
+-	}
+-}
+-
+@@ -262 +218 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		wantDelivered        bool
++		wantConfirmed        bool
+@@ -576,5 +532 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-			attempts := 1
+-			if tc.wantDelivered {
+-				attempts = 2
+-			}
+-			for range attempts {
++			for range 2 {
+@@ -587,2 +539,2 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-				if receipt.Delivered != tc.wantDelivered {
+-					t.Fatalf("receipt = %+v, want delivered=%v", receipt, tc.wantDelivered)
++				if !receipt.Delivered || publishReadbackConfirmed(receipt) != tc.wantConfirmed {
++					t.Fatalf("receipt = %+v, want accepted and readback confirmed=%v", receipt, tc.wantConfirmed)
+@@ -755 +707 @@ func TestNewSlackReadbackRequestRejectsMissingIdentity(t *testing.T) {
+-func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
++func TestHandlePublishReportsAcceptanceAndExactSlackReadback(t *testing.T) {
+@@ -758,5 +710,3 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-		name          string
+-		history       string
+-		wantDelivered bool
+-		wantFailure   string
+-		wantReadback  string
++		name         string
++		history      string
++		wantReadback string
+@@ -765,3 +715,2 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			name:          "exact message is delivered",
+-			history:       `{"ok":true,"messages":[{"ts":"1700.001","text":"hello"}]}`,
+-			wantDelivered: true,
++			name:    "exact message is delivered",
++			history: `{"ok":true,"messages":[{"ts":"1700.001","text":"hello"}]}`,
+@@ -770,5 +719 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			// The read path answered and the message was not there. Re-posting
+-			// the identical payload cannot change that, so the kind a caller's
+-			// retry policy reads is permanent — with the adapter's own
+-			// classification alongside it, since gc's enum cannot say it.
+-			name:         "missing message fails loudly",
++			name:         "missing message reports readback unconfirmed",
+@@ -776 +720,0 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			wantFailure:  "permanent",
+@@ -780,4 +723,0 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			// A token that cannot read history is a provisioning fault, and
+-			// gc's vocabulary already has the word for it. Distinguishing this
+-			// from the case above is the point: one says "fix the token", the
+-			// other says "the message is not there".
+@@ -786 +725,0 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			wantFailure:  "auth",
+@@ -792 +730,0 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			wantFailure:  "transient",
+@@ -825,2 +763,2 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
+-			if receipt.Delivered != test.wantDelivered || receipt.FailureKind != test.wantFailure {
+-				t.Fatalf("receipt = %+v, want delivered=%v failure=%q", receipt, test.wantDelivered, test.wantFailure)
++			if !receipt.Delivered || receipt.FailureKind != "" {
++				t.Fatalf("receipt = %+v, want accepted without a publish failure", receipt)
+@@ -880,2 +818,2 @@ func TestHandlePublishReplaysPostedButUnconfirmedReceipt(t *testing.T) {
+-	if first.Delivered || first.MessageID != "1700.001" {
+-		t.Fatalf("first receipt = %+v, want undelivered with the real ts Slack answered", first)
++	if !first.Delivered || publishReadbackConfirmed(first) || first.MessageID != "1700.001" {
++		t.Fatalf("first receipt = %+v, want accepted but unconfirmed with the real ts Slack answered", first)
+@@ -896,6 +834,2 @@ func TestHandlePublishReplaysPostedButUnconfirmedReceipt(t *testing.T) {
+-// TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage is the other
+-// side of F2, and the reason the remembered receipt is not simply replayed. If
+-// the re-verification positively reports the message absent, the key must be
+-// released so the caller's retry actually posts — remembering it forever would
+-// turn one lost message into permanent silence on that key.
+-func TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage(t *testing.T) {
++// A later empty read must not release an accepted timestamp for re-posting.
++func TestHandlePublishKeepsTheKeyWhenSlackReadbackDoesNotFindTheMessage(t *testing.T) {
+@@ -909 +843 @@ func TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage(t *testing.T)
+-			// absent, which releases the key.
++			// absent, which still must not release the key.
+@@ -937,2 +871,2 @@ func TestHandlePublishReleasesTheKeyWhenSlackDoesNotHaveTheMessage(t *testing.T)
+-	if got := posts.Load(); got != 2 {
+-		t.Fatalf("chat.postMessage called %d times, want 2: a readback that proves the message absent must free the key", got)
++	if got := posts.Load(); got != 1 {
++		t.Fatalf("chat.postMessage called %d times, want 1: an empty read cannot undo acceptance", got)
+diff --git a/slack-full/adapter/publish_receipts.go b/slack-full/adapter/publish_receipts.go
+index 6a00f900..41eb46c3 100644
+--- a/slack-full/adapter/publish_receipts.go
++++ b/slack-full/adapter/publish_receipts.go
+@@ -40 +40,2 @@ var errInvalidPublishReceipt = errors.New("invalid publish receipt")
+-// delivered is true only after timestamp + canonicalized text verification.
++// delivered is true once Slack accepts the timestamp; readback separately
++// records timestamp + canonicalized text verification. See docs/delivery-evidence.md.
+@@ -44 +45 @@ var errInvalidPublishReceipt = errors.New("invalid publish receipt")
+-// between these steps leaves pending evidence of acceptance, not delivery.
++// between these steps leaves delivered=true with readback=pending.
+@@ -179,2 +180,2 @@ func (s *publishReceiptStore) RecordPosted(key string, receipt publishReceipt, p
+-		ConversationID: receipt.Conversation.ConversationID,
+-		MessageID:      receipt.MessageID, ThreadTS: post.ThreadTS, ReplyToMessageID: post.ThreadTS,
++		Delivered: true, ConversationID: receipt.Conversation.ConversationID,
++		MessageID: receipt.MessageID, ThreadTS: post.ThreadTS, ReplyToMessageID: post.ThreadTS,
+@@ -192 +193 @@ func (s *publishReceiptStore) RecordReadback(key string, receipt publishReceipt)
+-	if stored.MessageID != receipt.MessageID || stored.ConversationID != receipt.Conversation.ConversationID || stored.Delivered {
++	if stored.MessageID != receipt.MessageID || stored.ConversationID != receipt.Conversation.ConversationID || stored.Readback == "confirmed" {
+@@ -197 +198 @@ func (s *publishReceiptStore) RecordReadback(key string, receipt publishReceipt)
+-	if receipt.Delivered {
++	if publishReadbackConfirmed(receipt) {
+diff --git a/slack-full/adapter/publish_receipts_test.go b/slack-full/adapter/publish_receipts_test.go
+index 2183cc2c..a9176c82 100644
+--- a/slack-full/adapter/publish_receipts_test.go
++++ b/slack-full/adapter/publish_receipts_test.go
+@@ -45 +45 @@ func TestPublishReceiptSurvivesRestartAndReadbackUpdates(t *testing.T) {
+-	if got.Delivered || got.Readback != "pending" || got.ConversationID != "C1" || got.MessageID != "1700.002" || got.ThreadTS != "1700.001" || got.ReplyToMessageID != got.ThreadTS || !got.PostedAt.Equal(postedAt) {
++	if !got.Delivered || got.Readback != "pending" || got.ConversationID != "C1" || got.MessageID != "1700.002" || got.ThreadTS != "1700.001" || got.ReplyToMessageID != got.ThreadTS || !got.PostedAt.Equal(postedAt) {
+@@ -69,2 +69,2 @@ func TestPublishReceiptSurvivesRestartAndReadbackUpdates(t *testing.T) {
+-	receipt.Delivered = false
+-	receipt.FailureKind = "transient"
++	receipt.Delivered = true
++	receipt.FailureKind = ""
+@@ -217 +217 @@ func TestPublishReceiptGET(t *testing.T) {
+-				if got["delivered"] != false || got["conversation_id"] != "C1" || got["message_id"] != "1.2" || got["thread_ts"] != "1.1" || got["reply_to_message_id"] != "1.1" || got["readback"] != "pending" {
++				if got["delivered"] != true || got["conversation_id"] != "C1" || got["message_id"] != "1.2" || got["thread_ts"] != "1.1" || got["reply_to_message_id"] != "1.1" || got["readback"] != "pending" {
+@@ -340 +340 @@ func TestHandlePublishPersistsAcceptanceBeforeReadbackAndRetry(t *testing.T) {
+-		if receipt.Delivered != confirmed || captured.Text != posted || posts != 1 {
++		if !receipt.Delivered || publishReadbackConfirmed(receipt) != confirmed || captured.Text != posted || posts != 1 {
+@@ -349 +349 @@ func TestHandlePublishPersistsAcceptanceBeforeReadbackAndRetry(t *testing.T) {
+-		if err != nil || got.Delivered != confirmed || got.Readback != wantState || got.FailureKind != receipt.FailureKind {
++		if err != nil || !got.Delivered || got.Readback != wantState || got.FailureKind != receipt.FailureKind {
+@@ -415 +415 @@ func TestHandlePublishPersistenceFailureConcurrentReplays(t *testing.T) {
+-				if receipt.Delivered != confirmed || receipt.MessageID != "1.2" || receipt.Metadata["receipt_store"] != "unavailable" {
++				if !receipt.Delivered || publishReadbackConfirmed(receipt) != confirmed || receipt.MessageID != "1.2" || receipt.Metadata["receipt_store"] != "unavailable" {
+diff --git a/slack-full/adapter/publish_replay_bookkeeping_test.go b/slack-full/adapter/publish_replay_bookkeeping_test.go
+index 68cbe566..d80f545e 100644
+--- a/slack-full/adapter/publish_replay_bookkeeping_test.go
++++ b/slack-full/adapter/publish_replay_bookkeeping_test.go
+@@ -131 +131 @@ func TestHandlePublishReplayThatReVerifiesDeliveryRunsTheDeliveryBookkeeping(t *
+-			if first.Delivered || first.MessageID != "1700.001" {
++			if !first.Delivered || publishReadbackConfirmed(first) || first.MessageID != "1700.001" {
+@@ -186 +186 @@ func TestReplayPublishReceiptReportsTheReVerificationExactlyOnce(t *testing.T) {
+-	dedup.Put("k-1", publishReceipt{MessageID: "1700.001", Metadata: map[string]string{receiptMetadataKeyReadback: slackReadbackUnavailable}})
++	dedup.Put("k-1", publishReceipt{Delivered: true, MessageID: "1700.001", Metadata: map[string]string{receiptMetadataKeyReadback: slackReadbackUnavailable}})
+@@ -206 +206 @@ func TestReplayPublishReceiptReportsTheReVerificationExactlyOnce(t *testing.T) {
+-	if cached, ok := dedup.Get("k-1"); !ok || !cached.Delivered {
++	if cached, ok := dedup.Get("k-1"); !ok || !publishReadbackConfirmed(cached) {
+@@ -224 +224 @@ func TestReplayPublishReceiptStaleUnconfirmedWriteCannotReopenTheTransition(t *t
+-	unconfirmed := publishReceipt{MessageID: "1700.001", Metadata: map[string]string{receiptMetadataKeyReadback: slackReadbackUnavailable}}
++	unconfirmed := publishReceipt{Delivered: true, MessageID: "1700.001", Metadata: map[string]string{receiptMetadataKeyReadback: slackReadbackUnavailable}}
+@@ -233 +233 @@ func TestReplayPublishReceiptStaleUnconfirmedWriteCannotReopenTheTransition(t *t
+-	if cached, ok := dedup.Get("k-1"); !ok || !cached.Delivered {
++	if cached, ok := dedup.Get("k-1"); !ok || !publishReadbackConfirmed(cached) {
+@@ -275 +275 @@ func TestHandlePublishReplayDoesNotClearABusyMarkNewerThanTheReply(t *testing.T)
+-	if first := publish(); first.Delivered {
++	if first := publish(); !first.Delivered || publishReadbackConfirmed(first) {
+diff --git a/slack-full/scripts/slack_chat_publish.py b/slack-full/scripts/slack_chat_publish.py
+index 263a6217..4a929ced 100755
+--- a/slack-full/scripts/slack_chat_publish.py
++++ b/slack-full/scripts/slack_chat_publish.py
+@@ -161,8 +161 @@ def main(argv: list[str]) -> int:
+-    delivered, failure_kind = common.interpret_publish_receipt(result)
+-    if not delivered:
+-        print(
+-            f"slack publish failed: delivered=false failure_kind={failure_kind or 'unknown'}",
+-            file=sys.stderr,
+-        )
+-        return 1
+-    return 0
++    return common.publish_receipt_exit_code(result)
+diff --git a/slack-full/scripts/slack_chat_publish_to_channel.py b/slack-full/scripts/slack_chat_publish_to_channel.py
+index c53b7c6d..2022fe72 100755
+--- a/slack-full/scripts/slack_chat_publish_to_channel.py
++++ b/slack-full/scripts/slack_chat_publish_to_channel.py
+@@ -117,8 +117 @@ def main(argv: list[str]) -> int:
+-    delivered, failure_kind = common.interpret_publish_receipt(result)
+-    if not delivered:
+-        print(
+-            f"slack publish failed: delivered=false failure_kind={failure_kind or 'unknown'}",
+-            file=sys.stderr,
+-        )
+-        return 1
+-    return 0
++    return common.publish_receipt_exit_code(result)
+diff --git a/slack-full/scripts/slack_chat_reply_current.py b/slack-full/scripts/slack_chat_reply_current.py
+index c4a65fa0..c2d0d61e 100755
+--- a/slack-full/scripts/slack_chat_reply_current.py
++++ b/slack-full/scripts/slack_chat_reply_current.py
+@@ -815,8 +815 @@ def main(argv: list[str]) -> int:
+-    delivered, failure_kind = common.interpret_publish_receipt(result)
+-    if not delivered:
+-        print(
+-            f"slack publish failed: delivered=false failure_kind={failure_kind or 'unknown'}",
+-            file=sys.stderr,
+-        )
+-        return 1
+-    return 0
++    return common.publish_receipt_exit_code(result)
+diff --git a/slack-full/scripts/slack_intake_common.py b/slack-full/scripts/slack_intake_common.py
+index 54624907..2c37d056 100755
+--- a/slack-full/scripts/slack_intake_common.py
++++ b/slack-full/scripts/slack_intake_common.py
+@@ -268,2 +268,2 @@ def publish_via_gc_outbound(
+-    `delivered: false` is a real failure (slack auth/channel/rate-limit
+-    rejection); callers MUST pass the result through
++    `delivered: false` without a message timestamp is a real failure
++    (Slack auth/channel/rate-limit rejection); callers MUST pass the result through
+@@ -329,0 +330,12 @@ def publish_via_adapter(
++def _publish_receipt(result: Any) -> dict[str, Any]:
++    """Unwrap adapter and both gc receipt shapes without reading transcript IDs."""
++    if not isinstance(result, dict):
++        return {}
++    if "delivered" in result or "message_id" in result:
++        return result
++    for key in ("Receipt", "receipt"):
++        if isinstance(result.get(key), dict):
++            return result[key]
++    return {}
++
++
+@@ -331,17 +343,5 @@ def interpret_publish_receipt(result: Any) -> tuple[bool, str]:
+-    """Inspect a publish-receipt JSON and return (delivered, failure_kind).
+-
+-    The HTTP layer can succeed (200) while the receipt's `delivered`
+-    field is false — slack rejected for auth, channel, rate-limit, etc.
+-    Without this inspection, callers stamp loop_close_posted_at based on
+-    a 200 alone and the post is silently lost.
+-
+-    Handles three shapes seen in the wild:
+-      - Adapter-direct (lowercase keys, per adapter/main.go publishReceipt
+-        JSON tags): {"delivered": bool, "failure_kind": "...", ...}
+-      - gc-wrapped, capitalized (Go struct fields without json tags):
+-        {"Receipt": {"Delivered": bool, "FailureKind": "...", ...}}
+-      - gc-wrapped, lowercase: {"receipt": {"delivered": bool, ...}}
+-
+-    Fail-closed semantics: if no recognizable `delivered` key is found,
+-    returns (False, "schema_mismatch") — better to noisily fail an
+-    unknown response than silently mask one.
++    """Return acceptance and publish failure for adapter or gc receipt JSON.
++
++    A message timestamp proves Slack accepted the post, including legacy
++    receipts that incorrectly reported a readback miss as delivered=false.
++    Unknown shapes without acceptance evidence still fail closed.
+@@ -351,16 +351,8 @@ def interpret_publish_receipt(result: Any) -> tuple[bool, str]:
+-    if "delivered" in result:
+-        delivered = bool(result.get("delivered"))
+-        kind = str(result.get("failure_kind", "")) if not delivered else ""
+-        return delivered, kind
+-    receipt = result.get("Receipt") if isinstance(result.get("Receipt"), dict) else None
+-    if receipt is None:
+-        receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else None
+-    if isinstance(receipt, dict):
+-        if "Delivered" in receipt:
+-            delivered = bool(receipt.get("Delivered"))
+-            kind = str(receipt.get("FailureKind", "")) if not delivered else ""
+-            return delivered, kind
+-        if "delivered" in receipt:
+-            delivered = bool(receipt.get("delivered"))
+-            kind = str(receipt.get("failure_kind", "")) if not delivered else ""
+-            return delivered, kind
++    receipt = _publish_receipt(result)
++    message_id = receipt.get("MessageID") or receipt.get("message_id")
++    if isinstance(message_id, str) and message_id.strip():
++        return True, ""
++    for delivered_key, failure_key in (("Delivered", "FailureKind"), ("delivered", "failure_kind")):
++        if delivered_key in receipt:
++            delivered = bool(receipt[delivered_key])
++            return delivered, str(receipt.get(failure_key, "")) if not delivered else ""
+@@ -369,0 +362,18 @@ def interpret_publish_receipt(result: Any) -> tuple[bool, str]:
++def publish_receipt_exit_code(result: Any) -> int:
++    """Report readback uncertainty on stderr without inducing a duplicate post."""
++    delivered, failure_kind = interpret_publish_receipt(result)
++    if not delivered:
++        print(f"slack publish failed: delivered=false failure_kind={failure_kind or 'unknown'}",
++              file=sys.stderr)
++        return 1
++    receipt = _publish_receipt(result)
++    metadata = receipt.get("Metadata") or receipt.get("metadata") or {}
++    readback = metadata.get("readback", "") if isinstance(metadata, dict) else ""
++    reported_delivered = receipt.get("Delivered", receipt.get("delivered", False))
++    if (readback and readback != "confirmed") or not reported_delivered:
++        message_id = receipt.get("MessageID") or receipt.get("message_id") or ""
++        print(f"slack publish accepted: message_id={message_id}; readback unconfirmed "
++              f"({readback or 'legacy receipt'}); do not repost", file=sys.stderr)
++    return 0
++
++
+@@ -384 +394,2 @@ def summarize_publish_receipt(
+-    when the send was threaded. Failures additionally carry
++    when the send was threaded. Receipt metadata preserves readback and
++    storage diagnostics. Failures additionally carry
+@@ -395,10 +406 @@ def summarize_publish_receipt(
+-    receipt: dict[str, Any] = {}
+-    if isinstance(result, dict):
+-        if "delivered" in result:
+-            receipt = result
+-        else:
+-            for key in ("Receipt", "receipt"):
+-                candidate = result.get(key)
+-                if isinstance(candidate, dict):
+-                    receipt = candidate
+-                    break
++    receipt = _publish_receipt(result)
+@@ -421,0 +424,3 @@ def summarize_publish_receipt(
++    metadata = receipt.get("Metadata") or receipt.get("metadata")
++    if isinstance(metadata, dict) and metadata:
++        summary["metadata"] = metadata

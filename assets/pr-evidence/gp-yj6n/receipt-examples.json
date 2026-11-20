@@ -1,0 +1,31 @@
+[
+  {
+    "case": "legacy incident shape",
+    "source": "offline receipt interpretation; no post",
+    "stdout": {
+      "delivered": true,
+      "conversation_id": "C0BKF28CYUE",
+      "reply_to_message_id": "1787962615.345489",
+      "message_id": "1791976711.647429",
+      "thread_ts": "1787962615.345489"
+    },
+    "stderr": "slack publish accepted: message_id=1791976711.647429; readback unconfirmed (legacy receipt); do not repost",
+    "exit_code": 0
+  },
+  {
+    "case": "accepted readback miss",
+    "source": "offline receipt interpretation; no post",
+    "stdout": {
+      "delivered": true,
+      "conversation_id": "C0BKF28CYUE",
+      "reply_to_message_id": "1787962615.345489",
+      "message_id": "1791976711.647429",
+      "thread_ts": "1787962615.345489",
+      "metadata": {
+        "readback": "readback_unconfirmed"
+      }
+    },
+    "stderr": "slack publish accepted: message_id=1791976711.647429; readback unconfirmed (readback_unconfirmed); do not repost",
+    "exit_code": 0
+  }
+]

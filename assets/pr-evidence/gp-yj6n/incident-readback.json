@@ -1,0 +1,31 @@
+{
+  "at": "2026-10-15T11:10:46.367067+00:00",
+  "request": {
+    "method": "conversations.replies",
+    "query": {
+      "channel": "C0BKF28CYUE",
+      "ts": "1787962615.345489",
+      "oldest": "1791976711.647429",
+      "latest": "1791976711.647429",
+      "inclusive": "true",
+      "limit": "2"
+    }
+  },
+  "response": {
+    "ok": true,
+    "has_more": false,
+    "message_ts": [
+      "1787962615.345489",
+      "1791976711.647429"
+    ],
+    "target_found": true,
+    "parent_reply_count": 113
+  },
+  "body": {
+    "characters": 3429,
+    "posted_sha256": "77e9a59769a8baac15633844349566c211485988632baf9a1a0ff75f219ef92d",
+    "stored_sha256": "3f0a2d41b7a2a8a9de58590fbc18f32f25136394320a0a7af8e9236e2b9c111d",
+    "mail_auto_links": 2
+  },
+  "posts_performed": 0
+}
