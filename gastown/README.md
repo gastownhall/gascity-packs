@@ -99,6 +99,34 @@ instead (`--formula` is a boolean that reinterprets the positional argument), an
 `--on <formula>` attaches one to an existing bead. `[agent_defaults]` is the one
 knob that cannot override the agent's own value.
 
+## Formula step ownership
+
+The shared [`following-mol` fragment](template-fragments/following-mol.template.md)
+is rendered by six prompts: polecat, dog, witness, deacon, boot, and refinery.
+Its instructions depend on the actual assignment's execution shape:
+
+- **Expanded graph.v2 workflows:** the materialized steps are independently
+  routed beads. Workers execute only their claimed physical bead; the native
+  controller advances the graph and handles control beads. Workers must not
+  execute sibling steps inline or claim expanded workflow roots. The default
+  `mol-polecat-work` uses this execution model.
+- **Root-only wisps:** steps stay in the formula recipe, available through
+  `gc bd formula show <formula-name>`, and the agent executes them sequentially.
+  Witness, deacon, boot, and refinery use this model for their patrols. Their
+  role-specific startup, assigned-wisp reconciliation, restart recovery, and
+  cycle handoff remain authoritative. Vapor formulas that do not materialize
+  steps also use root-only execution.
+- **Legacy molecules with step beads:** the agent navigates the molecule's
+  steps sequentially, verifying and closing each completed step.
+
+Neither `formula_compiler >=2.0.0` nor workflow-root metadata alone establishes
+that a run has materialized step beads. For example, `mol-refinery-patrol`
+requires that compiler version but is poured with `--root-only`. Likewise,
+a `molecule_id` alone does not select legacy step navigation. Check the actual
+assignment and its formula; preserve each role's recovery and completion flow.
+See the Gas City [formula v2 specification](https://github.com/gastownhall/gascity/blob/main/docs/reference/specs/formula-spec-v2.md)
+for the graph contract and compatible root-only materialization.
+
 ## Dog Pool
 
 Gastown owns `mol-shutdown-dance` and the dog agent that runs stuck-agent
