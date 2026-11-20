@@ -22,6 +22,18 @@ fail() {
     exit 1
 }
 
+# jq and python3 are undeclared ambient dependencies on CI: the ubuntu-2404
+# image ships both, so neither is installed or named in .github/workflows/ci.yml,
+# and this suite parses the stub's JSON and the formula TOML with the real
+# binaries. Without this check a host lacking one fails as a behavioural
+# assertion rather than reporting a missing tool (gk-aqw47).
+for tool in jq python3; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "FAIL: $tool required (this suite parses stub JSON and formula TOML with the real $tool)" >&2
+        exit 1
+    }
+done
+
 cat >"$BIN/gc" <<'SH'
 #!/bin/sh
 printf 'gc' >>"$GC_TEST_LOG"
