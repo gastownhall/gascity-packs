@@ -35,6 +35,8 @@
 #   GC_API_BASE_URL         # default http://127.0.0.1:9443
 #   ADAPTER_PROVIDER        # default slack
 #   REGISTER_ON_START       # default true; set false to skip self-registration
+#   SLACK_TRUSTED_BOT_APPS  # Slack app ids whose bot messages reach bound
+#                           # sessions (README "Trusted bot apps").
 
 set -euo pipefail
 
