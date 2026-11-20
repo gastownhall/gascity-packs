@@ -409,19 +409,18 @@ func TestLoadConfigThreadSessionsStorePathFallsBackToTmp(t *testing.T) {
 // the signature of handleSlackEvents.
 func TestHandleSlackEventsAcceptsThreadRegistry(t *testing.T) {
 	cfg := config{
-		gcAPIBase:       "http://127.0.0.1:1",
 		cityName:        "test-city",
 		provider:        "slack",
 		accountID:       "T1",
 		slackSigningKey: "secret",
-		dispatchSem:     defaultTestDispatchSem,
+		dispatchSem:     make(chan struct{}, 1),
 	}
 	aliasReg := newTestHandleAliasRegistry(t)
 	threadReg := newTestThreadSessionRegistry(t)
 
 	// We are not asserting downstream behavior here — just compile-time
 	// + structural acceptance of the (cfg, aliasReg, threadReg) signature.
-	rawMsg, _ := json.Marshal(slackMessageEvent{Type: "message", Channel: "C1", User: "U1", TS: "1.0", Text: "x"})
+	rawMsg, _ := json.Marshal(slackMessageEvent{Type: "ignored"})
 	envBody, _ := json.Marshal(slackEventEnvelope{Type: "event_callback", Event: rawMsg})
 	req := signedSlackEventRequest(t, cfg.slackSigningKey, envBody)
 	w := httptest.NewRecorder()
@@ -429,7 +428,16 @@ func TestHandleSlackEventsAcceptsThreadRegistry(t *testing.T) {
 	handler := handleSlackEvents(cfg, aliasReg, threadReg, nil, nil, nil)
 	handler(w, req)
 
-	// Slack ack happens before downstream work, regardless of gc reachability.
+	// The ignored event needs no external service. Wait for the handler's
+	// goroutine to release its slot before this fixture returns.
+	select {
+	case cfg.dispatchSem <- struct{}{}:
+		<-cfg.dispatchSem
+	case <-time.After(2 * time.Second):
+		t.Fatal("event handler did not finish")
+	}
+
+	// Slack ack happens before downstream work.
 	if w.Result().StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Result().StatusCode)
 	}

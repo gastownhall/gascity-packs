@@ -4645,6 +4645,24 @@ func TestLoadConfigDispatchConcurrencyRejectsNonNumeric(t *testing.T) {
 	}
 }
 
+// synchronizedLogBuffer protects snapshots from concurrent log writes.
+type synchronizedLogBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *synchronizedLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *synchronizedLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // captureLog redirects log.Printf output to an in-memory buffer for
 // the duration of the returned cleanup. Caller must not call t.Parallel.
 func captureLog(t *testing.T) (read func() string, cleanup func()) {
@@ -4652,7 +4670,7 @@ func captureLog(t *testing.T) (read func() string, cleanup func()) {
 	prevOut := log.Writer()
 	prevFlags := log.Flags()
 	prevPrefix := log.Prefix()
-	var buf strings.Builder
+	var buf synchronizedLogBuffer
 	log.SetOutput(&buf)
 	log.SetFlags(0)
 	log.SetPrefix("")
@@ -4660,6 +4678,26 @@ func captureLog(t *testing.T) (read func() string, cleanup func()) {
 		log.SetOutput(prevOut)
 		log.SetFlags(prevFlags)
 		log.SetPrefix(prevPrefix)
+	}
+}
+
+// TestCaptureLogConcurrentRead covers snapshots while another goroutine logs.
+func TestCaptureLogConcurrentRead(t *testing.T) {
+	read, cleanup := captureLog(t)
+	t.Cleanup(cleanup)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			log.Print("concurrent marker")
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		_ = read()
+	}
+	<-done
+	if !strings.Contains(read(), "concurrent marker") {
+		t.Fatal("captured log is missing marker")
 	}
 }
 
