@@ -10,6 +10,7 @@ trap 'rm -rf "$TMP"' EXIT
 BIN="$TMP/bin"
 LOG="$TMP/calls.log"
 LIST_JSON="$TMP/list.json"
+UNMARKED_JSON="$TMP/unmarked.json"
 PR_INFO="$TMP/pr.json"
 REST_INFO="$TMP/pr-rest.json"
 UPDATE_COUNT="$TMP/update-count"
@@ -34,7 +35,25 @@ case "$1" in
     bd)
         case "$2" in
             list)
-                cat "$GC_TEST_LIST_JSON"
+                # The reconciler runs two scans: the armed-marker scan and the
+                # blocked/unmarked-handoff scan. GC_TEST_UNMARKED_JSON serves
+                # the second so a case can hold a hand-written record that is
+                # deliberately absent from the marker scan's result.
+                case " $* " in
+                    *" --status=blocked "*)
+                        if [ -n "${GC_TEST_UNMARKED_JSON:-}" ]; then
+                            cat "$GC_TEST_UNMARKED_JSON"
+                        else
+                            printf '[]\n'
+                        fi
+                        ;;
+                    *)
+                        cat "$GC_TEST_LIST_JSON"
+                        ;;
+                esac
+                if [ "${GC_TEST_LIST_FAIL:-0}" != "0" ]; then
+                    exit 1
+                fi
                 ;;
             show)
                 show_status=${GC_TEST_SHOW_STATUS:-closed}
@@ -192,6 +211,7 @@ chmod +x "$BIN/gc" "$BIN/gh" "$BIN/curl" "$BIN/git" "$BIN/date"
 export PATH="$BIN:$PATH"
 export GC_TEST_LOG="$LOG"
 export GC_TEST_LIST_JSON="$LIST_JSON"
+export GC_TEST_UNMARKED_JSON="$UNMARKED_JSON"
 export GC_TEST_PR_INFO="$PR_INFO"
 export GC_TEST_REST_INFO="$REST_INFO"
 export GC_TEST_UPDATE_COUNT="$UPDATE_COUNT"
@@ -211,8 +231,9 @@ reset_case() {
     : >"$LOG"
     printf '0\n' >"$UPDATE_COUNT"
     rm -f "$CLOSED_FILE" "$CLEANUP_FILE"
+    printf '[]\n' >"$UNMARKED_JSON"
     unset GC_TEST_CLOSE_FAIL GC_TEST_GH_FAIL GC_TEST_FETCH_FAIL GC_TEST_FAIL_UPDATE_AT
-    unset GC_TEST_CLEANUP_FAIL
+    unset GC_TEST_CLEANUP_FAIL GC_TEST_LIST_FAIL
     unset GC_TEST_SHOW_STATUS GC_TEST_SHOW_RESULT
     unset GC_TEST_SHOW_PR_STATE GC_TEST_SHOW_MERGED_AT GC_TEST_SHOW_CLEANUP_STATE
     unset GC_TEST_ORIGIN_URL
@@ -291,7 +312,7 @@ test_record_blocks_without_closing() {
 
     grep -F 'gc <bd> <update> <--rig=tributary> <tr-92a>' "$LOG" >/dev/null ||
         fail "record must update the rig-scoped work bead"
-    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
         fail "record must leave the source bead blocked"
     grep -F '<--set-metadata> <merge_result=pull_request_pending>' "$LOG" >/dev/null ||
         fail "record must mark a pending pull request"
@@ -305,7 +326,7 @@ test_record_blocks_without_closing() {
         fail "record must clear stale terminal or changed-head evidence"
     local arm_line block_line
     arm_line=$(grep -nF '<--set-metadata> <pr_reconcile_pending=true>' "$LOG" | head -n1 | cut -d: -f1)
-    block_line=$(grep -nF '<--status=blocked>' "$LOG" | head -n1 | cut -d: -f1)
+    block_line=$(grep -nF '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' | head -n1 | cut -d: -f1)
     [[ "$arm_line" -lt "$block_line" ]] ||
         fail "record must arm retry before its final transition to blocked"
     sed -n "${arm_line}p" "$LOG" |
@@ -318,7 +339,7 @@ test_record_blocks_without_closing() {
     # the two writes cannot strand a blocked record without it.
     [ "$(grep -cF 'gc <bd> <update>' "$LOG")" -eq 2 ] ||
         fail "record must be exactly an arm write plus one atomic complete-record write"
-    grep -F '<--status=blocked>' "$LOG" |
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' |
         grep -F '<--set-metadata> <merge_result=pull_request_pending>' |
         grep -F '<--set-metadata> <pr_reconcile_pending=true>' >/dev/null ||
         fail "the blocking write must carry the complete record and re-arm the marker"
@@ -387,11 +408,11 @@ test_partial_record_never_blocks_without_complete_metadata() {
     # a failed record write can never leave a blocked bead behind.
     [ "$(grep -cF 'gc <bd> <update>' "$LOG")" -eq 2 ] ||
         fail "record must stop after its failed complete-record write"
-    grep -F '<--status=blocked>' "$LOG" |
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' |
         grep -F '<--set-metadata> <merge_result=pull_request_pending>' |
         grep -F "<--set-metadata> <pr_head_sha=$HEAD_A>" >/dev/null ||
         fail "the dependency gate must land atomically with the complete record"
-    [ "$(grep -cF '<--status=blocked>' "$LOG")" -eq 1 ] ||
+    [ "$(grep -F '<--status=blocked>' "$LOG" | grep -cF '<bd> <update>')" -eq 1 ] ||
         fail "partial record must not block outside the complete-record write"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "partial record must never close"
@@ -448,11 +469,11 @@ test_complete_open_pending_record_finishes_block_transition() {
     "$COMMAND"
 
     local block_line lookup_line
-    block_line=$(grep -nF '<--status=blocked>' "$LOG" | head -n1 | cut -d: -f1)
+    block_line=$(grep -nF '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' | head -n1 | cut -d: -f1)
     lookup_line=$(grep -nF 'gh <pr> <view>' "$LOG" | head -n1 | cut -d: -f1)
     [[ "$block_line" -lt "$lookup_line" ]] ||
         fail "complete open handoff was not dependency-blocked before lookup"
-    grep -F '<--status=blocked>' "$LOG" |
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' |
         grep -F "<--assignee=$GC_AGENT>" >/dev/null ||
         fail "complete open handoff was not adopted while finishing its block"
     ! grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
@@ -577,7 +598,7 @@ test_closed_unmerged_stays_blocked_and_escalates() {
         fail "closed-unmerged PR should return nonzero"
     fi
 
-    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
         fail "closed-unmerged PR must remain blocked"
     grep -F '<--set-metadata> <merge_result=pull_request_closed_unmerged>' "$LOG" >/dev/null ||
         fail "closed-unmerged PR must record terminal state"
@@ -827,7 +848,7 @@ test_previously_verified_merge_now_unreachable() {
     if "$COMMAND"; then
         fail "rewritten target must fail the closed cleanup retry"
     fi
-    ! grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+    ! grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
         fail "a closed verified bead must not be re-blocked by a later target rewrite"
     grep -F '<--unset-metadata> <pr_reconcile_pending>' "$LOG" >/dev/null ||
         fail "closed bead with unconvergeable cleanup must release the reconciliation slot"
@@ -852,7 +873,7 @@ test_blocked_cleanup_releases_marker_and_escalates() {
         fail "artifact_cleanup_state=blocked never self-heals; the marker must be released"
     grep -F 'gc <mail> <send> <mayor/> <-s> <ESCALATION: MR artifact cleanup needs review for tr-92a>' "$LOG" >/dev/null ||
         fail "blocked artifact cleanup must escalate for manual review"
-    ! grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+    ! grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
         fail "blocked artifact cleanup must not re-block a verified closed bead"
 }
 
@@ -890,7 +911,7 @@ test_closed_ambiguous_legacy_record_is_reblocked() {
         fail "ambiguous legacy closed record should fail reconciliation"
     fi
 
-    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
         fail "ambiguous legacy closed record must be restored to a dependency-blocking state"
     grep -F '<--set-metadata> <merge_result=pull_request_legacy_closed_unverified>' "$LOG" >/dev/null ||
         fail "ambiguous legacy closed record must record its quarantine reason"
@@ -911,7 +932,7 @@ test_noncanonical_source_branch_is_quarantined() {
         fail "noncanonical MR source branch should fail reconciliation"
     fi
 
-    grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+    grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
         fail "noncanonical source branch must remain dependency-blocking"
     ! grep -F 'gh <pr> <view>' "$LOG" >/dev/null ||
         fail "noncanonical source branch must fail before remote PR verification"
@@ -939,7 +960,7 @@ test_verified_mr_with_open_remote_is_reblocked() {
             fail "$status mr_merged with contradictory open remote state should fail"
         fi
 
-        grep -F '<--status=blocked>' "$LOG" >/dev/null ||
+        grep -F '<--status=blocked>' "$LOG" | grep -F '<bd> <update>' >/dev/null ||
             fail "contradictory $status/open MR must remain dependency-blocking"
         grep -F '<--set-metadata> <merge_result=pull_request_merged_state_contradiction>' "$LOG" >/dev/null ||
             fail "contradictory $status/open MR did not record its quarantine reason"
@@ -948,6 +969,93 @@ test_verified_mr_with_open_remote_is_reblocked() {
         ! grep -F 'gc <gastown> <task-artifact-cleanup>' "$LOG" >/dev/null ||
             fail "contradictory $status/open MR must never invoke cleanup"
     done
+}
+
+# A hand-written handoff (blocked + pr_url, no retry marker) is selected by
+# nothing in the marker-only scan, so before this arm existed it sat forever:
+# never looked up, never closed, never quarantined, its dependents blocked. A
+# COMPLETE one must be adopted into the canonical shape and validated.
+test_blocked_unmarked_complete_handoff_is_adopted() {
+    reset_case
+    jq -n \
+        --arg head "$HEAD_A" \
+        --arg url "$PR_URL" \
+        '[{
+          id: "tr-92a",
+          status: "blocked",
+          assignee: "gastown__refinery-ac-old",
+          metadata: {
+            branch: "polecat/tr-92a",
+            target: "main",
+            merged_target: "main",
+            pr_url: $url,
+            pr_number: "181",
+            pr_head_sha: $head,
+            pr_repo: "example/repo",
+            pr_state: "open",
+            blocked_reason: "Awaiting verified merge"
+          }
+        }]' >"$UNMARKED_JSON"
+    write_pr_info OPEN
+    output=$("$COMMAND")
+
+    grep -F 'gc <bd> <list> <--rig=tributary> <--status=blocked> <--has-metadata-key=pr_url>' "$LOG" >/dev/null ||
+        fail "reconcile must scan blocked beads carrying pr_url, not only armed markers"
+    grep -F 'gc <bd> <update> <--rig=tributary> <tr-92a>' "$LOG" |
+        grep -F '<--set-metadata> <pr_reconcile_pending=true>' >/dev/null ||
+        fail "a complete unmarked handoff must be armed into the rotation"
+    grep -F '<--set-metadata> <merge_result=pull_request_pending>' "$LOG" >/dev/null ||
+        fail "an unmarked handoff with no merge result must be normalized to pending"
+    printf '%s\n' "$output" | grep -F 'ADOPTED: tr-92a' >/dev/null ||
+        fail "the adopted handoff must be reported as adopted"
+    printf '%s\n' "$output" | grep -F 'PENDING: tr-92a' >/dev/null ||
+        fail "the adopted handoff must go on to be validated, not silently skipped"
+    grep -F 'gh <pr> <view>' "$LOG" >/dev/null ||
+        fail "an adopted complete handoff must reach GitHub lookup"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "an open PR must not close its bead"
+    ! grep -F '<merge_result=pull_request_reconcile_invalid>' "$LOG" >/dev/null ||
+        fail "a complete handoff must not be quarantined as invalid"
+}
+
+# The adoption arm must not rescue a record it cannot actually validate: an
+# incomplete handoff is quarantined and escalated, never trusted on pr_url.
+test_blocked_unmarked_incomplete_handoff_is_quarantined() {
+    reset_case
+    jq -n --arg url "$PR_URL" '[{
+      id: "tr-92a",
+      status: "blocked",
+      metadata: {
+        pr_url: $url,
+        blocked_reason: "hand-written, never recorded"
+      }
+    }]' >"$UNMARKED_JSON"
+    if "$COMMAND"; then
+        fail "an incomplete unmarked handoff should fail reconcile"
+    fi
+
+    grep -F '<--set-metadata> <merge_result=pull_request_reconcile_invalid>' "$LOG" >/dev/null ||
+        fail "an incomplete unmarked handoff must be quarantined, not adopted"
+    grep -F 'gc <mail> <send> <mayor/> <-s> <ESCALATION: invalid pending PR metadata for tr-92a>' "$LOG" >/dev/null ||
+        fail "an incomplete unmarked handoff must escalate for correction"
+    ! grep -F '<--set-metadata> <pr_reconcile_pending=true>' "$LOG" >/dev/null ||
+        fail "an incomplete handoff must not be armed into the rotation"
+    ! grep -F 'gh <pr> <view>' "$LOG" >/dev/null ||
+        fail "an incomplete handoff must not reach GitHub lookup"
+}
+
+# "No pending pull-request merges" on an unreadable ledger is the same false
+# all-clear as the original defect: it reports health it never measured.
+test_list_failure_is_not_reported_as_an_empty_queue() {
+    reset_case
+    export GC_TEST_LIST_FAIL=1
+    if output=$("$COMMAND"); then
+        fail "an unreadable pending scan must fail, not report an empty queue"
+    fi
+    printf '%s\n' "$output" | grep -F 'No pending pull-request merges.' >/dev/null &&
+        fail "an unreadable scan must not print the empty-queue success line"
+    ! grep -F 'gc <bd> <update>' "$LOG" >/dev/null ||
+        fail "an unreadable scan must not mutate any bead"
 }
 
 test_oldest_pending_pr_is_selected() {
@@ -1101,6 +1209,9 @@ test_cleanup_waits_for_durable_closed_record
 test_closed_ambiguous_legacy_record_is_reblocked
 test_noncanonical_source_branch_is_quarantined
 test_verified_mr_with_open_remote_is_reblocked
+test_blocked_unmarked_complete_handoff_is_adopted
+test_blocked_unmarked_incomplete_handoff_is_quarantined
+test_list_failure_is_not_reported_as_an_empty_queue
 test_oldest_pending_pr_is_selected
 test_witness_wakes_refinery_for_due_pending_prs
 test_formula_uses_pending_merge_gate

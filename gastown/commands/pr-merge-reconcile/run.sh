@@ -430,28 +430,69 @@ The bead stays closed; its task artifact was preserved. Inspect it, then run gc 
 reconcile_one() {
     require_identity
 
+    # Two scans, because a candidate gets here two ways. The first is an armed
+    # retry marker: every path this command owns leaves one behind. The second
+    # is a blocked handoff someone wrote by hand, which carries pr_url but
+    # never armed pr_reconcile_pending — that record is invisible to a
+    # marker-only scan, so it is never looked up, never closed, and never
+    # quarantined. A lookup that fails is not an all-clear either: reporting
+    # "no pending merges" on an unreadable ledger is the same silence.
     if [ -n "${GC_RIG:-}" ]; then
         pending_json=$(gc bd list --rig="$GC_RIG" \
             --all \
             --has-metadata-key=pr_reconcile_pending \
             --limit=0 \
-            --json)
+            --json) || {
+            echo "pr-merge-reconcile: cannot scan for pending PR markers; refusing to report an empty queue" >&2
+            return 1
+        }
+        unmarked_json=$(gc bd list --rig="$GC_RIG" \
+            --status=blocked \
+            --has-metadata-key=pr_url \
+            --limit=0 \
+            --json) || {
+            echo "pr-merge-reconcile: cannot scan blocked beads for unmarked PR handoffs; refusing to report an empty queue" >&2
+            return 1
+        }
     else
         pending_json=$(gc bd list \
             --all \
             --has-metadata-key=pr_reconcile_pending \
             --limit=0 \
-            --json)
+            --json) || {
+            echo "pr-merge-reconcile: cannot scan for pending PR markers; refusing to report an empty queue" >&2
+            return 1
+        }
+        unmarked_json=$(gc bd list \
+            --status=blocked \
+            --has-metadata-key=pr_url \
+            --limit=0 \
+            --json) || {
+            echo "pr-merge-reconcile: cannot scan blocked beads for unmarked PR handoffs; refusing to report an empty queue" >&2
+            return 1
+        }
     fi
 
-    row=$(printf '%s\n' "$pending_json" | jq -c '
-        [
+    row=$(printf '%s\n%s\n' "$pending_json" "$unmarked_json" | jq -sc '
+        add
+        | [
           .[]
-          | select(((.metadata.pr_reconcile_pending // "") | tostring) == "true")
           | select(
               .status == "open" or
               .status == "blocked" or
               .status == "closed"
+            )
+          | select(
+              ((.metadata.pr_reconcile_pending // "") | tostring) == "true"
+              or
+              (
+                .status == "blocked" and
+                (((.metadata.pr_url // "") | tostring) | length) > 0 and
+                (
+                  ((.metadata.merge_result // "") | tostring) as $result
+                  | $result == "" or $result == "pull_request_pending"
+                )
+              )
             )
         ]
         | sort_by(.metadata.pr_last_checked_at // "")
@@ -474,6 +515,8 @@ reconcile_one() {
     recorded_merge_sha=$(printf '%s\n' "$row" | jq -r '.metadata.merged_sha // empty')
     recorded_pr_state=$(printf '%s\n' "$row" | jq -r '.metadata.pr_state // empty')
     recorded_merged_at=$(printf '%s\n' "$row" | jq -r '.metadata.pr_merged_at // empty')
+    has_marker=$(printf '%s\n' "$row" | jq -r \
+        'if ((.metadata.pr_reconcile_pending // "") | tostring) == "true" then "true" else "false" end')
     now=$(now_utc)
 
     if [ -z "$work" ]; then
@@ -493,6 +536,30 @@ reconcile_one() {
        git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 &&
        git check-ref-format "refs/heads/$target" >/dev/null 2>&1; then
         handoff_complete=true
+    fi
+
+    # A blocked handoff with pr_url but no retry marker was written by hand,
+    # outside this command. It is not in the rotation, so without this arm it
+    # stays invisible forever while its dependents stay blocked. Adopt a
+    # COMPLETE one into the canonical record shape and let the ordinary
+    # lifecycle validate it; a handoff that is not complete enough to validate
+    # is quarantined and escalated rather than trusted on its pr_url alone.
+    if [ "$work_status" = blocked ] && [ "$has_marker" != true ]; then
+        if [ "$handoff_complete" != true ]; then
+            quarantine_metadata "$work" "Blocked PR handoff has no reconciliation marker and is incomplete or invalid (url/number/head/exact polecat branch/target); refusing to adopt it for validation." "$now"
+            return 1
+        fi
+        adopt_args="--assignee=$GC_AGENT --set-metadata pr_reconcile_pending=true"
+        if [ -z "$recorded_result" ]; then
+            # The exact-value gate below only accepts pull_request_pending or
+            # complete mr_merged evidence. A hand-written record that never
+            # named a merge result is a published, unarmed handoff.
+            adopt_args="$adopt_args --set-metadata merge_result=pull_request_pending"
+            recorded_result=pull_request_pending
+        fi
+        # shellcheck disable=SC2086
+        bd_update "$work" $adopt_args
+        echo "ADOPTED: $work — blocked PR handoff had no reconciliation marker; adopted into the rotation."
     fi
 
     if [ "$work_status" = open ]; then
