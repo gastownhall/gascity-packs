@@ -91,7 +91,7 @@ func TestSlackReadbackReceiptFailureMapsOntoGCVocabulary(t *testing.T) {
 		wantKind string
 	}{
 		{slackReadbackUnconfirmed, "permanent"},
-		{slackReadbackUnavailable, "transient"},
+		{slackReadbackUnavailable, "permanent"},
 		{slackReadbackAuth, "auth"},
 	}
 	for _, test := range tests {
@@ -110,10 +110,13 @@ func TestSlackReadbackReceiptFailureMapsOntoGCVocabulary(t *testing.T) {
 			}
 		})
 	}
-	// An untyped error is the "we do not know" case and must not claim more
-	// than transient.
-	if kind, detail := slackReadbackReceiptFailure(errors.New("unknown")); kind != "transient" || detail != slackReadbackUnavailable {
-		t.Errorf("untyped error mapped to (%q, %q), want (transient, %q)", kind, detail, slackReadbackUnavailable)
+	// An untyped error reaches slackReadbackReceiptFailure only through
+	// confirmPublishReceipt, which runs after Slack has already accepted the
+	// write (gascity-packs#620): it must not be mapped to a retryable kind,
+	// since nothing about an unexpected readback error changes the fact that
+	// the message already posted.
+	if kind, detail := slackReadbackReceiptFailure(errors.New("unknown")); kind != "permanent" || detail != slackReadbackUnavailable {
+		t.Errorf("untyped error mapped to (%q, %q), want (permanent, %q)", kind, detail, slackReadbackUnavailable)
 	}
 }
 
@@ -450,9 +453,23 @@ func TestHandlePublishRequiresExactSlackReadback(t *testing.T) {
 			wantReadback: slackReadbackAuth,
 		},
 		{
-			name:         "unavailable read path is retryable",
+			// The write already succeeded (chat.postMessage returned ts
+			// "1700.001" above) before this read ever runs, so "the read leg
+			// is broken" must not be reported as a retryable send failure:
+			// gc's documented retry protocol on "transient" is to re-post,
+			// which would duplicate a message already sitting in the channel
+			// (gascity-packs#620). permanent is reused here, matching the
+			// "do not re-send this payload" meaning this file already gives
+			// it for the unconfirmed case above; the adapter's own
+			// classification survives in metadata so an operator can still
+			// tell this apart from a genuine confirmed-absent failure. The
+			// in-process dedup/replay path (publishReceiptBlocksRepost,
+			// TestHandlePublishReplaysPostedButUnconfirmedReceipt below)
+			// still recovers this receipt by its metadata readback detail,
+			// not by this wire-level kind.
+			name:         "unavailable read path is not retryable: the message already posted",
 			history:      `{"ok":false,"error":"internal_error"}`,
-			wantFailure:  "transient",
+			wantFailure:  "permanent",
 			wantReadback: slackReadbackUnavailable,
 		},
 	}
