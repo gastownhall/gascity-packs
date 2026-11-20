@@ -315,3 +315,7 @@ endpoint stays bound to TCP `:8765`.
   secret is correct; check the `message.im` event subscription is active
   in the Slack app config; confirm the session is bound (look up
   `extmsg/bindings` via `gc slack status --session <SID>`).
+- **Outbound posts have no callback**: run `gc slack events-health`; a stale
+  result points to the Slack app's Event Subscriptions page, while a missing
+  state result means the adapter or publish path needs attention. The
+  adapter's `inbound:` line is emitted only after a verified callback.

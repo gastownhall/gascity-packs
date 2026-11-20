@@ -21,6 +21,7 @@ import sys
 from typing import Any
 
 import slack_intake_common as common
+import slack_events_health
 
 
 # Every read below returns (items, error). Returning a bare [] for both "the
@@ -216,9 +217,13 @@ def main(argv: list[str]) -> int:
         raise SystemExit(str(exc)) from exc
 
     if args.as_json:
+        health_code, health_line = slack_events_health.verdict()
+        status["events_health"] = {"exit_code": health_code, "message": health_line}
         print(json.dumps(status, indent=2, sort_keys=True))
     else:
         print(format_status(status))
+        _, health_line = slack_events_health.verdict()
+        print(f"\n{health_line}")
 
     # 0 every section was read, 2 at least one could not be. A status tool that
     # exits 0 while blind to a section is asserting a state it never observed;

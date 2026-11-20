@@ -1,0 +1,2 @@
+description = "Check Slack event callback liveness"
+run = "../events-health.sh"
