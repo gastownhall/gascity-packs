@@ -236,7 +236,7 @@ class CollectEndToEndTests(unittest.TestCase):
                  created_at="2026-07-01T10:05:00Z"),
             bead("ga-out-of-window", issue_type="session",
                  labels=["agent:product/run-operator-2"],
-                 created_at="2026-06-01T10:05:00Z"),
+                 created_at="2026-06-01T10:05:00Z", closed_at="2026-06-01T10:35:00Z"),
         ]
         (base / "rig-beads.json").write_text(json.dumps(rig_beads), encoding="utf-8")
         (base / "city-beads.json").write_text(json.dumps(city_beads), encoding="utf-8")
@@ -366,6 +366,117 @@ class CollectEndToEndTests(unittest.TestCase):
         self.assertIn("tokens: in 1000 out 200", proc.stdout)
         self.assertIn("runtime wall: 60.0s", proc.stdout)
         self.assertIn("est cost: $0.5000", proc.stdout)
+
+
+class WarmSessionWindowTests(unittest.TestCase):
+    """A pooled session created before the run window, or recorded as a
+    captured bead's assignee, must still be captured (gascity-packs#575)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = tempfile.TemporaryDirectory()
+        base = pathlib.Path(cls.tmp.name)
+        cls.home = base / "home"
+        cls.rig = base / "rig"
+        cls.city = base / "city"
+        cls.out = base / "capture"
+        for d in (cls.home, cls.rig, cls.city / ".gc", base / "bin"):
+            d.mkdir(parents=True, exist_ok=True)
+
+        # Root run window: created 10:00, closed 12:00 -> w0=09:58, w1=12:02.
+        rig_beads = [
+            bead(ROOT, title="build", issue_type="workflow",
+                 created_at="2026-07-01T10:00:00Z", closed_at="2026-07-01T12:00:00Z",
+                 metadata={"gc.var.rig_name": "product"}),
+            # The assignee of the run's first step is a session that is NOT
+            # itself timing-overlapping the window at all (closed well
+            # before w0) -- only the assignee linkage should pull it in.
+            bead("ga-s1", title="first step",
+                 created_at="2026-07-01T10:00:00Z", closed_at="2026-07-01T10:05:00Z",
+                 assignee="ga-assignee-only",
+                 metadata={"gc.root_bead_id": ROOT}),
+        ]
+        city_beads = [
+            # Warm/reused: created well before w0, closed inside the window.
+            # No assignee relationship -- only lifetime overlap should
+            # qualify it.
+            bead("ga-warm-overlap", issue_type="session",
+                 labels=["agent:product/run-operator-1"],
+                 created_at="2026-07-01T09:00:00Z", closed_at="2026-07-01T10:15:00Z"),
+            # Created and closed entirely before w0, named as the assignee
+            # of ga-s1 above -- only the assignee linkage should qualify it.
+            bead("ga-assignee-only", issue_type="session",
+                 labels=["agent:product/run-operator-2"],
+                 created_at="2026-07-01T08:00:00Z", closed_at="2026-07-01T09:00:00Z"),
+            # Created and closed entirely before w0, no assignee relation to
+            # anything this run captured -- must stay excluded.
+            bead("ga-unrelated-past", issue_type="session",
+                 labels=["agent:product/run-operator-3"],
+                 created_at="2026-07-01T07:00:00Z", closed_at="2026-07-01T07:30:00Z"),
+        ]
+        (base / "rig-beads.json").write_text(json.dumps(rig_beads), encoding="utf-8")
+        (base / "city-beads.json").write_text(json.dumps(city_beads), encoding="utf-8")
+
+        gc_stub = base / "bin" / "gc"
+        gc_stub.write_text(FAKE_GC, encoding="utf-8")
+        gc_stub.chmod(0o755)
+
+        (cls.city / ".gc" / "events.jsonl").write_text("", encoding="utf-8")
+
+        # A usage fact keyed to the warm session: this is the exact symptom
+        # from the issue -- a session's own usage must not disappear from
+        # the capture just because it predates the run window.
+        (cls.city / ".gc" / "usage.jsonl").write_text(
+            json.dumps({"kind": "compute", "session_id": "ga-warm-overlap",
+                        "wall_seconds": 42.0, "idempotency_key": "warm-k1"}) + "\n",
+            encoding="utf-8")
+
+        subprocess.run(["git", "init", "-q", str(cls.rig)], check=True)
+        (cls.rig / "README.md").write_text("rig\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(cls.rig), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(cls.rig), "-c", "user.email=t@example.com",
+                        "-c", "user.name=T", "commit", "-q", "-m", "seed"], check=True)
+
+        env = {
+            "PATH": f"{base / 'bin'}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "HOME": str(cls.home),
+            "FAKE_BD_RIG": str(base / "rig-beads.json"),
+            "FAKE_BD_CITY": str(base / "city-beads.json"),
+        }
+        cls.proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "profile_collect.py"), ROOT,
+             "--rig", str(cls.rig), "--city", str(cls.city), "--out", str(cls.out)],
+            capture_output=True, text=True, env=env)
+        cls.session_ids = (
+            [b["id"] for b in json.loads(
+                (cls.out / "session-beads.json").read_text(encoding="utf-8"))]
+            if (cls.out / "session-beads.json").exists() else [])
+        cls.usage_keys = (
+            [json.loads(l)["idempotency_key"]
+             for l in (cls.out / "usage.window.jsonl").read_text(encoding="utf-8").splitlines()
+             if l.strip()]
+            if (cls.out / "usage.window.jsonl").exists() else [])
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.tmp.cleanup()
+
+    def test_collect_succeeds(self) -> None:
+        self.assertEqual(self.proc.returncode, 0, self.proc.stderr)
+
+    def test_warm_session_overlapping_the_window_is_captured(self) -> None:
+        self.assertIn("ga-warm-overlap", self.session_ids)
+
+    def test_session_named_only_as_an_assignee_is_captured(self) -> None:
+        self.assertIn("ga-assignee-only", self.session_ids)
+
+    def test_unrelated_past_session_stays_excluded(self) -> None:
+        self.assertNotIn("ga-unrelated-past", self.session_ids)
+
+    def test_warm_sessions_usage_facts_survive_the_sess_ids_filter(self) -> None:
+        # This is the issue's own reported symptom: a warm session's own
+        # usage must not vanish from the window slice.
+        self.assertIn("warm-k1", self.usage_keys)
 
 
 class CollectFailureTests(unittest.TestCase):

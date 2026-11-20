@@ -241,6 +241,15 @@ def main():
 
     # ---- session + nudge beads (city store) ----
     rig_name = (root.get("metadata") or {}).get("gc.var.rig_name") or os.path.basename(rig)
+    # A pooled session created before the run started (warm, reused) can still
+    # execute this run's steps; filtering on created_at alone drops it, and
+    # sess_ids being built from that filtered list drops its transcript,
+    # events and usage facts with it. A session belongs to this run if either
+    # its own lifetime overlaps the run window, or it is recorded as the
+    # assignee of a bead this run's own closure already captured — a
+    # belt-and-suspenders path for a session whose timestamps alone don't
+    # cleanly overlap (GH gascity-packs#575).
+    run_assignees = {b.get("assignee") for b in run_beads if b.get("assignee")}
     session_beads, sess_ids = [], set()
     try:
         city_beads = bd_json(
@@ -251,7 +260,10 @@ def main():
             if not any(l.startswith(prefix) for l in labs):
                 continue
             c = parse_ts(b.get("created_at"))
-            if c and w0 <= c <= w1:
+            cl = parse_ts(b.get("closed_at"))
+            overlaps_window = c is not None and c <= w1 and (cl is None or cl >= w0)
+            is_run_assignee = b["id"] in run_assignees
+            if overlaps_window or is_run_assignee:
                 session_beads.append(b)
                 if b.get("issue_type") == "session":
                     sess_ids.add(b["id"])
