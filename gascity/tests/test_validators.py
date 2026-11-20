@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import pathlib
 import sys
@@ -338,6 +339,108 @@ trace:
 
         with self.assertRaisesRegex(build_artifact_validator.ValidationError, "hash"):
             build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.requirements.v1")
+
+    def artifact_with_upstream(self, path: pathlib.Path | str, hash_value: str, schema: str = "gc.build.review.v1") -> str:
+        return self.valid_artifact(schema).replace(
+            "    - path: requirements.after.md\n"
+            "      hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            f"    - path: {str(path)!r}\n      hash: {hash_value!r}\n",
+        )
+
+    def test_build_artifact_sha256_syntax_for_all_schemas(self) -> None:
+        for schema in self.SCHEMA_SECTIONS:
+            for digest in ("", "a" * 63, "a" * 65, "g" * 64, "a" * 32 + ":" + "b" * 31):
+                with self.subTest(schema=schema, digest=digest), self.assertRaisesRegex(
+                    build_artifact_validator.ValidationError, r"trace.upstream\[0\].hash.*64 hexadecimal"
+                ):
+                    build_artifact_validator.validate_artifact_text(
+                        self.artifact_with_upstream("requirements.md", f"sha256:{digest}", schema)
+                    )
+            build_artifact_validator.validate_artifact_text(
+                self.artifact_with_upstream("requirements.md", "sha256:" + "ABCDEF01" * 8, schema)
+            )
+
+    def test_build_artifact_file_hash_detects_changed_bytes_for_all_schemas(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            upstream = pathlib.Path(tmp) / "requirements.md"
+            original = b"# Requirements\r\n\x00\xff"
+            digest = hashlib.sha256(original).hexdigest()
+            for schema in self.SCHEMA_SECTIONS:
+                with self.subTest(schema=schema):
+                    upstream.write_bytes(original)
+                    text = self.artifact_with_upstream(upstream, "sha256:" + digest.upper(), schema)
+                    build_artifact_validator.validate_artifact_text(text, verify_absolute_upstreams=True)
+                    upstream.write_bytes(original + b"changed")
+                    with self.assertRaisesRegex(
+                        build_artifact_validator.ValidationError, r"trace.upstream\[0\].hash.*requirements.md.*recorded.*actual"
+                    ):
+                        build_artifact_validator.validate_artifact_text(text, verify_absolute_upstreams=True)
+                    build_artifact_validator.validate_artifact_text(text)
+
+    def test_build_artifact_file_hash_uses_explicit_roots_and_rejects_ambiguity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            reports = root / "reports"
+            reports.mkdir()
+            upstream = root / "requirements.md"
+            upstream.write_bytes(b"approved input")
+            text = self.artifact_with_upstream(upstream.name, "sha256:" + hashlib.sha256(upstream.read_bytes()).hexdigest())
+            kwargs = dict(verify_absolute_upstreams=True, artifact_path=reports / "review.md")
+            with self.assertRaisesRegex(build_artifact_validator.ValidationError, "does not resolve.*requirements.md"):
+                build_artifact_validator.validate_artifact_text(text, **kwargs)
+            build_artifact_validator.validate_artifact_text(text, upstream_roots=[root, root], **kwargs)
+            alias = root / "alias"
+            alias.symlink_to(root, target_is_directory=True)
+            build_artifact_validator.validate_artifact_text(text, upstream_roots=[root, alias], **kwargs)
+            (reports / upstream.name).write_bytes(upstream.read_bytes())
+            with self.assertRaisesRegex(build_artifact_validator.ValidationError, "ambiguous"):
+                build_artifact_validator.validate_artifact_text(text, upstream_roots=[root], **kwargs)
+
+    def test_build_artifact_file_hash_rejects_missing_directory_and_escaping_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            reports = root / "reports"
+            reports.mkdir()
+            outside = root / "outside.md"
+            outside.write_bytes(b"outside")
+            link = reports / "link.md"
+            link.symlink_to(outside)
+            for path, message in ((root / "missing", "not a file"), (reports, "not a file"), ("link.md", "escapes upstream root")):
+                with self.subTest(path=path), self.assertRaisesRegex(build_artifact_validator.ValidationError, message):
+                    build_artifact_validator.validate_artifact_text(
+                        self.artifact_with_upstream(path, "sha256:" + "a" * 64),
+                        verify_absolute_upstreams=True,
+                        artifact_path=reports / "review.md",
+                    )
+
+    def test_build_artifact_revision_schemes_do_not_read_current_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "source.md"
+            path.write_text("changed since the historical revision", encoding="utf-8")
+            for reference in (path, "beads/task", "deleted-source.md"):
+                for hash_value in ("git:previous-revision", "bead:source-anchor"):
+                    with self.subTest(reference=reference, hash_value=hash_value):
+                        build_artifact_validator.validate_artifact_text(
+                            self.artifact_with_upstream(reference, hash_value), verify_absolute_upstreams=True
+                        )
+
+    def test_build_artifact_cli_verifies_files_independent_of_working_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            upstream = root / "requirements.md"
+            upstream.write_bytes(b"approved input")
+            report = root / "review.md"
+            digest = hashlib.sha256(upstream.read_bytes()).hexdigest()
+            report.write_text(self.artifact_with_upstream("requirements.md", "sha256:" + digest), encoding="utf-8")
+            args = ["--schema", "gc.build.review.v1", "--path", str(report), "--verify-absolute-upstreams"]
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(build_artifact_validator.main(args), 0)
+            upstream.write_bytes(b"changed")
+            stderr = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                self.assertEqual(build_artifact_validator.main(args), 1)
+            self.assertIn("actual sha256:", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_build_artifact_rejects_invalid_coverage_status_and_missing_rationale(self) -> None:
         invalid_status = self.valid_artifact().replace("status: deferred", "status: waiting", 1)
