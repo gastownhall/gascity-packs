@@ -235,6 +235,13 @@ var slackAPIBase = "https://slack.com/api"
 // Folding the hook into the WG is left as a future cleanup.
 var dispatchInflightWG sync.WaitGroup
 
+// reactionInflightWG counts in-flight "eyes" reaction goroutines spawned by
+// processSlackEvent. They hold no dispatch slot, so they are deliberately kept
+// off dispatchInflightWG. Each one reads slackAPIBase (via postReactionMethod),
+// so a test that swaps slackAPIBase for a stub must wait here before restoring
+// it; otherwise the restore races the goroutine's read (see withSlackAPIStub).
+var reactionInflightWG sync.WaitGroup
+
 // acquireDispatchSlot tries to acquire one slot on cfg.dispatchSem
 // without blocking. On success it returns a release func bound to
 // the channel observed at acquire time, plus the channel's capacity
@@ -2886,7 +2893,9 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 	// ack vs. delivery failure) and not a duplicate. Best-effort: errors are
 	// logged and don't block the dispatch path.
 	if target != "" && cfg.slackBotToken != "" {
+		reactionInflightWG.Add(1)
 		go func(channel, ts string) {
+			defer reactionInflightWG.Done()
 			_, err := postReactionToSlack(cfg.slackBotToken, slackReactionsAddReq{
 				Channel:   channel,
 				Name:      "eyes",

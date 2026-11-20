@@ -31,13 +31,19 @@ func withTimeout(t *testing.T, d time.Duration) (context.Context, context.Cancel
 // doesn't, depending on the cache state.
 
 // withSlackAPIStub installs a slackAPIBase override pointing at the
-// supplied test server and returns a restore closure. Pattern matches
+// supplied test server and restores it when the test ends. Pattern matches
 // what other slack-API tests in this package do.
+//
+// processSlackEvent fires a fire-and-forget "eyes" reaction goroutine that
+// reads slackAPIBase. Cleanups run last-in-first-out, so the drain below is
+// registered after the restore: it runs first and the restore can no longer
+// race that goroutine's read.
 func withSlackAPIStub(t *testing.T, srv *httptest.Server) {
 	t.Helper()
 	prev := slackAPIBase
 	slackAPIBase = srv.URL
 	t.Cleanup(func() { slackAPIBase = prev })
+	t.Cleanup(reactionInflightWG.Wait)
 }
 
 // inboundCapture is a thin gc-stub that records each posted inbound
@@ -303,9 +309,7 @@ func TestThreadContext_SecondMentionRepeatsRootWithoutNewActivity(t *testing.T) 
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	t.Cleanup(srv.Close)
-	prev := slackAPIBase
-	slackAPIBase = srv.URL
-	t.Cleanup(func() { slackAPIBase = prev })
+	withSlackAPIStub(t, srv)
 
 	capture := &inboundCapture{}
 	gcStub := httptest.NewServer(capture.handler())
@@ -600,9 +604,7 @@ func TestThreadContext_CrossAgentDeltaVisibility(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	t.Cleanup(srv.Close)
-	prev := slackAPIBase
-	slackAPIBase = srv.URL
-	t.Cleanup(func() { slackAPIBase = prev })
+	withSlackAPIStub(t, srv)
 
 	capture := &inboundCapture{}
 	gcStub := httptest.NewServer(capture.handler())
