@@ -20,6 +20,16 @@ FRONT_MATTER_RE = re.compile(r"\A---\n(?P<front>.*?)\n---(?:\n|\Z)(?P<body>.*)\Z
 SCHEMA_ROOT = Path(__file__).resolve().parents[2] / "schemas" / "build"
 FORBIDDEN_REQUIRED_FIELD_NAMES = {"owner", "stage-owner", "stage_owner", "persona", "role"}
 
+# The single status a caller reads as "checked and fine". Schemas may opt into an
+# approval coverage floor (see validate_approval_coverage) so that a verdict which
+# declined most of its own subjects cannot resolve to it.
+APPROVING_STATUS = "approved"
+# Statuses meaning "this reviewer declined to examine this subject". Deliberately
+# narrow: it excludes deferred/blocked/superseded, which mean "acknowledged, not
+# done in this artifact" and are a normal companion to an approving verdict. An
+# approval floor that counted them would fail legitimate approve-with-deferrals.
+OUT_OF_SCOPE_STATUSES = {"out_of_scope", "not_applicable"}
+
 
 class ValidationError(Exception):
     pass
@@ -50,6 +60,7 @@ def validate_artifact_text(text: str, *, expected_schema: str = "") -> BuildArti
     upstream = validate_upstream(trace)
     coverage = validate_coverage(trace, schema)
     validate_coverage_completeness(upstream, coverage)
+    validate_approval_coverage(front_matter, coverage, schema)
     validate_markdown_coverage(body, coverage)
     validate_required_sections(body, schema)
     return BuildArtifact(
@@ -213,6 +224,55 @@ def validate_coverage(trace: dict[str, Any], schema: dict[str, Any]) -> list[dic
             required_string(raw, "rationale", prefix=f"trace.coverage[{index}]")
         coverage.append(raw)
     return coverage
+
+
+def validate_approval_coverage(front_matter: dict[str, Any], coverage: list[dict[str, Any]], schema: dict[str, Any]) -> None:
+    """Reject an approving verdict whose coverage matrix shows the reviewer opted out of most of it.
+
+    A review that declines nearly every subject has not approved those subjects;
+    it has reported that it could not review them, and `approved` is the one
+    status a caller reads as "checked and fine". Refuse to let that pass, so the
+    producer has to report the honest outcome (`questions`, `blocked`, or
+    `draft`). The rule binds only approving verdicts, only counts genuine
+    opt-outs, and only when the schema opts in via `approval_min_covered` /
+    `approval_max_out_of_scope_ratio`.
+    """
+    min_covered = schema.get("approval_min_covered")
+    max_ratio = schema.get("approval_max_out_of_scope_ratio")
+    if min_covered is None and max_ratio is None:
+        return
+    if str(front_matter.get("status", "")).strip() != APPROVING_STATUS:
+        return
+    if not coverage:
+        # An empty matrix means there was nothing to account for - the ordinary
+        # "reviewed, found nothing" case. The floor is about a review that
+        # declined its subjects, not about one that had none.
+        return
+
+    covered = [entry for entry in coverage if str(entry["status"]) == "covered"]
+    opted_out = [entry for entry in coverage if str(entry["status"]) in OUT_OF_SCOPE_STATUSES]
+    not_covered = [entry for entry in coverage if entry not in covered]
+
+    if isinstance(min_covered, int) and not isinstance(min_covered, bool) and len(covered) < min_covered:
+        raise ValidationError(
+            f"status 'approved' requires at least {min_covered} covered subject(s) in the coverage matrix, "
+            f"got {len(covered)}; the remaining {len(not_covered)} subjects are {describe_coverage(not_covered)}. "
+            "A verdict that examined nothing is not an approval - report the honest outcome instead "
+            "('questions', 'blocked', or 'draft'), or route the subject to a reviewer that can examine it."
+        )
+    if isinstance(max_ratio, (int, float)) and not isinstance(max_ratio, bool):
+        if len(opted_out) > max_ratio * len(covered):
+            raise ValidationError(
+                f"status 'approved' requires covered subjects to outnumber the ones the reviewer opted "
+                f"out of, got {len(covered)} covered vs {len(opted_out)} out_of_scope across "
+                f"{[str(entry['id']) for entry in opted_out]}. An approval that scoped out most of its own "
+                "matrix certifies nothing about it - report the honest outcome instead, or route the "
+                "subject to a reviewer that can examine it."
+            )
+
+
+def describe_coverage(entries: Any) -> str:
+    return ", ".join(sorted({str(entry["status"]) for entry in entries})) or "none"
 
 
 def validate_markdown_coverage(body: str, coverage: list[dict[str, Any]]) -> None:

@@ -337,6 +337,19 @@ Every non-`covered` status requires a rationale in YAML. The markdown matrix
 must contain the same IDs and statuses as YAML, but the human-readable evidence
 or rationale prose does not need to match byte-for-byte.
 
+An approving verdict is a claim that something was actually examined, so a
+schema may declare an approval floor: `approval_min_covered` and
+`approval_max_out_of_scope_ratio`. When a schema declares them, `status:
+approved` is rejected unless at least that many subjects are `covered` and the
+subjects marked `out_of_scope` or `not_applicable` do not exceed the covered
+count by more than the ratio. `deferred`, `blocked`, and `superseded` are not
+counted, because they record a subject that was acknowledged and deliberately
+carried forward rather than one the reviewer declined. An empty coverage matrix
+is exempt, because it is the ordinary "reviewed, found nothing" case. The
+rejected verdict is the caller's signal to report an honest outcome
+(`questions`, `blocked`, or `draft`) or to route the subject to a reviewer whose
+subject matter covers it.
+
 Example trace shape:
 
 ```yaml
@@ -827,6 +840,7 @@ Proof expectation: validation requires `workflow.formula`, `producer.formula`,
 | GC-METH-BR-051 | GC-METH-US-001 | WHEN prerequisite inputs already exist for a build stage, THE base pack SHALL provide reusable `build-from-*-base` continuation suffixes that validate those prerequisites, perform only their owned stage or handoff, and delegate to the next suffix without silently rerunning skipped upstream stages. |
 | GC-METH-BR-052 | GC-METH-US-002 | WHEN a methodology pack needs a continuation entrypoint, THE pack SHOULD extend the matching `build-from-*-base` suffix and override selectors, routes, drain formulas, or review expansions instead of copying the suffix graph. |
 | GC-METH-BR-053 | GC-METH-US-001 | WHEN a user wants the built-in Gas City continuation behavior, THE base pack SHALL provide cataloged `build-from-*` wrappers that extend the matching suffix bases. |
+| GC-METH-BR-054 | GC-METH-TS-007 | IF a base schema declares an approval floor (`approval_min_covered`, `approval_max_out_of_scope_ratio`), THEN `status: approved` SHALL be rejected unless the coverage matrix meets that floor, and the error SHALL name the declined subjects and point at an honest outcome; an empty coverage matrix SHALL be exempt. |
 
 ## Scenario Ledger
 

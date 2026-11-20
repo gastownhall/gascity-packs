@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -410,6 +411,83 @@ trace:
         self.assertEqual([entry["id"] for entry in artifact.coverage], ["GC-METH-001", "GC-METH-012"])
         with self.assertRaisesRegex(build_artifact_validator.ValidationError, "GC-METH-099"):
             build_artifact_validator.validate_artifact_text(missing, expected_schema="gc.build.requirements.v1")
+
+    def review_artifact(self, coverage_rows: list[tuple[str, str]], *, status: str = "approved") -> str:
+        """Build a review artifact whose coverage matrix is exactly ``coverage_rows``."""
+        rows = "".join(
+            f"    - id: {item_id}\n      status: {row_status}\n"
+            + (f"      rationale: Not reviewable by this reviewer.\n" if row_status != "covered" else "")
+            for item_id, row_status in coverage_rows
+        )
+        coverage_block = f"  coverage:\n{rows}" if rows else "  coverage: []\n"
+        table = "\n".join(f"| {item_id} | {row_status} |" for item_id, row_status in coverage_rows)
+        text = self.valid_artifact("gc.build.review.v1").replace("\nstatus: approved\n", f"\nstatus: {status}\n")
+        text = re.sub(
+            r"  coverage:\n(?:    - id: .*\n(?:      (?:status|rationale): .*\n)+)+",
+            coverage_block,
+            text,
+            count=1,
+        )
+        return re.sub(
+            r"\| GC-METH-001 \| covered \|\n\| GC-METH-012 \| deferred \|",
+            table,
+            text,
+            count=1,
+        )
+
+    def test_build_artifact_rejects_approval_that_covered_nothing(self) -> None:
+        text = self.review_artifact(
+            [(f"SUBJ-{index}", "out_of_scope") for index in range(1, 8)]
+        )
+
+        with self.assertRaisesRegex(build_artifact_validator.ValidationError, "approved"):
+            build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.review.v1")
+
+    def test_build_artifact_rejects_approval_whose_scoped_out_subjects_outnumber_covered(self) -> None:
+        text = self.review_artifact(
+            [("SUBJ-1", "covered"), ("SUBJ-2", "out_of_scope"), ("SUBJ-3", "out_of_scope")]
+        )
+
+        with self.assertRaisesRegex(build_artifact_validator.ValidationError, "approved"):
+            build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.review.v1")
+
+    def test_build_artifact_accepts_approval_with_real_coverage(self) -> None:
+        artifact = build_artifact_validator.validate_artifact_text(
+            self.review_artifact([("SUBJ-1", "covered"), ("SUBJ-2", "covered"), ("SUBJ-3", "out_of_scope")]),
+            expected_schema="gc.build.review.v1",
+        )
+
+        self.assertEqual(artifact.front_matter["status"], "approved")
+
+    def test_deferrals_do_not_trip_the_approval_floor(self) -> None:
+        """`deferred` is a normal companion to an approval; only genuine opt-outs count."""
+        text = self.review_artifact(
+            [("SUBJ-1", "covered"), ("SUBJ-2", "deferred"), ("SUBJ-3", "deferred"), ("SUBJ-4", "deferred")]
+        )
+
+        artifact = build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.review.v1")
+
+        self.assertEqual(artifact.front_matter["status"], "approved")
+
+    def test_clean_review_with_no_findings_stays_approvable(self) -> None:
+        """An empty matrix is "reviewed, found nothing", not "declined to look"."""
+        text = self.review_artifact([])
+        text = re.sub(r"\| ID \| Status \|\n\| --- \| --- \|\n", "", text)
+
+        artifact = build_artifact_validator.validate_artifact_text(text, expected_schema="gc.build.review.v1")
+
+        self.assertEqual(artifact.front_matter["status"], "approved")
+
+    def test_unapproving_verdicts_are_exempt_from_the_coverage_floor(self) -> None:
+        artifact = build_artifact_validator.validate_artifact_text(
+            self.review_artifact(
+                [(f"SUBJ-{index}", "out_of_scope") for index in range(1, 8)],
+                status="questions",
+            ),
+            expected_schema="gc.build.review.v1",
+        )
+
+        self.assertEqual(artifact.front_matter["status"], "questions")
 
     def test_build_artifact_cli_reports_errors_without_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
