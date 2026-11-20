@@ -12,6 +12,7 @@ ledgers. The matching ledger rows live in `gascity/REQUIREMENTS.md`
 
 from __future__ import annotations
 
+import os
 import pathlib
 import tomllib
 import unittest
@@ -509,10 +510,55 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
             with self.subTest(pack="bmad", formula=formula_name, step=step_id):
                 self.assertEqual(
                     steps[step_id]["check"]["check"]["path"],
-                    ".gc/scripts/checks/implementation-review-approved.sh",
+                    "../assets/scripts/checks/implementation-review-approved.sh",
                     "bmad story development must keep its methodology "
                     "review check",
                 )
+
+
+    def test_bmad_checks_resolve_from_gascity_pack_assets(self) -> None:
+        """gc rewrites only the "../assets/scripts/checks/<name>" form to an
+        absolute path through the formula layers (formula-spec-v2 section 1.8).
+        Any other path is run as written from the worker's directory, and no
+        city materializes a .gc/scripts/checks/ tree there, so the check can
+        never launch and the step is held open (section 3.1). bmad ships no
+        checks of its own: every gate must name an asset the imported gascity
+        pack provides."""
+        bmad_root = PACKS_ROOT / "bmad"
+        gascity_checks = GASCITY_ROOT / "assets" / "scripts" / "checks"
+        seen = 0
+        for formula_path in sorted((bmad_root / "formulas").glob("*.formula.toml")):
+            data = tomllib.loads(formula_path.read_text(encoding="utf-8"))
+            for node in base_contract._walk_formula_nodes(data):
+                check = (node.get("check") or {}).get("check")
+                if not check:
+                    continue
+                seen += 1
+                path = check.get("path", "")
+                with self.subTest(formula=formula_path.name, step=node.get("id")):
+                    self.assertTrue(
+                        path.startswith("../assets/scripts/checks/"),
+                        f"{formula_path.name}:{node.get('id')} check path {path!r} "
+                        "must be a layer-resolved ../assets/scripts/checks/ path",
+                    )
+                    script = gascity_checks / pathlib.PurePosixPath(path).name
+                    self.assertTrue(script.is_file(), f"gascity ships no {script.name}")
+                    self.assertTrue(os.access(script, os.X_OK), f"{script} must be executable")
+        self.assertGreater(seen, 0, "expected bmad formulas to declare checks")
+
+    def test_bmad_prompts_do_not_send_agents_to_launcher_local_scripts(self) -> None:
+        bmad_root = PACKS_ROOT / "bmad"
+        surfaces = [
+            path
+            for sub_dir in PROMPT_ASSET_DIRS
+            if (bmad_root / sub_dir).is_dir()
+            for path in sorted((bmad_root / sub_dir).rglob("*"))
+            if path.is_file() and path.suffix in {".md", ".toml"}
+        ]
+        self.assertTrue(surfaces)
+        for path in surfaces:
+            with self.subTest(asset=str(path.relative_to(bmad_root))):
+                self.assertNotIn(".gc/scripts/", path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

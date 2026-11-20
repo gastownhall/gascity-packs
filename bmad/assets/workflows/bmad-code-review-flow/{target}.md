@@ -59,8 +59,12 @@ write, so publish the review report explicitly before closing:
   Do not use `gc bd update --metadata 'key=value'`; `--metadata` only accepts
   a JSON object.
 - From `$GC_RIG_ROOT`, run the artifact validator with the claimed bead id and
-  fix any error before setting `gc.outcome=pass`:
-  `GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh`.
+  fix any error before setting `gc.outcome=pass`. The validator is the script
+  recorded as `gc.check_path` on the validation loop control bead (the
+  dependent of this step bead whose `gc.kind` is `ralph`); Gas City resolves it
+  to the gascity pack's own `build-artifact-valid.sh` asset, so nothing has to
+  be copied into the rig:
+  `GC_BEAD_ID=<claimed-step-id> "<gc.check_path>"`.
 - On repair attempts (`gc.attempt` greater than 1), first read the validator
   errors from `gc.attempt_log` on the validation loop control bead (the
   dependent of this step bead) and fix every listed error in place.
