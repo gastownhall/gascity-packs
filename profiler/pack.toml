@@ -2,6 +2,14 @@
 name = "profiler"
 version = "0.1.0"
 schema = 2
+# Minimum gc version. The formulas in this pack declare
+# [requires] formula_compiler, a table gc only learned to read in v1.3.0;
+# older gc parses the formula leniently and drops the declaration, so a
+# formula using graph-only constructs fails to compile and one that does
+# not silently takes the v1 path. gc parses this key today and does not
+# yet enforce it -- it is the declared floor, not a guarantee.
+requires_gc = ">=1.3.0"
+
 
 # bench-nullop routes every step to gc.run-operator, which lives in the gascity
 # pack; without this import the formula cannot resolve its run target.
