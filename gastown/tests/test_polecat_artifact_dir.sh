@@ -117,6 +117,7 @@ init_repo() {
 test_workspace_creation_uses_canonical_sibling() {
     local tmp rig remote city provider canonical setup calls bd_subcommand
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -190,6 +191,7 @@ test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores() {
     local tmp rig city provider global_config global_ignore exclude
     local tracked_before config_before global_before status
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     city="$tmp/city"
@@ -235,23 +237,84 @@ test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores() {
 
     # Existing worktrees take the idempotent fast path. That path must still
     # repair an installation created before .gc/ became a runtime exclude.
-    sed -i '\|^\.gc/$|d' "$exclude"
+    # Avoid the incompatible BSD/GNU sed -i argument conventions.
+    python3 - "$exclude" <<'PY_EXCLUDE'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+path.write_text("".join(line for line in path.read_text().splitlines(keepends=True)
+                        if line.rstrip("\n") != ".gc/"))
+PY_EXCLUDE
     GIT_CONFIG_GLOBAL="$global_config" \
         "$WORKTREE_SETUP" "$rig" "$provider" gastown.nux
     [[ "$(grep -cxF '.gc/' "$exclude")" -eq 1 ]] ||
         fail "existing-worktree fast path did not restore exactly one .gc/ entry"
 }
 
-test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt() {
-    local tmp rig remote city provider skill_root exclude head_before status stderr
+# Snapshot work that startup is required to preserve. Fetch may refresh origin
+# refs, so compare local/work/stash refs separately from remote tracking state.
+snapshot_provider_work() {
+    python3 - "$1" <<'PY_SNAPSHOT'
+from pathlib import Path
+import hashlib
+import json
+import os
+import subprocess
+import sys
+wt = Path(sys.argv[1])
+def git(*args):
+    return subprocess.check_output(["git", "-C", str(wt), *args])
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+status = git("status", "--porcelain=v1", "-z")
+paths = set(git("ls-files", "-z", "--cached", "--others", "--exclude-standard").split(b"\0")) - {b""}
+files = {}
+for name in sorted(paths):
+    path = wt / os.fsdecode(name)
+    files[os.fsdecode(name)] = ("symlink", os.readlink(path)) if path.is_symlink() else ("file", digest(path)) if path.is_file() else ("absent", None)
+branch = subprocess.run(["git", "-C", str(wt), "symbolic-ref", "-q", "HEAD"], capture_output=True)
+if branch.returncode not in (0, 1):
+    raise SystemExit("could not inspect symbolic HEAD")
+print(json.dumps({"head": git("rev-parse", "HEAD").decode(),
+    "branch": branch.stdout.decode(), "status": status.hex(), "files": files,
+    "index": digest(Path(os.fsdecode(git("rev-parse", "--git-path", "index").strip()))),
+    "exclude": digest(Path(os.fsdecode(git("rev-parse", "--git-path", "info/exclude").strip()))),
+    "refs": git("for-each-ref", "refs/heads", "refs/work", "refs/stash").decode(),
+    "stash": git("stash", "list", "--format=%gd %H %gs").decode(),
+    "commit": git("cat-file", "-p", "HEAD").hex()}, sort_keys=True))
+PY_SNAPSHOT
+}
+
+assert_provider_resumes_unchanged() {
+    local rig="$1" provider="$2" agent="$3" attempt snapshot_dir
+    snapshot_dir=$(mktemp -d "$tmp/resume.XXXXXX")
+    snapshot_provider_work "$provider" > "$snapshot_dir/before"
+    for attempt in 1 2; do
+        if "$WORKTREE_SETUP" "$rig" "$provider" "$agent" --sync > "$snapshot_dir/start-$attempt.log" 2>&1; then
+            printf 'provider continued\n' > "$snapshot_dir/provider-$attempt"
+        else
+            cat "$snapshot_dir/start-$attempt.log" >&2
+            fail "preserved provider work blocked startup on attempt $attempt"
+        fi
+        [[ -s "$snapshot_dir/provider-$attempt" ]] || fail "provider did not continue"
+        grep -q 'left as-is:.*skipping sync' "$snapshot_dir/start-$attempt.log" ||
+            fail "startup did not explain that preserved work skipped sync"
+        snapshot_provider_work "$provider" > "$snapshot_dir/after"
+        cmp "$snapshot_dir/before" "$snapshot_dir/after" ||
+            fail "startup changed preserved provider state on attempt $attempt"
+    done
+}
+
+test_worktree_sync_ignores_codex_skills_and_resumes_unrelated_dirt() {
+    local tmp rig remote city provider skill_root exclude head_before
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
     city="$tmp/city"
     provider="$city/.gc/worktrees/demo/refinery"
     skill_root="$tmp/core-skills"
-    stderr="$tmp/sync.stderr"
 
     init_repo "$rig"
     git -C "$rig" branch -M main
@@ -284,28 +347,21 @@ test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt() {
     [[ "$(grep -cxF '.agents/skills/' "$exclude")" -eq 1 ]] ||
         fail "repository-local exclude does not contain exactly one .agents/skills/ entry"
 
-    # The targeted runtime exclude must not weaken the fail-closed guard for
-    # unrelated source dirt.
+    # Unrelated source dirt remains visible and resumes without synchronization.
     head_before=$(git -C "$provider" rev-parse HEAD)
     printf '%s\n' 'preserve me' >"$provider/dirty.txt"
-    set +e
-    "$WORKTREE_SETUP" "$rig" "$provider" refinery --sync 2>"$stderr"
-    status=$?
-    set -e
-    [[ "$status" -ne 0 ]] ||
-        fail "strict sync accepted unrelated provider worktree dirt"
-    grep -qF "refusing to sync dirty provider worktree at $provider" "$stderr" ||
-        fail "dirty sync did not report the fail-closed refusal"
-    [[ -f "$provider/dirty.txt" ]] ||
-        fail "dirty sync discarded unrelated provider worktree dirt"
+    assert_provider_resumes_unchanged "$rig" "$provider" refinery
+    [[ "$(cat "$provider/dirty.txt")" == 'preserve me' ]] ||
+        fail "dirty resume changed unrelated provider bytes"
     [[ "$(git -C "$provider" rev-parse HEAD)" == "$head_before" ]] ||
-        fail "dirty sync moved provider HEAD"
+        fail "dirty resume moved provider HEAD"
 }
 
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
     local tmp rig remote city provider stable hash task_sha detached_sha
     local stable_sha foreign foreign_head foreign_exclude_before status
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -366,37 +422,29 @@ test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
         fail "ref-reachable detached state was not preserved"
 
     # An unreferenced detached commit is the only durable copy of its work.
-    # Sync must fail without switching or rewriting it.
+    # Startup must resume without switching or rewriting it.
     git -C "$provider" checkout -q --detach
     printf 'detached unique\n' >"$provider/detached.txt"
     git -C "$provider" add detached.txt
     git -C "$provider" commit -qm "detached unique"
     detached_sha=$(git -C "$provider" rev-parse HEAD)
-    set +e
-    "$WORKTREE_SETUP" "$rig" "$provider" gastown.nux --sync
-    status=$?
-    set -e
-    [[ "$status" -ne 0 ]] ||
-        fail "sync accepted an unreferenced detached provider HEAD"
+    assert_provider_resumes_unchanged "$rig" "$provider" gastown.nux
     [[ "$(git -C "$provider" rev-parse HEAD)" == "$detached_sha" ]] ||
-        fail "failed detached sync rewrote the unique HEAD"
+        fail "detached resume rewrote the unique HEAD"
     [[ -z "$(git -C "$provider" branch --show-current)" ]] ||
-        fail "failed detached sync switched away from the unique HEAD"
+        fail "detached resume switched away from the unique HEAD"
 
     # Give the test-only detached commit a durable ref, then verify dirty
-    # source state also blocks before any checkout or branch movement.
+    # source state also resumes before any checkout or branch movement.
     git -C "$rig" branch audit-detached-preserved "$detached_sha"
     git -C "$provider" checkout -q "$stable"
     stable_sha=$(git -C "$provider" rev-parse HEAD)
     printf 'dirty\n' >"$provider/dirty.txt"
-    set +e
-    "$WORKTREE_SETUP" "$rig" "$provider" gastown.nux --sync
-    status=$?
-    set -e
-    [[ "$status" -ne 0 && -f "$provider/dirty.txt" ]] ||
-        fail "sync accepted or discarded dirty provider work"
+    assert_provider_resumes_unchanged "$rig" "$provider" gastown.nux
+    [[ "$(cat "$provider/dirty.txt")" == dirty ]] ||
+        fail "dirty resume changed provider work"
     [[ "$(git -C "$provider" rev-parse HEAD)" == "$stable_sha" ]] ||
-        fail "dirty sync moved the stable branch"
+        fail "dirty resume moved the stable branch"
     rm -f "$provider/dirty.txt"
 
     # Unique/diverged work on the stable branch is not infrastructure state;
@@ -409,14 +457,16 @@ test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
     git -C "$rig" add main-c.txt
     git -C "$rig" commit -qm "main C"
     git -C "$rig" push -qu origin main
-    set +e
-    "$WORKTREE_SETUP" "$rig" "$provider" gastown.nux --sync
-    status=$?
-    set -e
-    [[ "$status" -ne 0 ]] ||
-        fail "sync accepted unique/diverged stable provider work"
+    assert_provider_resumes_unchanged "$rig" "$provider" gastown.nux
     [[ "$(git -C "$provider" rev-parse HEAD)" == "$stable_sha" ]] ||
-        fail "failed diverged sync rewrote the stable branch"
+        fail "diverged resume rewrote the stable branch"
+    [[ "$(git -C "$provider" branch --show-current)" == "$stable" ]] ||
+        fail "diverged resume switched away from the stable branch"
+    [[ "$(git -C "$provider" show HEAD:stable-unique.txt)" == 'stable unique' ]] ||
+        fail "diverged resume lost committed work"
+    [[ "$(git -C "$rig" rev-parse refs/remotes/origin/main)" == \
+       "$(git -C "$rig" rev-parse main)" ]] ||
+        fail "diverged resume did not retain refreshed origin/main"
 
     # A Git worktree at the configured path is not sufficient: it must share
     # the exact rig repository common dir. Refuse foreign repositories before
@@ -439,6 +489,7 @@ test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch() {
 test_shutdown_probe_scopes_rig_and_fails_closed() {
     local tmp probe calls output bd_subcommand
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     probe="$tmp/probe.sh"
     calls="$tmp/calls"
@@ -598,6 +649,7 @@ test_validator_rejects_provider_and_unrelated_paths() {
     local tmp validator rig city_a city_b provider bead valid got plain
     local alias_root foreign foreign_wt cross_city other_rig wrong_namespace
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     validator="$tmp/validator.sh"
     extract_validator "$validator"
@@ -690,6 +742,7 @@ test_workspace_metadata_reads_fail_closed_without_pipefail() {
     bd_subcommand=$(printf '%s%s' b d)
     for mode in command-failure malformed empty ambiguous; do
         tmp=$(mktemp -d)
+        tmp=$(cd "$tmp" && pwd -P)
         rig="$tmp/rig"
         remote="$tmp/remote.git"
         city="$tmp/city"
@@ -769,6 +822,7 @@ test_workspace_metadata_reads_fail_closed_without_pipefail() {
 test_workspace_collision_fails_closed_without_alternate() {
     local tmp rig remote city provider canonical setup calls bd_subcommand
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -835,6 +889,7 @@ test_workspace_collision_fails_closed_without_alternate() {
 test_workspace_rejects_redirected_artifact_root_before_creation() {
     local tmp rig remote city provider redirected setup calls bd_subcommand
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -995,6 +1050,7 @@ test_cleanup_command_is_idempotent_and_mr_retryable() {
     local tmp rig remote city canonical sweep_artifact nonterminal_artifact
     local bin bead_json calls sha nonterminal_sha result output
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -1120,6 +1176,7 @@ test_cleanup_command_rejects_cross_city_and_dirty_artifacts() {
     local symlink_path symlink_target foreign dirty provider legacy
     local remote bin bead_json calls sha status
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -1223,6 +1280,7 @@ test_cleanup_requires_live_remote_evidence_and_stable_state() {
     local tmp rig remote city bin bead_json second_json calls show_count
     local artifact source_sha delivered_sha target_sha remote_record status
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -1448,6 +1506,7 @@ test_git_status_failures_preserve_artifacts_and_provider_state() {
     local fail_on source_sha stable_head stable_branch status real_git
     local status_count
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -1521,6 +1580,7 @@ test_witness_status_failure_blocks_artifact_removal() {
     local tmp rig remote city artifact gate bin real_git source_sha
     local status_count output
     tmp=$(mktemp -d)
+    tmp=$(cd "$tmp" && pwd -P)
     trap 'rm -rf "$tmp"' RETURN
     rig="$tmp/rig"
     remote="$tmp/remote.git"
@@ -1803,7 +1863,7 @@ test_workspace_metadata_reads_fail_closed_without_pipefail
 test_workspace_collision_fails_closed_without_alternate
 test_workspace_rejects_redirected_artifact_root_before_creation
 test_worktree_setup_ignores_gc_without_mutating_tracked_or_global_ignores
-test_worktree_sync_ignores_codex_skills_but_rejects_unrelated_dirt
+test_worktree_sync_ignores_codex_skills_and_resumes_unrelated_dirt
 test_worktree_sync_preserves_task_state_and_only_fast_forwards_stable_branch
 test_shutdown_probe_scopes_rig_and_fails_closed
 test_shutdown_probe_ignores_closed_namesakes
