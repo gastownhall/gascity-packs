@@ -72,8 +72,15 @@ class GcMock:
         city_name: str = "test-city",
         *,
         enforce_authorization: bool = False,
+        events_newest_first: bool = False,
     ) -> None:
         self.city_name = city_name
+        # Current gc serves /events seq DESC (newest first) and stamps every
+        # event with seq + ts; older servers returned oldest-first. False
+        # keeps the oldest-first shape the pre-existing tests were written
+        # against.
+        self.events_newest_first = events_newest_first
+        self._sessions: list[dict[str, Any]] = []
         # When True, /extmsg/outbound checks that the (session_id,
         # conversation_id) pair is authorized via a direct binding OR a
         # group membership. When False (default), all outbound requests
@@ -84,6 +91,7 @@ class GcMock:
         self._lock = threading.Lock()
         self._bindings: dict[str, list[dict[str, Any]]] = {}
         self._inbound_events: list[dict[str, Any]] = []
+        self._event_seq = 0
         # transcripts[(provider, conversation_id, kind)] = list of entries
         # in chronological order. Each entry mirrors gc's transcript shape:
         # {Kind, ProviderMessageID, Conversation: {ScopeID, Provider, ...}}.
@@ -164,6 +172,8 @@ class GcMock:
         kind: str = "dm",
         message_id: str = "",
         age_seconds: float = 0.0,
+        target_agent: str | None = None,
+        stamp: bool = False,
     ) -> None:
         """Seed an extmsg.inbound event so reply-current's lookup path resolves.
 
@@ -173,6 +183,11 @@ class GcMock:
         ``age_seconds`` backdates the event so tests can exercise the
         client's escalating ``since`` windows; it is mock-internal and
         never serialized into the response.
+
+        ``target_agent`` models an agent-scoped (durable seat) binding, which
+        gc emits with an empty ``target_session``. ``stamp`` adds the
+        ``seq``/``ts`` fields real gc puts on every event, with ``seq``
+        increasing in registration order and ``ts`` derived from the age.
         """
         event = {
             "type": "extmsg.inbound",
@@ -185,8 +200,20 @@ class GcMock:
             },
             "_age_seconds": age_seconds,
         }
+        if target_agent is not None:
+            event["payload"]["target_agent"] = target_agent
         with self._lock:
+            if stamp:
+                self._event_seq += 1
+                event["seq"] = self._event_seq
+                event["ts"] = time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - age_seconds))
             self._inbound_events.append(event)
+
+    def register_session(self, *, session_id: str, alias: str) -> None:
+        """Seed a GET /sessions entry (id + alias, as gc reports them)."""
+        with self._lock:
+            self._sessions.append({"id": session_id, "alias": alias})
 
     def register_transcript_entry(
         self,
@@ -303,6 +330,16 @@ class GcMock:
             self._handle_transcript_query(req, query)
             return
 
+        if method == "GET" and suffix == "/sessions":
+            with self._lock:
+                resp = json.dumps({"items": list(self._sessions)}).encode()
+            req.send_response(200)
+            req.send_header("Content-Type", "application/json")
+            req.send_header("Content-Length", str(len(resp)))
+            req.end_headers()
+            req.wfile.write(resp)
+            return
+
         req.send_response(404)
         req.end_headers()
         req.wfile.write(f"unhandled: {method} {suffix}".encode())
@@ -329,11 +366,13 @@ class GcMock:
     ) -> None:
         """GET /events — scoped event-stream snapshot. Used for inbound-event lookup.
 
-        Mirrors the real endpoint's contract (huma_handlers_events.go):
-        events are returned OLDEST-first, ``since`` (Go duration string)
-        filters by age, ``limit`` keeps the oldest slice (the newest
-        events are what truncation drops), and ``total`` reports the
-        pre-truncation match count so clients can detect incompleteness.
+        Mirrors the endpoint's contract (huma_handlers_events.go):
+        ``since`` (Go duration string) filters by age and ``total`` reports
+        the pre-truncation match count so clients can detect
+        incompleteness. By default events are returned OLDEST-first and
+        ``limit`` keeps the oldest slice (the older server shape); with
+        ``events_newest_first`` they are returned seq DESC and ``limit``
+        keeps the newest slice, as current gc does.
         """
         wanted_type = query.get("type", "")
         with self._lock:
@@ -350,6 +389,8 @@ class GcMock:
         except ValueError:
             limit = 100
         total = len(items)
+        if self.events_newest_first:
+            items = list(reversed(items))
         items = items[:limit]
         resp = json.dumps({"items": items, "total": total}).encode()
         req.send_response(200)

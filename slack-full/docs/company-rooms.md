@@ -395,6 +395,13 @@ closed without the reminder's `--turn-ref`, then verify the referenced session,
 agent binding, directory room route, and turn kind before posting. Thus another
 room waking the same named session cannot redirect an in-progress reply or
 delegation; agents never memorize IDs or tokens.
+The reverse holds too: a live pointer never captures a reply meant for
+another conversation. `reply-current` with an explicit `--conversation-id`
+for a different channel, or with no flags when the session's latest inbound
+is newer and elsewhere, takes the legacy path. A posted reply records its
+turn under `company-current-turn/answered/<kind>/<session>.json`, a
+namespace the delivery worker never writes, and auto-resolution then treats
+that pointer as absent until a new turn replaces it.
 It durably persists a posting intent before the provider POST
 (prepared → posting → published, bounded attempts, TTL), then posts
 `<@target> …` as the delegating agent's identity app into the human root's

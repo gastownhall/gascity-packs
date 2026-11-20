@@ -1614,6 +1614,51 @@ def read_turn_ref(session: str, turn_ref: str) -> dict[str, Any] | None:
     return turn
 
 
+_POINTER_READERS = {
+    "room": read_current_turn,
+    "dm": read_current_turn_dm,
+    "mpim": read_current_turn_mpim,
+}
+
+
+def read_pointer(session: str, source: str) -> dict[str, Any] | None:
+    """Read the mutable ``room``/``dm``/``mpim`` current-turn pointer."""
+    return _POINTER_READERS[source](session)
+
+
+# --- answered markers (gp-x4jak) -------------------------------------------
+#
+# The Go delivery worker owns the mutable pointers and rewrites them on every
+# wake, so the reply path never deletes one (a check-then-unlink would race a
+# newer wake). Instead it records which turn it answered under answered/, a
+# namespace the worker never touches; auto-resolution then treats a pointer
+# whose turn is already answered as absent, so a stale room turn cannot pull
+# later, unrelated replies back into the room.
+
+def _turn_identity(turn: dict[str, Any]) -> dict[str, str]:
+    return {key: str(turn.get(key) or "")
+            for key in ("session", "receipt_id", "channel_id", "ts", "kind", "turn_ref")}
+
+
+def _answered_path(source: str, session: str) -> pathlib.Path:
+    return turns_dir() / "answered" / source / f"{sanitize_component(session)}.json"
+
+
+def mark_turn_answered(turn: dict[str, Any], source: str) -> None:
+    """Record that ``turn`` (read from the ``source`` namespace) was answered."""
+    marker = dict(_turn_identity(turn), answered_at=_rfc3339(_now()))
+    _atomic_write_json(_answered_path(source, turn["session"]), marker)
+
+
+def turn_answered(turn: dict[str, Any], source: str) -> bool:
+    """True when the answered marker for ``source`` names exactly this turn."""
+    marker = _read_json(_answered_path(source, turn["session"]))
+    if marker is None:
+        return False  # absent or unreadable: never hide a live turn
+    identity = _turn_identity(turn)
+    return all(marker.get(key) == value for key, value in identity.items())
+
+
 # Reply-pointer source priority for tie-breaking newest-wins: the more private /
 # more specific surface wins a delivered_at tie, so a reply is never auto-routed
 # from a private turn into a public room (nor from a 1:1 DM into a group) — an
@@ -1633,7 +1678,9 @@ def resolve_reply_pointer_source(
     any present pointer carries an unparseable timestamp, the most-private
     present surface wins (dm > mpim > room) — never auto-route a private reply
     into a public room, nor a 1:1 reply into a group, when they are just as
-    current; an operator disambiguates with ``--kind``.
+    current; an operator disambiguates with ``--kind``. A pointer whose turn
+    was already answered (``mark_turn_answered``) counts as absent unless
+    ``kind_override`` names it.
     """
     if turn_ref:
         turn = read_turn_ref(session, turn_ref)
@@ -1652,13 +1699,9 @@ def resolve_reply_pointer_source(
         return source
 
     present: dict[str, dict[str, Any]] = {}
-    for src, reader in (
-        ("room", read_current_turn),
-        ("dm", read_current_turn_dm),
-        ("mpim", read_current_turn_mpim),
-    ):
+    for src in ("room", "dm", "mpim"):
         try:
-            turn = reader(session)
+            turn = read_pointer(session, src)
         except OutboundError:
             # A corrupt/poisoned pointer for ONE kind (e.g. an empty owner_app_id
             # written for a vanished woken agent) must not brick reply-current on
@@ -1668,8 +1711,13 @@ def resolve_reply_pointer_source(
             if kind_override == src:
                 raise
             continue
-        if turn is not None:
-            present[src] = turn
+        if turn is None:
+            continue
+        # An answered turn no longer claims auto-resolved replies (gp-x4jak);
+        # an explicit --kind still selects it.
+        if kind_override != src and turn_answered(turn, src):
+            continue
+        present[src] = turn
     if not present:
         # Not a company session at all: the legacy reply path owns it, and any
         # --kind is the legacy conversation kind (dm/room/thread), not a company
