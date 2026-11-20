@@ -1,7 +1,12 @@
-"""start, stop and kill-object.
+"""start, stop and kill-object, and what ``provision`` and ``launch`` share
+with ``start`` (:mod:`.unwelded`).
 
 **start** (welded: gc's ``start`` both prepares the box and launches the
-agent):
+agent). A gc from gastownhall/gascity#9226 on un-welds it for this pack
+(``proc.provision`` with ``proc.launch``): ``provision`` runs steps 1 to 3
+and ``launch`` step 4 (:func:`create`, which both use) with no first turn.
+The welded start is kept, first turn included, for every gc without that
+change and for a current gc whose handshake read failed:
 
 1. Start or check the city's core (:func:`.core.ensure_core`); a core the
    pack did not start is refused.
@@ -96,6 +101,10 @@ retry (the next stop or start, or a corpse kill) finds what is left by the
 token. A process whose environment does not carry the token, or cannot be
 read, is not found that way.
 
+**stop** first drops the name's provision record (:mod:`.provisioned`),
+under the name's lock and with the core down too, so a stop between
+``provision`` and ``launch`` wins.
+
 **stop** with the core not answering and nothing of it running (no holder
 of its socket, no core process, as after ``server-stop``) reads no record and
 starts no core: the name's incarnations are ended by the pid, start time and
@@ -122,7 +131,7 @@ from ..rpp.ops import OpError, OpResult
 from ..rpp.outcome import InputOutcome
 from ..rpp.statedir import StateDirError
 from ..rpp.wire import KillOutcome, StartConfig, WireError, parse_kill_object_request, parse_start_config
-from . import activity, shim, spawnfile
+from . import activity, provisioned, shim, spawnfile
 from .appvis import app_labels
 from .attach import attached, viewer_targets
 from .command import run_bounded
@@ -148,8 +157,9 @@ from .procs import (
     subtree,
 )
 from .readiness import delays_first_turn, shows_ready_prompt, withholds_first_turn
+from .provisioned import SessionSteps, steps_of
 from .reads import agent_state, list_city, meta_store, session_arg, unreachable
-from .records import box_object, is_intact, newest, object_of
+from .records import box_object, is_intact, newest, newest_first, object_of
 from .staging import StagingError, stage
 
 INSTANCE_TOKEN_KEY: Final = "GC_INSTANCE_TOKEN"
@@ -189,6 +199,9 @@ START_REFUSAL_LIMIT_MS: Final = 15 * 60 * 1000
 survive (one unkillable, one respawned from outside the kill, a process
 table that cannot be read); a start after that warns and goes ahead."""
 REFUSED_SINCE_KEY: Final = "GC_HERDR_CORE_START_REFUSED_SINCE_MS"
+PER_INCARNATION_KEYS: Final = frozenset({STARTUP_UNCONFIRMED_KEY, REFUSED_SINCE_KEY})
+"""The pack's own metadata keys about one incarnation, never carried to the
+next by a replacing ``launch``."""
 FIRST_REFUSAL: Final = "the first refusal"
 CREATED: Final = "the earlier incarnation's creation, as no refusal can be recorded for it"
 """What a refused start's limit counts from (:func:`_refused_since`), as its message names it."""
@@ -417,24 +430,30 @@ class _Refusals:
     until_ms: List[Tuple[int, str]]
 
 
-def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refusals: Optional[_Refusals] = None) -> List[str]:
+def _recycle(
+    ctx: OpContext, client: HcClient, records: List[Terminal], *, refusals: Optional[_Refusals] = None, keep: bool = False
+) -> List[str]:
     """End and remove ``records``; every other live box of the city is
     protected. Returns what may survive: that record stays, and so does its
     metadata. With ``refusals`` (a start's), a record whose processes have
     kept surviving for :data:`START_REFUSAL_LIMIT_MS` is removed all the same,
-    and what may survive it is reported there instead."""
+    and what may survive it is reported there instead. With ``keep`` (a
+    replacing ``launch``'s), each record is ended but neither it nor its
+    metadata is removed: the caller removes them once the new incarnation's
+    terminal exists, so the name is never listed absent in between."""
     if not records:
         return []
     city = list_city(client, ctx, finished=False)
     problems: List[str] = []
     for record in records:
         meta = _read_meta(ctx, record)
-        survived = kill_incarnation(ctx, client, record, meta, protected=city)
+        survived = kill_incarnation(ctx, client, record, meta, protected=city, remove=not keep)
         if survived and refusals is not None:
             since, anchor = _refused_since(ctx, client, record, meta)
             until = since + START_REFUSAL_LIMIT_MS
             if ctx.host.now_ms() >= until:
-                _remove_record(client, record, ctx.request.cancel.pause)
+                if not keep:
+                    _remove_record(client, record, ctx.request.cancel.pause)
                 refusals.abandoned.extend(survived)
                 survived = []
             else:
@@ -442,7 +461,8 @@ def _recycle(ctx: OpContext, client: HcClient, records: List[Terminal], *, refus
         if survived:
             problems += survived
             continue
-        forget(ctx, object_of(record))
+        if not keep:
+            forget(ctx, object_of(record))
     return problems
 
 
@@ -485,12 +505,15 @@ def _utc(ms: int) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ms / 1000))
 
 
-def _recycle_before_start(ctx: OpContext, client: HcClient, name: str, records: List[Terminal], warnings: List[str]) -> None:
+def recycle_before_start(
+    ctx: OpContext, client: HcClient, name: str, records: List[Terminal], warnings: List[str], *, keep: bool = False
+) -> None:
     """Recycle ``records`` for a new incarnation, which never runs beside an
     earlier one's processes, unless they have kept surviving for
-    :data:`START_REFUSAL_LIMIT_MS`: the start then warns and goes ahead."""
+    :data:`START_REFUSAL_LIMIT_MS`: the start then warns and goes ahead.
+    With ``keep``, the records are ended but stay (:func:`_recycle`)."""
     refusals = _Refusals(abandoned=[], until_ms=[])
-    survived = _recycle(ctx, client, records, refusals=refusals)
+    survived = _recycle(ctx, client, records, refusals=refusals, keep=keep)
     if refusals.abandoned:
         warnings.append(
             f"started {name!r} beside an earlier incarnation's processes, which may still run: " + "; ".join(refusals.abandoned)
@@ -513,6 +536,7 @@ def op_stop(ctx: OpContext) -> OpResult:
     client = ctx.client()
     try:
         with ctx.name_lock(name, shared=False):
+            provisioned.drop(ctx, name)  # first, core or not: a stop between provision and launch wins
             records = list_city(client, ctx, name)
             problems = _recycle(ctx, client, records)
     except HcError as err:
@@ -738,7 +762,10 @@ def _launcher_argv(ctx: OpContext, spawn_path: str) -> List[str]:
     return [ctx.host.python, "-I", "-S", launcher, spawn_path]
 
 
-def _check_name(records: List[Terminal], name: str, fresh_only: bool) -> Optional[OpResult]:
+def check_name(records: List[Terminal], name: str, fresh_only: bool) -> Optional[OpResult]:
+    """A start's (or ``provision``'s) refusal of a name: exit 73 for a
+    ``fresh_only`` one finding any record, "already exists" for a live
+    intact incarnation."""
     if records and fresh_only:
         return OpResult.fail(f'session "{name}" already exists (fresh_only)', ExitCode.FRESH_COLLISION)
     current = newest(records, name)
@@ -762,16 +789,9 @@ def op_start(ctx: OpContext) -> OpResult:
         raise OpError(f"cannot start {name!r}: {err}") from None
 
 
-def _start(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
-    hc_bin = ensure_core(ctx)
-    client = ctx.client()
-    warnings: List[str] = []
-    with ctx.name_lock(name, shared=False):
-        records = list_city(client, ctx, name)
-        refused = _check_name(records, name, cfg.fresh_only)
-        if refused is not None:
-            return refused
-        _recycle_before_start(ctx, client, name, records, warnings)
+def prepare(ctx: OpContext, cfg: StartConfig, warnings: List[str]) -> None:
+    """Stage the config's files and run its ``pre_start`` (fatal), unlocked:
+    only what the config carries (see the module's step 3)."""
     try:
         warnings += stage(cfg, cfg.env.get("GC_PROVIDER", ""))
     except StagingError as err:
@@ -781,28 +801,33 @@ def _start(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
         failed = _run_setup(ctx, command, pre_env, _setup_cwd(cfg))
         if failed is not None:
             raise OpError(f"pre_start[{index}] {failed}")
-    record, scoped = _create(ctx, client, hc_bin, name, cfg, warnings)
+
+
+def _start(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
+    hc_bin = ensure_core(ctx)
+    client = ctx.client()
+    warnings: List[str] = []
+    with ctx.name_lock(name, shared=False):
+        records = list_city(client, ctx, name)
+        refused = check_name(records, name, cfg.fresh_only)
+        if refused is not None:
+            return refused
+        recycle_before_start(ctx, client, name, records, warnings)
+    prepare(ctx, cfg, warnings)
+
+    def plan(records: List[Terminal]) -> Plan:
+        refused = check_name(records, name, cfg.fresh_only)
+        if refused is not None:
+            raise OpError(refused.message, refused.code)
+        recycle_before_start(ctx, client, name, records, warnings)
+        return Plan(meta=seed(name, cfg.env, work_dir=cfg.work_dir), replaced=[])
+
+    record, scoped = create(ctx, client, hc_bin, name, cfg, warnings, plan)
     # A failure or a cancel from here on leaves the box, as a dead one stays
     # (_fail_if_ended): gc stops the box of a start that failed (gascity
     # internal/runtime/exec/exec.go cleanupAfterStartFailure).
-    waited = _await_agent(ctx, record, cfg)
-    if waited is not None:
-        warnings.append(waited)
-    try:
-        _fail_if_ended(client, record, cfg)
-    except OpError:
-        if scoped:
-            _forget_probe(ctx)  # the launch disproved the probe's success
-        raise
-    setup_env = _setup_env(ctx, cfg.env, {"GC_SESSION": name})
-    for index, command in enumerate(cfg.session_setup):
-        failed = _run_setup(ctx, command, setup_env, _setup_cwd(cfg))
-        if failed is not None:
-            warnings.append(f"session_setup[{index}] {failed}")
-    if cfg.session_setup_script:
-        failed = _run_setup(ctx, cfg.session_setup_script, setup_env, _setup_cwd(cfg))
-        if failed is not None:
-            warnings.append(f"session_setup_script {failed}")
+    await_launched(ctx, client, record, cfg, scoped, warnings)
+    run_session_steps(ctx, name, cfg.env, steps_of(cfg), warnings)
     if cfg.nudge:
         failed = first_turn(ctx, client, name, record, cfg)
         if failed is not None:
@@ -812,26 +837,77 @@ def _start(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
     return OpResult(ExitCode.OK, b"", "; ".join(warnings))
 
 
-def _create(
-    ctx: OpContext, client: HcClient, hc_bin: str, name: str, cfg: StartConfig, warnings: List[str]
+def await_launched(ctx: OpContext, client: HcClient, record: Terminal, cfg: StartConfig, scoped: bool, warnings: List[str]) -> None:
+    """Wait for the agent (:func:`_await_agent`), then fail when it already
+    ended (:func:`_fail_if_ended`); the box stays either way."""
+    waited = _await_agent(ctx, record, cfg)
+    if waited is not None:
+        warnings.append(waited)
+    try:
+        _fail_if_ended(client, record, cfg)
+    except OpError:
+        if scoped:
+            _forget_probe(ctx)  # the launch disproved the probe's success
+        raise
+
+
+def run_session_steps(ctx: OpContext, name: str, env: Mapping[str, str], steps: Optional[SessionSteps], warnings: List[str]) -> None:
+    """``session_setup``, then ``session_setup_script``, with ``GC_SESSION``
+    set; a failure is a warning."""
+    if steps is None:
+        return
+    setup_env = _setup_env(ctx, env, {"GC_SESSION": name})
+    cwd = steps.work_dir if steps.work_dir and os.path.isdir(steps.work_dir) else "/"
+    for index, command in enumerate(steps.session_setup):
+        failed = _run_setup(ctx, command, setup_env, cwd)
+        if failed is not None:
+            warnings.append(f"session_setup[{index}] {failed}")
+    if steps.session_setup_script:
+        failed = _run_setup(ctx, steps.session_setup_script, setup_env, cwd)
+        if failed is not None:
+            warnings.append(f"session_setup_script {failed}")
+
+
+@frozen
+class Plan:
+    """What a create writes, decided under the name's lock from the name's
+    records: the new incarnation's metadata, and the earlier records it
+    replaces, already ended, which are removed once its terminal exists."""
+
+    meta: Meta
+    replaced: List[Terminal]
+
+
+Planner = Callable[[List[Terminal]], Plan]
+"""Checks the name's records (finished ones too) and ends what the new
+incarnation replaces; raises :class:`OpError` to refuse."""
+
+
+def check_work_dir(cfg: StartConfig) -> None:
+    """Refuse a config whose ``work_dir`` is not an existing directory once
+    staging and ``pre_start`` are done."""
+    if cfg.work_dir and not os.path.isdir(cfg.work_dir):
+        raise OpError("work_dir is not an existing directory after staging and pre_start")
+
+
+def create(
+    ctx: OpContext, client: HcClient, hc_bin: str, name: str, cfg: StartConfig, warnings: List[str], plan: Planner
 ) -> Tuple[Terminal, bool]:
-    """Create the incarnation; returns its record and whether it was launched in a scope."""
+    """Create the incarnation under the name's lock, as ``plan`` decides;
+    returns its record and whether it was launched in a scope. The name's
+    provision record, if any, is consumed once the metadata is written."""
     store = meta_store(ctx)
     with ctx.name_lock(name, shared=False):
-        records = list_city(client, ctx, name)
-        refused = _check_name(records, name, cfg.fresh_only)
-        if refused is not None:
-            raise OpError(refused.message, refused.code)
-        _recycle_before_start(ctx, client, name, records, warnings)
-        if cfg.work_dir and not os.path.isdir(cfg.work_dir):
-            raise OpError("work_dir is not an existing directory after staging and pre_start")
+        decided = plan(list_city(client, ctx, name))
+        check_work_dir(cfg)
         visible = app_labels(read_pack_config(ctx.pack_state).app_visibility, ctx.paths.city_id, name, cfg.env)
         obj = new_object_nonce()
-        store.write(obj, seed(name, cfg.env, work_dir=cfg.work_dir))
+        store.write(obj, decided.meta)
         spawn_path = ""
         created: Optional[Terminal] = None
         pending = False
         try:
+            provisioned.drop(ctx, name)
             shim.install(ctx.shim_dir, pack_dir=ctx.host.pack_dir, python=ctx.host.python, hc_bin=hc_bin, env=ctx.paths.discovery_env())
             scope = _user_scope(ctx, client, hc_bin, cfg.env, warnings)
             spawn = spawnfile.SpawnSpec(
@@ -870,12 +946,50 @@ def _create(
             if pid is not None:
                 created = client.label(created.address, {LABEL_PID: str(pid)})
                 _record_program(ctx, obj, pid)
-            return created, scope is not None
         except BaseException:
             if spawn_path:
                 spawnfile.remove(spawn_path)  # a run hc still starts late finds nothing to launch
             _undo(ctx, created, obj, pending=pending)
             raise
+        _remove_replaced(ctx, client, decided.replaced)
+        return created, scope is not None
+
+
+def _remove_replaced(ctx: OpContext, client: HcClient, replaced: List[Terminal]) -> None:
+    """Remove the records a new incarnation replaced, and forget their
+    metadata and activity, best effort: a record left is finished, and the
+    next start or stop of the name recycles it."""
+    for record in replaced:
+        try:
+            _remove_record(client, record, ctx.request.cancel.pause)
+        except (HcError, Cancelled):
+            continue
+        forget(ctx, object_of(record))
+
+
+def await_ended(ctx: OpContext, client: HcClient, records: List[Terminal]) -> None:
+    """Wait until hc lists none of ``records`` live (it frees their name for
+    the new terminal); exit 1 when one still is after :data:`RM_WAIT_S`."""
+    end = time.monotonic() + RM_WAIT_S
+    for record in records:
+        while True:
+            current = _current(client, record)
+            if not current or not current[0].is_live:
+                break
+            if time.monotonic() >= end:
+                raise OpError(f"the earlier incarnation's terminal {record.address} still runs after its kill")
+            ctx.request.cancel.pause(0.05)
+
+
+def carried_values(ctx: OpContext, records: List[Terminal]) -> Dict[str, str]:
+    """The metadata values of the newest of ``records`` that has metadata,
+    less the pack's own per-incarnation keys: a warm box keeps its metadata
+    across a launch, as tmux keeps it across a respawn."""
+    for record in newest_first(records):
+        meta = _read_meta(ctx, record)
+        if meta is not None:
+            return {k: v for k, v in meta.values.items() if k not in PER_INCARNATION_KEYS}
+    return {}
 
 
 def _record_program(ctx: OpContext, obj: str, pid: int) -> None:

@@ -6,7 +6,9 @@
 #
 # Runs `gc runtime check` and `gc runtime conformance` on the pack's
 # executable and fails unless both pass, every requirement passes or is
-# skipped, and the report says v2-ready. fake-hc stands in for the hc binary
+# skipped, the report says v2-ready, and the provision group
+# (RPP-PROVISION-001 to 005: the pack declares proc.provision and
+# proc.launch) passes rather than skips. fake-hc stands in for the hc binary
 # (GC_HC_TEST_BIN, honoured only under GC_HC_TEST=1); spawn files go under
 # the scratch directory.
 #
@@ -102,6 +104,12 @@ report = json.load(open(sys.argv[1]))
 failed = [r["code"] for r in report["results"] if r["status"].lower() == "fail"]
 assert not failed, f"failed: {failed}"
 assert report["v2_ready"] is True, "not v2-ready"
+# The pack un-welds start (proc.provision with proc.launch): its provision
+# group must pass, never skip, or a gc that stopped running it goes unseen.
+status = {r["code"]: r["status"].lower() for r in report["results"]}
+provision = [f"RPP-PROVISION-00{n}" for n in range(1, 6)]
+unproven = [code for code in provision if status.get(code) != "pass"]
+assert not unproven, f"the provision group must pass, not skip: {[(c, status.get(c)) for c in unproven]}"
 PY
 else
   "$gc" runtime conformance "$entry" | tee "$report"
@@ -110,5 +118,8 @@ else
     exit 1
   fi
   grep -qx 'v2-ready: yes' "$report" || { echo "conformance: not v2-ready" >&2; exit 1; }
+  for n in 1 2 3 4 5; do
+    grep -q "^PASS *RPP-PROVISION-00$n\b" "$report" || { echo "conformance: RPP-PROVISION-00$n did not pass" >&2; exit 1; }
+  done
 fi
 echo "== conformance passed (v2-ready)"

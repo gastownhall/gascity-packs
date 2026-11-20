@@ -2,8 +2,10 @@
 
 ``start`` writes the file, mode 0600, **before** it creates the terminal,
 seeded with the session's identity (``GC_SESSION_ID``, ``GC_RUNTIME_EPOCH``,
-``GC_INSTANCE_TOKEN``, ``GT_PROCESS_NAMES``), so identity is readable from
-the first ``observe`` that sees the box (observe.v1 rule 5). ``set-meta``,
+``GC_INSTANCE_TOKEN``, ``GT_PROCESS_NAMES``) and ``GC_CONTINUATION_EPOCH``,
+so identity is readable from the first ``observe`` that sees the box
+(observe.v1 rule 5) and ``get-meta`` answers the launch gc binds its first
+turn to from the moment the box exists. ``set-meta``,
 ``get-meta`` and ``remove-meta`` read and write the same values, so
 ``get-meta`` of an identity key and ``observe``'s identity always agree
 (rule 4). The file also keeps what the pack needs about the incarnation and
@@ -27,7 +29,7 @@ from typing import Dict, Final, List, Mapping, Optional
 from ..rpp.frozen import field, frozen, replace
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError
-from ..rpp.wire import IDENTITY_KEYS
+from ..rpp.wire import IDENTITY_KEYS, LAUNCH_KEYS
 from .config import read_private_file, write_private_file
 from .naming import is_object_nonce
 
@@ -85,10 +87,13 @@ class Meta:
         return (dumps(doc) + "\n").encode("ascii")
 
 
-def seed(session: str, env: Mapping[str, str], *, work_dir: str) -> Meta:
-    """A new incarnation's metadata, from its start environment."""
-    values = {key: env[key] for key in IDENTITY_KEYS if env.get(key, "")}
-    return Meta(session=session, values=values, gc_bin=env.get("GC_BIN", ""), work_dir=work_dir)
+def seed(session: str, env: Mapping[str, str], *, work_dir: str, values: Optional[Mapping[str, str]] = None) -> Meta:
+    """A new incarnation's metadata: ``values`` (default none), then each
+    non-empty :data:`~..rpp.wire.LAUNCH_KEYS` value of its start
+    environment over them."""
+    seeded = dict(values or {})
+    seeded.update((key, env[key]) for key in LAUNCH_KEYS if env.get(key, ""))
+    return Meta(session=session, values=seeded, gc_bin=env.get("GC_BIN", ""), work_dir=work_dir)
 
 
 class MetaStore:

@@ -1,0 +1,281 @@
+// gc's un-welded launch contract (RUNTIME-CONTRACT-020) against runtime
+// herdr-core, driven through gc's own exec provider and fake-hc.
+//
+// This file is a template: tests/gccontract/run.sh installs it into a copy of
+// the pinned gascity module as internal/runtime/exec's
+// zz_herdrcore_unwelded_test.go, where it runs under that package's TestMain
+// (which confines tmux to a private socket root), and runs
+// `go test ./internal/runtime/exec -run TestHerdrCoreUnwelded`. The packs
+// repository's own module never compiles it.
+//
+// Environment (run.sh sets it): GC_HERDR_CORE_PACK, the pack directory, and
+// GC_HERDR_CORE_PYTHON, the interpreter fake-hc runs under (it needs
+// jsonschema, and tomli below Python 3.11). Nothing here builds or runs a
+// real herdr-core.
+
+package exec_test
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	osexec "os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gastownhall/gascity/internal/runtime"
+	gcexec "github.com/gastownhall/gascity/internal/runtime/exec"
+	"github.com/gastownhall/gascity/internal/runtime/runtimetest"
+)
+
+// herdrCoreBox is one scratch city of the pack: its root, the provider gc
+// drives it through, and where its agent logs the input it read.
+type herdrCoreBox struct {
+	root  string
+	entry string
+	city  string
+	sp    runtime.Provider
+	input string
+	gate  string
+}
+
+func herdrCorePack(t *testing.T) (pack, python string) {
+	t.Helper()
+	pack, python = os.Getenv("GC_HERDR_CORE_PACK"), os.Getenv("GC_HERDR_CORE_PYTHON")
+	if pack == "" || python == "" {
+		t.Skip("GC_HERDR_CORE_PACK and GC_HERDR_CORE_PYTHON name the pack and fake-hc's interpreter (tests/gccontract/run.sh)")
+	}
+	return pack, python
+}
+
+// newHerdrCoreBox makes a scratch root (short: it holds Unix sockets), a
+// fake-hc launcher, and the pack's test knobs, and returns a provider for a
+// city under it. With fault set, the pack answers as that conformance fault
+// says until it is cleared. With gate set, fake-hc refuses every send
+// "unavailable" (hc's send-settle refusal, which the pack answers not_sent)
+// while the box's gate file exists. Cleanup stops every core under the root.
+func newHerdrCoreBox(t *testing.T, fault string, gate bool) *herdrCoreBox {
+	t.Helper()
+	pack, python := herdrCorePack(t)
+	root, err := os.MkdirTemp("/tmp", "hcgc-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _ = filepath.EvalSymlinks(root)
+	launcher := filepath.Join(root, "bin", "herdr-core")
+	if err := os.MkdirAll(filepath.Dir(launcher), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gateFile := ""
+	if gate {
+		gateFile = filepath.Join(root, "send-gate")
+		if err := os.WriteFile(gateFile, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := osexec.Command(python, "-c",
+		"import sys; sys.path.insert(0, sys.argv[1]); from fakehc.cli import write_launcher; write_launcher(sys.argv[2], send_gate=sys.argv[3])",
+		filepath.Join(pack, "tests"), launcher, gateFile)
+	if out, err := write.CombinedOutput(); err != nil {
+		t.Fatalf("writing the fake-hc launcher: %v: %s", err, out)
+	}
+	state := filepath.Join(root, "state")
+	t.Setenv("GC_EXEC_STATE_DIR", state)
+	t.Setenv("GC_HC_TEST", "1")
+	t.Setenv("GC_HC_TEST_BIN", launcher)
+	t.Setenv("GC_HC_TEST_SPAWN_ROOT", filepath.Join(root, "spawn"))
+	t.Setenv("GC_RPP_FAULT", fault)
+	entry := filepath.Join(pack, "assets", "bin", "gc-runtime-herdr-core")
+	city := filepath.Join(root, "city")
+	if err := os.MkdirAll(filepath.Join(root, "work"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopHerdrCoreCores(t, entry, city, launcher, state); _ = os.RemoveAll(root) })
+	return &herdrCoreBox{
+		root:  root,
+		entry: entry,
+		city:  city,
+		sp:    gcexec.NewSeamBackedForCity(entry, "hcgc", city),
+		input: filepath.Join(root, "input.jsonl"),
+		gate:  gateFile,
+	}
+}
+
+// stopHerdrCoreCores ends the city (server-stop), then every core still
+// listening under the state root, as tests/conformance.sh's teardown does.
+func stopHerdrCoreCores(t *testing.T, entry, city, launcher, state string) {
+	t.Helper()
+	stop := osexec.Command(entry, "server-stop")
+	stop.Env = append(os.Environ(), "GC_EXEC_CITY_PATH="+city, "GC_EXEC_CITY_NAME=hcgc")
+	if out, err := stop.CombinedOutput(); err != nil {
+		t.Errorf("server-stop: %v: %s", err, out)
+	}
+	locks, _ := filepath.Glob(filepath.Join(state, "herdr-core", "*", "core.lock"))
+	for _, lock := range locks {
+		sock, err := os.ReadFile(lock)
+		if err != nil {
+			continue
+		}
+		dir := filepath.Dir(lock)
+		halt := osexec.Command(launcher, "server", "stop")
+		halt.Env = append(os.Environ(), "HC_SESSION="+filepath.Base(dir), "HC_SOCKET="+strings.TrimSpace(string(sock)), "XDG_STATE_HOME="+state)
+		_ = halt.Run()
+		if data, _ := os.ReadFile(filepath.Join(dir, "schema-violations.log")); len(data) > 0 {
+			t.Errorf("fake-hc schema violations: %s", data)
+		}
+	}
+}
+
+// observe is the pack's own observe state of name, read directly.
+func (b *herdrCoreBox) observe(t *testing.T, name string) string {
+	t.Helper()
+	op := osexec.Command(b.entry, "observe", name)
+	op.Env = append(os.Environ(), "GC_EXEC_CITY_PATH="+b.city, "GC_EXEC_CITY_NAME=hcgc")
+	out, err := op.Output()
+	if err != nil {
+		t.Fatalf("observe %s: %v", name, err)
+	}
+	var answer struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(out, &answer); err != nil {
+		t.Fatalf("observe %s answered %q: %v", name, out, err)
+	}
+	return answer.State
+}
+
+// inputLines is what the box's agent read, line by line, in order.
+func (b *herdrCoreBox) inputLines(string) []string {
+	f, err := os.Open(b.input)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var lines []string
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		var line string
+		if json.Unmarshal(scan.Bytes(), &line) == nil {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// config is a session whose agent is tests/gccontract/contract_agent.py, with a
+// startup dialog when dialog is set.
+func (b *herdrCoreBox) config(t *testing.T, dialog bool) runtime.Config {
+	t.Helper()
+	pack, python := herdrCorePack(t)
+	env := map[string]string{"GC_CONTRACT_INPUT": b.input}
+	if dialog {
+		env["GC_CONTRACT_DIALOG"] = "1"
+	}
+	return runtime.Config{
+		WorkDir:           filepath.Join(b.root, "work"),
+		Command:           "exec " + python + " " + filepath.Join(pack, "tests", "gccontract", "contract_agent.py"),
+		ProcessNames:      []string{filepath.Base(python)},
+		ReadyPromptPrefix: "❯ ",
+		Env:               env,
+	}
+}
+
+func TestHerdrCoreUnwelded(t *testing.T) {
+	herdrCorePack(t)
+	var current *herdrCoreBox
+	runtimetest.RunUnweldedLaunchContract(t, runtimetest.UnweldedLaunchFixture{
+		New: func(t *testing.T, refuse runtime.InputOutcome) (runtime.Provider, func(string) []string, func()) {
+			fault, gate := "", false
+			switch refuse {
+			case "":
+			case runtime.InputOutcomePendingInteraction:
+				fault = "blocked" // conformance-faults: every send is refused as the agent's own question
+			case runtime.InputOutcomeNotSent:
+				gate = true // fake-hc refuses sends as hc does while a terminal settles
+			default:
+				t.Skipf("the pack cannot be made to refuse %s on demand", refuse)
+			}
+			box := newHerdrCoreBox(t, fault, gate)
+			current = box
+			return box.sp, box.inputLines, func() {
+				os.Setenv("GC_RPP_FAULT", "")
+				if box.gate != "" {
+					if err := os.Remove(box.gate); err != nil {
+						t.Errorf("releasing the send gate: %v", err)
+					}
+				}
+			}
+		},
+		Config: func(t *testing.T, dialog bool) runtime.Config { return current.config(t, dialog) },
+		// idle-boundary is declared: the queue's own readiness gate decides.
+		ReadyFloor: false,
+	})
+
+	t.Run("FreshStart", func(t *testing.T) {
+		b := newHerdrCoreBox(t, "", false)
+		cfg := b.config(t, false)
+		cfg.FreshOnly = true
+		cfg.Nudge = "fresh first turn"
+		const name = "herdr-core-fresh"
+		t.Cleanup(func() { _ = b.sp.Stop(name) })
+		if err := b.sp.Start(context.Background(), name, cfg); err != nil {
+			t.Fatalf("fresh Start = %v, want nil", err)
+		}
+		turn, ok := runtime.TakeStartupNudgeHandback(b.sp, name)
+		if !ok || turn.Text != cfg.Nudge {
+			t.Fatalf("handback = %+v, %v; want the first turn", turn, ok)
+		}
+		id, ok := runtime.ReadLaunchID(b.sp, name)
+		if !ok || id == "" {
+			t.Fatalf("ReadLaunchID = %q, %v; want the launch gc minted a token for", id, ok)
+		}
+		if _, ok := runtime.ReadInputFence(b.sp, name); !ok {
+			t.Fatal("ReadInputFence after a fresh start cannot read the launch")
+		}
+		if err := b.sp.Start(context.Background(), name, cfg); !errors.Is(err, runtime.ErrSessionExists) {
+			t.Fatalf("a second fresh Start = %v, want ErrSessionExists", err)
+		}
+		if got := b.inputLines(name); len(got) != 0 {
+			t.Fatalf("input %q after the fresh starts: Start types nothing", got)
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			err := b.sp.Nudge(name, runtime.TextContent(turn.Text))
+			if err == nil || runtime.NudgeDelivered(err) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the queued turn was never delivered: %v", err)
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+		if got := b.inputLines(name); len(got) != 1 || got[0] != cfg.Nudge {
+			t.Fatalf("input %q, want the first turn typed once", got)
+		}
+	})
+
+	t.Run("AgentDiesDuringStartup", func(t *testing.T) {
+		b := newHerdrCoreBox(t, "", false)
+		cfg := b.config(t, false)
+		cfg.Command = "echo dying; exit 3"
+		cfg.FreshOnly = true
+		cfg.Nudge = "never typed"
+		const name = "herdr-core-dies"
+		if err := b.sp.Start(context.Background(), name, cfg); err == nil {
+			t.Fatal("a fresh Start whose agent exits during startup = nil, want the launch's failure")
+		}
+		if turn, ok := runtime.TakeStartupNudgeHandback(b.sp, name); ok {
+			t.Fatalf("a failed start handed back %q", turn.Text)
+		}
+		if running := b.sp.IsRunning(name); running {
+			t.Fatal("IsRunning after the failed start = true, want the box removed")
+		}
+		if state := b.observe(t, name); state != "absent" {
+			t.Fatalf("observe after the failed start = %q, want absent: gc's token-gated cleanup stops this start's box", state)
+		}
+	})
+}

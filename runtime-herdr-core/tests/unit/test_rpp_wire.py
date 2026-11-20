@@ -273,3 +273,9 @@ def test_scalars() -> None:
     assert json.loads(WatchStartupEvent(content="Trust this folder?\n> ").encode()) == {
         "content": "Trust this folder?\n> "
     }
+
+
+def test_launch_keys_are_the_identity_and_the_continuation_epoch() -> None:
+    from gc_runtime_herdr_core.rpp.wire import IDENTITY_KEYS, LAUNCH_KEYS
+
+    assert LAUNCH_KEYS == IDENTITY_KEYS + ("GC_CONTINUATION_EPOCH",)

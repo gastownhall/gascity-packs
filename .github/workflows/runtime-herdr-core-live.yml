@@ -49,7 +49,7 @@ jobs:
       GC_HC_LIVE: "1"
       GC_HC_LIVE_LANE: ${{ matrix.lane }}
       # The gascity commit the fake-hc conformance job in ci.yml pins.
-      GASCITY_PIN: baf57f4ff60ea949d2a0c3922a65be95cf6b7cc1
+      GASCITY_PIN: f5302d1dcfd5c0f903c05188c4be679435cfbdff
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

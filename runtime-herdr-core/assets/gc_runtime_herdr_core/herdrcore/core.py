@@ -57,8 +57,9 @@ running (a ``server-stop`` killed at its deadline) answers unknown and
 kicks, since gc never sends a start for a session it reads unknown, so
 the city is never stranded. ``server-stop`` holds the kick lock
 (:data:`KICK_LOCK`) throughout, so no kick starts the core while it
-sweeps. A core that ends any other way (a crash, a reboot) is kicked as
-before.
+sweeps, and ``launch`` holds it from its parked check through its start,
+so no ``server-stop`` parks the city in between for that start to undo.
+A core that ends any other way (a crash, a reboot) is kicked as before.
 """
 
 from __future__ import annotations
@@ -93,7 +94,10 @@ KICK_FILE: Final = "kick.json"
 PARK_FILE: Final = "parked.json"
 KICK_BACKOFF_MS: Final = 5 * 60 * 1000
 KICK_LOCK: Final = "kick"
-"""Held by a kick while it starts the core, and by ``server-stop`` throughout."""
+"""Held by a kick while it starts the core, by ``launch`` from its parked
+check through its start, and by ``server-stop`` throughout."""
+KICK_WAIT_S: Final = CORE_START_WAIT_S + 1.0
+"""How long a kick in flight may take to finish its core start."""
 
 BASE_PATH: Final = "/usr/local/bin:/usr/bin:/bin"
 

@@ -40,6 +40,8 @@ __all__ = ["spawned"]  # the fixture, imported for the tests below
 
 OPS: Dict[str, Tuple[Tuple[str, ...], bytes]] = {
     "start": (("mc-a",), start_config("exec cat").encode()),
+    "provision": (("mc-a",), start_config("exec cat").encode()),
+    "launch": (("mc-a",), start_config("exec cat").encode()),
     "stop": (("mc-a",), b""),
     "kill-object": ((), b'{"session":"mc-a","box":"t1"}'),
     "observe": (("mc-a",), b"cat\n"),
@@ -123,6 +125,22 @@ def test_the_first_start_of_a_never_started_city_starts_its_core(fresh: City) ->
     done = fresh.start("mc-a", start_config("exec cat"))
     assert done.code == 0, done.stderr
     assert fresh.run("is-running", "mc-a").text.strip() == "true"
+
+
+def test_the_first_provision_of_a_never_started_city_starts_its_core(fresh: City) -> None:
+    done = fresh.run("provision", "mc-a", stdin=start_config("exec cat").encode())
+    assert done.code == 0, done.stderr
+    assert not no_core_started(fresh, wait_s=0.5), "provision starts the core, as start does"
+    assert fresh.run("is-running", "mc-a").text.strip() == "false", "and launches no agent"
+    launched = fresh.run("launch", "mc-a", stdin=start_config("exec cat").encode())
+    assert launched.code == 0, launched.stderr
+    assert fresh.run("is-running", "mc-a").text.strip() == "true"
+
+
+def test_a_launch_into_a_never_started_city_refuses_and_starts_no_core(fresh: City) -> None:
+    done = fresh.run("launch", "mc-a", stdin=start_config("exec cat").encode())
+    assert done.code == 1 and "nothing is provisioned" in done.stderr, done.stderr
+    no_trace_of_a_core(fresh)
 
 
 def test_a_never_started_city_with_a_holder_running_cannot_tell_and_is_kicked(fresh: City, spawned: List[int]) -> None:

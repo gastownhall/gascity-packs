@@ -77,6 +77,8 @@ HANDSHAKE = {
         "idle-boundary",
         "input-outcome",
         "fs.host",
+        "proc.provision",
+        "proc.launch",
     ],
     "locality": "local",
 }
@@ -100,11 +102,15 @@ def test_fs_host_is_declared_with_local_locality(tmp_path: Path) -> None:
     assert doc["locality"] == "local"
 
 
-def test_the_handshake_never_declares_exec_or_provision(tmp_path: Path) -> None:
+def test_the_handshake_never_declares_exec_and_un_welds_only_through_launch(tmp_path: Path) -> None:
     # Under proc.exec gc would pipe tmux commands to `exec`; this runtime
-    # declares only what it implements.
+    # declares only what it implements. proc.provision un-welds start only
+    # with a way to launch: proc.launch, and carrier.ops so gc answers
+    # dialogs and types through the pack's own ops, never tmux over exec.
     caps = set(json.loads(invoke("protocol", cwd=tmp_path).stdout)["capabilities"])
-    assert not caps & {"proc.exec", "proc.provision", "input-fence", "tty.attach", "proc.stream"}
+    assert not caps & {"proc.exec", "input-fence", "tty.attach", "proc.stream"}
+    assert "proc.provision" in caps
+    assert {"proc.launch", "carrier.ops"} <= caps
 
 
 def test_carrier_ops_never_routes_tmux_text(tmp_path: Path) -> None:
@@ -144,7 +150,7 @@ def test_x_version_reports_the_pack(tmp_path: Path) -> None:
     assert doc["python"] == ".".join(str(n) for n in sys.version_info[:3])
 
 
-@pytest.mark.parametrize("op", ["exec", "provision", "check-image", "frobnicate"])
+@pytest.mark.parametrize("op", ["exec", "check-image", "frobnicate"])
 def test_never_declared_ops_exit_2_unread_and_spawn_nothing(tmp_path: Path, op: str) -> None:
     # The default-tmux-server hazard: gc's tmux carrier drives input by piping
     # tmux commands to `exec` (exec-session-provider.md "Operations"); a pack

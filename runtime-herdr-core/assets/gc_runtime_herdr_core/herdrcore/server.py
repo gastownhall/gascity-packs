@@ -64,10 +64,10 @@ from ..rpp.exitcodes import ExitCode
 from ..rpp.flock import LockFileError, LockTimeout
 from ..rpp.ops import OpError, OpResult
 from ..rpp.statedir import StateDirError
-from . import corescan
+from . import corescan, provisioned
 from .config import ConfigError
 from .context import OpContext
-from .core import CORE_START_WAIT_S, KICK_LOCK, check_core_lock, park, start_core, unpark
+from .core import KICK_LOCK, KICK_WAIT_S, check_core_lock, park, start_core, unpark
 from .lifecycle import INSTANCE_TOKEN_KEY, fenced, forget, kill_incarnation, reap, rescan
 from .metastore import Meta, MetaError
 from .naming import LABEL_CITY, LABEL_SESSION, city_label
@@ -79,8 +79,6 @@ from .spawnfile import SUFFIX as SPAWN_SUFFIX
 CORE_GONE_WAIT_S: Final = 10.0
 """How long a stopped core may take to close its socket and exit."""
 CORE_GONE_POLL_S: Final = 0.1
-KICK_WAIT_S: Final = CORE_START_WAIT_S + 1.0
-"""How long a kick in flight may take to finish its core start."""
 
 UNREACHABLE_SURVIVORS: Final = "the city's sessions may survive"
 
@@ -94,6 +92,7 @@ def op_server_stop(ctx: OpContext) -> OpResult:
         # A kick in flight finishes first, and none starts until server-stop
         # is done: a core it started after the last look would outlive the stop.
         with ctx.lock(KICK_LOCK, shared=False, wait_s=max(0.0, ctx.request.deadline.budget(KICK_WAIT_S))):
+            provisioned.drop_all(ctx)  # a launch after the stop finds nothing to start
             try:
                 problems = _stop_with_core(ctx, client, warnings)
             except HcUnreachable:

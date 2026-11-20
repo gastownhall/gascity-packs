@@ -91,6 +91,8 @@ NEVER: FrozenSet[str] = frozenset(
         "shim",
         "appvis",
         "launch",
+        "unwelded",
+        "provisioned",
     }
 )
 """Runtime modules (``herdrcore.*``) the read and driving ops never load on

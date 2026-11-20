@@ -761,3 +761,168 @@ def test_live_suite_runs_against_fake_hc(fake_bin: Path, module: str, name: str)
     finally:
         report = made.close()
     assert report == [], report
+
+
+# --- gc's start ladder over the pack (suite 14's kit) --------------------------------------
+
+
+class _Screen:
+    """What a directly run agent draws, read as it comes."""
+
+    def __init__(self, proc: "subprocess.Popen[bytes]") -> None:
+        import threading
+
+        self.data = bytearray()
+        assert proc.stdout is not None
+        stream = proc.stdout
+
+        def pump() -> None:
+            while True:
+                chunk = stream.read1(4096) if hasattr(stream, "read1") else stream.read(1)
+                if not chunk:
+                    return
+                self.data += chunk
+
+        threading.Thread(target=pump, daemon=True).start()
+
+    def text(self) -> str:
+        return bytes(self.data).decode("utf-8", "replace")
+
+
+def _mode_agent(scratch: Scratch, name: str, mode: str) -> "subprocess.Popen[bytes]":
+    env = dict(scratch.agent_env(name, GC_HC_LIVE_MODE=mode), PATH=os.environ.get("PATH", "/usr/bin:/bin"))
+    return subprocess.Popen([sys.executable, str(LIVE_DIR / "agent.py")], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+
+def test_the_trust_mode_agent_draws_claudes_dialog_and_tags_its_input(scratch: Scratch) -> None:
+    import agent as live_agent
+
+    proc = _mode_agent(scratch, "t1", "trust")
+    screen = _Screen(proc)
+    try:
+        _wait_for(lambda: "Quick safety check" in screen.text())
+        assert live_agent.osc7501("blocked", "permission") in screen.text()
+        assert "❯ 1. Yes, I trust this folder" in screen.text()
+        assert proc.stdin is not None
+        proc.stdin.write(b"\n")  # gc's Enter on the trust row
+        proc.stdin.flush()
+        _wait_for(lambda: live_agent.osc7501("idle") in screen.text())
+        assert screen.text().rstrip().endswith("❯")
+        proc.stdin.write(b"first turn TOKEN-T\n")
+        proc.stdin.flush()
+        _wait_for(lambda: "TOKEN-T" in scratch.input_text("t1"))
+        lines = scratch.input_lines("t1")
+        assert [(line.phase, line.text) for line in lines] == [("dialog", ""), ("prompt", "first turn TOKEN-T")]
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_the_blocked_mode_agent_reports_blocked_until_released(scratch: Scratch) -> None:
+    import agent as live_agent
+
+    proc = _mode_agent(scratch, "b1", "blocked")
+    screen = _Screen(proc)
+    try:
+        _wait_for(lambda: live_agent.osc7501("blocked", "question") in screen.text())
+        assert "❯ " in screen.text()
+        time.sleep(0.5)
+        assert live_agent.osc7501("idle") not in screen.text()
+        (Path(scratch.work) / "b1.release").touch()
+        _wait_for(lambda: live_agent.osc7501("idle") in screen.text())
+        assert proc.stdin is not None
+        proc.stdin.write(b"go\n")
+        proc.stdin.flush()
+        _wait_for(lambda: "go" in scratch.input_text("b1"))
+        assert scratch.input_lines("b1")[-1].phase == "prompt"
+    finally:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def test_osc7501_reports_use_hcs_grammar() -> None:
+    import agent as live_agent
+
+    # gc's own emitter writes these bytes (runtimetest/osc7501emitter).
+    assert live_agent.osc7501("blocked", "question") == "\x1b]7501;state=blocked:kind=question:app=gc-live\x07"
+    assert live_agent.osc7501("idle") == "\x1b]7501;state=idle:app=gc-live\x07"
+
+
+def _toml(text: str) -> Dict[str, object]:
+    try:
+        import tomllib  # type: ignore[import-not-found,unused-ignore]
+    except ImportError:  # Python < 3.11
+        import tomli as tomllib  # type: ignore[no-redef,import-not-found,unused-ignore]
+    doc: Dict[str, object] = tomllib.loads(text)
+    return doc
+
+
+def test_the_city_imports_the_pack_and_runs_each_agent_as_an_always_on_named_session(scratch: Scratch) -> None:
+    from livekit.city import CityAgent, write_city
+
+    agents = [CityAgent("turn-dialog", "trust", "first turn A"), CityAgent("turn-blocked", "blocked", "first turn B")]
+    city = write_city(scratch, agents)
+    assert city == scratch.city_path
+    doc = _toml((Path(city) / "city.toml").read_text(encoding="utf-8"))
+    assert doc["workspace"] == {"name": CITY_NAME}
+    assert doc["imports"] == {"herdr-core": {"source": str(PACK_ROOT)}}
+    assert doc["beads"] == {"provider": "file"} and doc["session"] == {"provider": "herdr-core"}
+    declared = doc["agent"]
+    assert isinstance(declared, list) and [a["name"] for a in declared] == ["turn-dialog", "turn-blocked"]
+    for spec, entry in zip(agents, declared):
+        assert entry["start_command"] == scratch.agent_command()
+        assert entry["process_names"] == [os.path.basename(sys.executable)]
+        assert entry["prompt_mode"] == "none" and entry["ready_prompt_prefix"] == "❯ "
+        assert entry["nudge"] == spec.first_turn and entry["work_dir"] == scratch.work
+        env = entry["env"]
+        assert env["GC_HC_LIVE_MODE"] == spec.mode and env["GC_HC_LIVE_AGENT"] == spec.name
+        assert env["GC_HC_LIVE_RUN"] == scratch.run_id, "teardown finds what the agent left by the run's mark"
+        assert "GC_INSTANCE_TOKEN" not in env, "gc mints each launch's token"
+    assert doc["named_session"] == [
+        {"template": "turn-dialog", "mode": "always"},
+        {"template": "turn-blocked", "mode": "always"},
+    ]
+
+
+def test_the_controller_runs_with_a_scratch_home_file_beads_and_the_packs_knobs(scratch: Scratch, fake_bin: Path) -> None:
+    from livekit.city import Controller
+
+    env = Controller(scratch, str(fake_bin)).env()
+    assert env["HOME"] == env["GC_HOME"] and env["HOME"].startswith(scratch.base + os.sep)
+    assert env["GC_BEADS"] == "file" and env["GC_DOLT"] == "skip"
+    assert env["GC_HC_TEST"] == "1" and env["GC_HC_TEST_BIN"] == str(fake_bin)
+    assert env["GC_EXEC_STATE_DIR"] == scratch.state_root
+    assert env["GC_HC_TEST_OPLOG"] == os.path.join(scratch.base, "oplog.jsonl")
+    assert env["XDG_RUNTIME_DIR"] == scratch.runtime_dir  # the plain lane's scratch runtime directory
+
+
+def test_the_op_log_reads_back_in_order_and_by_session(tmp_path: Path) -> None:
+    from livekit.city import of_session, read_oplog
+
+    path = tmp_path / "oplog.jsonl"
+    assert read_oplog(str(path)) == []
+    rows = [
+        {"op": "provision", "session": "turn-dialog", "exit": 0, "outcome": "", "begun_ms": 1, "ended_ms": 2},
+        {"op": "nudge", "session": "turn-blocked", "exit": 80, "outcome": "pending_interaction", "begun_ms": 3, "ended_ms": 4},
+        {"op": "inventory", "session": "", "exit": 0, "outcome": "", "begun_ms": 5, "ended_ms": 6},
+    ]
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    lines = read_oplog(str(path))
+    assert [line.op for line in lines] == ["provision", "nudge", "inventory"]
+    assert [line.op for line in of_session(lines, "turn-blocked")] == ["nudge"]
+    assert of_session(lines, "turn-blocked")[0].outcome == "pending_interaction"
+
+
+def test_pack_provision_then_launch_starts_the_live_agent(scratch: Scratch) -> None:
+    pack = Pack(scratch)
+    config = pack.unwelded_config("u1", fresh_only=True)
+    assert json.loads(config)["fresh_only"] is True
+    provisioned = pack.provision("u1", config)
+    assert provisioned.code == 0, provisioned.stderr
+    assert not pack.is_running("u1") and pack.observe("u1").state == "absent"
+    launched = pack.launch("u1", config)
+    assert launched.code == 0, launched.stderr
+    assert pack.is_running("u1")
+    scratch.agent_report("u1", timeout_s=20)
+    assert pack.launch("u1", config).code == 73, "a fresh launch on a running agent"
+    assert pack.stop("u1").code == 0

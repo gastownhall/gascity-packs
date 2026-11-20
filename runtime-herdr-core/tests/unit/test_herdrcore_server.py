@@ -989,3 +989,27 @@ def test_server_stop_waits_for_a_kick_in_flight(city: City, spawned: List[int]) 
     timer.join()
     assert done.code == 0, done.stderr
     assert time.monotonic() - started >= 0.4, "server-stop waited for the kick"
+
+
+def test_server_stop_drops_the_citys_provision_records(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.provisioned import record_path
+
+    for name in ("mc-a", "mc-b"):
+        assert city.run("provision", name, stdin=start_config("exec cat").encode()).code == 0
+    paths = [Path(record_path(city.context(), name)) for name in ("mc-a", "mc-b")]
+    assert all(path.exists() for path in paths)
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert not any(path.exists() for path in paths)
+    assert city.run("server-stop").code == 0
+
+
+def test_server_stop_with_the_core_down_drops_the_provision_records(city: City) -> None:
+    from gc_runtime_herdr_core.herdrcore.provisioned import record_path
+
+    assert city.run("provision", "mc-a", stdin=start_config("exec cat").encode()).code == 0
+    city.fake.close()  # type: ignore[union-attr]
+    city.fake = None
+    done = city.run("server-stop")
+    assert done.code == 0, done.stderr
+    assert not Path(record_path(city.context(), "mc-a")).exists()

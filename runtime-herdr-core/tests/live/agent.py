@@ -5,8 +5,9 @@ coding agent.
 
 It reads its input a line at a time and appends each line, with the time it
 arrived, to ``<dir>/<agent>.input.log`` (one JSON object per line), so a test
-can count exactly how often a nudge was typed. It never reports OSC 7501
-status. On request it starts, the way a coding agent's shell does:
+can count exactly how often a nudge was typed. Unless a mode asks (below),
+it never reports OSC 7501 status. On request it starts, the way a coding
+agent's shell does:
 
 * ``infra``: city infrastructure stand-ins, detached in sessions of their
   own (as gc's managed store autostart and bd's proxy are): a watchdog with
@@ -27,10 +28,23 @@ all of it runs. Touching ``<dir>/<agent>.run-hc`` makes it run ``hc ls`` from
 its own ``PATH`` (the pack's shim comes first there) and write the outcome to
 ``<dir>/<agent>.hc.json``.
 
+``GC_HC_LIVE_MODE`` makes it behave as a coding agent at its start does, for
+gc's own start ladder to meet:
+
+* ``trust``: it draws Claude's workspace-trust dialog ("Quick safety check",
+  with ``❯ 1. Yes, I trust this folder`` selected) and reports OSC 7501
+  ``blocked`` while it shows. The first line of input answers it: it then
+  clears the screen, reports ``idle`` and draws its ``❯ `` prompt;
+* ``blocked``: it draws its ``❯ `` prompt but reports ``blocked`` (its own
+  question) until ``<dir>/<agent>.release`` exists, then ``idle``.
+
+Each logged input line carries its ``phase``: ``dialog`` while the trust
+dialog shows, ``prompt`` after.
+
 Environment: ``GC_HC_LIVE_DIR``, ``GC_HC_LIVE_AGENT``, ``GC_HC_LIVE_STANDINS``
 (the stand-in directory), ``GC_HC_LIVE_PYTHON``, optional
-``GC_HC_LIVE_SPAWN`` (comma list), ``GC_HC_LIVE_INFRA_UNIT`` and
-``GC_HC_LIVE_ECHO`` (printed to the screen once).
+``GC_HC_LIVE_SPAWN`` (comma list), ``GC_HC_LIVE_INFRA_UNIT``,
+``GC_HC_LIVE_ECHO`` (printed to the screen once) and ``GC_HC_LIVE_MODE``.
 """
 
 from __future__ import annotations
@@ -47,6 +61,35 @@ from typing import Dict, List, Optional
 
 INFRA_SLICE = "gascity-infra.slice"
 INFRA_READY_S = 15.0
+APP = "gc-live"
+PROMPT = "❯ "
+TRUST_DIALOG = (
+    "\n"
+    " Quick safety check\n"
+    "\n"
+    " Is this a project you created or one you trust?\n"
+    "\n"
+    " ❯ 1. Yes, I trust this folder\n"
+    "   2. No, exit\n"
+    "\n"
+    " Enter to confirm · Esc to cancel\n"
+)
+"""Claude's workspace-trust dialog as gc's dialog pass reads it."""
+CLEAR = "\x1b[2J\x1b[3J\x1b[H"
+"""Clear the screen and the scrollback, so no read finds the dialog after it."""
+RELEASE_POLL_S = 0.2
+
+
+def osc7501(state: str, kind: str = "") -> str:
+    """An OSC 7501 status report as hc's parser reads it (BEL-terminated
+    ``key=value`` fields joined by ``:``)."""
+    body = f"state={state}" + (f":kind={kind}" if kind else "") + f":app={APP}"
+    return f"\x1b]7501;{body}\x07"
+
+
+def _show(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
 
 
 def _write_json(path: str, doc: Dict[str, object]) -> None:
@@ -202,14 +245,39 @@ def main() -> int:
     _write_json(os.path.join(work, f"{name}.json"), report)
     print(f"{name} ready", flush=True)
     log = os.path.join(work, f"{name}.input.log")
+    mode = os.environ.get("GC_HC_LIVE_MODE", "")
     stdin = sys.stdin.buffer
+    if mode == "trust":
+        _show(osc7501("blocked", "permission") + TRUST_DIALOG)
+        line = stdin.readline()
+        if not line:
+            return 0
+        _log_input(log, line, "dialog")
+        _show(CLEAR + osc7501("idle") + PROMPT)
+    elif mode == "blocked":
+        _show(PROMPT + osc7501("blocked", "question"))
+        release = os.path.join(work, f"{name}.release")
+        threading.Thread(target=_release_when, args=(release,), daemon=True).start()
     while True:
         line = stdin.readline()
         if not line:
             return 0
-        entry = {"at": time.time(), "text": line.rstrip(b"\r\n").decode("utf-8", "replace")}
-        with open(log, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry) + "\n")
+        _log_input(log, line, "prompt")
+        if mode:
+            _show("\n" + PROMPT)
+
+
+def _log_input(log: str, line: bytes, phase: str) -> None:
+    entry = {"at": time.time(), "text": line.rstrip(b"\r\n").decode("utf-8", "replace"), "phase": phase}
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry) + "\n")
+
+
+def _release_when(path: str) -> None:
+    """Report ``idle`` once ``path`` exists: the person answered the question."""
+    while not os.path.exists(path):
+        time.sleep(RELEASE_POLL_S)
+    _show(osc7501("idle"))
 
 
 if __name__ == "__main__":

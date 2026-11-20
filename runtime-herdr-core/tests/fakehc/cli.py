@@ -94,6 +94,11 @@ VERSION_ENV = "FAKEHC_VERSION"
 """Set by :func:`write_launcher`: the hc version this build reports. Never
 passed on to the core it starts (a real hc's version is its binary's)."""
 
+SEND_GATE_ENV = "FAKEHC_SEND_GATE"
+"""Set by :func:`write_launcher`: a file while which exists the core it
+starts refuses every ``terminal.send`` ``unavailable`` (FakeHc's
+``send_gate``). Never passed on to the core's environment."""
+
 NEXT_VERSION_FILE = "fake-next-version"
 """Where ``server restart`` leaves this build's version for the running core."""
 
@@ -151,7 +156,7 @@ def _quoted(value: str) -> str:
 
 def _starter(env: Dict[str, str]) -> Dict[str, str]:
     """The starter's environment as the core takes it: none of fake-hc's own settings."""
-    return {k: v for k, v in env.items() if k not in ("HC_SCOPE", PLACEMENT_ENV, VERSION_ENV)}
+    return {k: v for k, v in env.items() if k not in ("HC_SCOPE", PLACEMENT_ENV, VERSION_ENV, SEND_GATE_ENV)}
 
 
 def systemd_child_env(env: Dict[str, str], root: str, *, legacy: bool = False) -> Dict[str, str]:  # root: the runtime dir
@@ -220,15 +225,15 @@ def server_start(env: Dict[str, str]) -> int:
     return 1
 
 
-def launchd_argv(starter_pid: int, state: str, starter: Dict[str, str], version: str) -> List[str]:
-    """hc's launchd core argv, with the starter's environment and the version
-    in its ``ready`` file."""
+def launchd_argv(starter_pid: int, state: str, starter: Dict[str, str], version: str, *, send_gate: str = "") -> List[str]:
+    """hc's launchd core argv, with the starter's environment, the version
+    and fake-hc's send gate in its ``ready`` file."""
     ready_dir = os.path.join(state, f"hc-launchd-{starter_pid}-{time.time_ns()}-{uuid.uuid4().hex}")
     os.mkdir(ready_dir, 0o700)
     ready = os.path.join(ready_dir, "ready")
     fd = os.open(ready, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump({"env": starter, "version": version}, handle)
+        json.dump({"env": starter, "version": version, "send_gate": send_gate}, handle)
     return [sys.executable, os.path.abspath(__file__), LAUNCHD_SENTINEL, ready]
 
 
@@ -240,12 +245,15 @@ def spawn_core(env: Dict[str, str], *, starter_pid: int) -> None:
     runtime_dir = env.get("XDG_RUNTIME_DIR", "")
     placement = env.get(PLACEMENT_ENV, "")
     version = env.get(VERSION_ENV, "") or "0.1.19"
-    argv = [sys.executable, os.path.abspath(__file__), "serve", version]
+    send_gate = env.get(SEND_GATE_ENV, "")
+    argv = [sys.executable, os.path.abspath(__file__), "serve", version] + ([send_gate] if send_gate else [])
     if placement in ("systemd", "systemd-legacy") and runtime_dir:
         child_env = systemd_child_env(env, runtime_dir, legacy=placement == "systemd-legacy")
     elif placement == "launchd":
         child_env = launchd_child_env(env)
-        argv = launchd_argv(starter_pid, paths["state"], dict(_starter(env), HC_RUNTIME="1", XPC_SERVICE_NAME="0"), version)
+        argv = launchd_argv(
+            starter_pid, paths["state"], dict(_starter(env), HC_RUNTIME="1", XPC_SERVICE_NAME="0"), version, send_gate=send_gate
+        )
     else:
         child_env = _starter(env)
         child_env["HC_RUNTIME"] = "1"
@@ -309,7 +317,7 @@ def server_restart(env: Dict[str, str]) -> int:
     return 1
 
 
-def serve(env: Dict[str, str], version: str = "0.1.19") -> int:
+def serve(env: Dict[str, str], version: str = "0.1.19", send_gate: str = "") -> int:
     from fakehc.server import FakeHc
 
     paths = _paths(env)
@@ -329,6 +337,7 @@ def serve(env: Dict[str, str], version: str = "0.1.19") -> int:
         core_name=socket.gethostname(),
         version=version,
         next_version_file=os.path.join(paths["state"], NEXT_VERSION_FILE),
+        send_gate=send_gate or None,
     )
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda signum, frame: done.set())
@@ -408,19 +417,19 @@ def main(argv: List[str], env: Dict[str, str]) -> int:
         if argv[:2] == ["server", "restart"]:
             return server_restart(env)
         if argv[:1] == ["serve"]:
-            return serve(env, *argv[1:2])
+            return serve(env, *argv[1:3])
         if argv[:1] == [LAUNCHD_SENTINEL] and len(argv) == 2:
             with open(argv[1], encoding="utf-8") as handle:
                 ready = json.load(handle)
             os.unlink(argv[1])
             os.rmdir(os.path.dirname(argv[1]))
-            return serve(dict(ready["env"]), str(ready["version"]))
+            return serve(dict(ready["env"]), str(ready["version"]), str(ready.get("send_gate", "")))
         if len(argv) == 3 and argv[:2] == ["hold", "--socket"]:
             return hold(env)
         if len(argv) == 2 and argv[0] == "attach":
             return attach(env, argv[1])
         raise Usage(
-            "usage: fake-hc server start|status|stop|restart | serve [version] | --hc-launchd <ready> "
+            "usage: fake-hc server start|status|stop|restart | serve [version [send-gate]] | --hc-launchd <ready> "
             "| hold --socket <socket> | attach <terminal>"
         )
     except Usage as err:
@@ -429,7 +438,13 @@ def main(argv: List[str], env: Dict[str, str]) -> int:
 
 
 def write_launcher(
-    path: str, *, python: Optional[str] = None, systemd: bool = False, placement: str = "", version: str = "0.1.19"
+    path: str,
+    *,
+    python: Optional[str] = None,
+    systemd: bool = False,
+    placement: str = "",
+    version: str = "0.1.19",
+    send_gate: str = "",
 ) -> str:
     """A ``herdr-core``-named executable at ``path`` that runs this CLI under
     ``python`` (default: this interpreter, which has the schema tooling).
@@ -438,7 +453,8 @@ def write_launcher(
     the environment, and a real hc binary is exec'd with exactly the
     environment its caller gave it. ``placement`` (one of
     :data:`PLACEMENTS`) places the core it starts as hc does there
-    (:data:`PLACEMENT_ENV`); ``systemd`` is ``placement="systemd"``."""
+    (:data:`PLACEMENT_ENV`); ``systemd`` is ``placement="systemd"``.
+    ``send_gate``: :data:`SEND_GATE_ENV` for the cores it starts."""
     if systemd:
         placement = placement or "systemd"
     if placement and placement not in PLACEMENTS:
@@ -451,6 +467,7 @@ def write_launcher(
         "import os, runpy, sys\n"
         + (f"os.environ[{PLACEMENT_ENV!r}] = {placement!r}\n" if placement else "")
         + f"os.environ[{VERSION_ENV!r}] = {version!r}\n"
+        + (f"os.environ[{SEND_GATE_ENV!r}] = {send_gate!r}\n" if send_gate else "")
         +
         f"sys.argv[0] = {os.path.abspath(__file__)!r}\n"
         f"runpy.run_path({os.path.abspath(__file__)!r}, run_name='__main__')\n"

@@ -182,13 +182,22 @@ jobs:
       # state root (the runner's home is ephemeral; CI=true lets it run).
       - name: RPP conformance against fake-hc
         env:
-          GASCITY_PIN: baf57f4ff60ea949d2a0c3922a65be95cf6b7cc1
+          GASCITY_PIN: f5302d1dcfd5c0f903c05188c4be679435cfbdff
         run: |
           go install "github.com/gastownhall/gascity/cmd/gc@${GASCITY_PIN}"
           export GC_BIN="$(go env GOPATH)/bin/gc"
           export PYTHON="$(command -v python)"
           tests/conformance.sh --json
           tests/conformance.sh --json --default-root
+
+      # gc's un-welded launch contract (RUNTIME-CONTRACT-020) through gc's own
+      # exec provider at the pinned commit, against fake-hc: provision, then
+      # launch, then gc's identity, dialog pass and queued first turn.
+      - name: gc un-welded launch contract against fake-hc
+        if: matrix.target == '3.12'
+        env:
+          GASCITY_PIN: f5302d1dcfd5c0f903c05188c4be679435cfbdff
+        run: PYTHON=python tests/gccontract/run.sh
 
       # The pack never kills city infrastructure with a session and spots
       # it by argv as gc does. Its table must match gc's
@@ -197,7 +206,7 @@ jobs:
       # has one), into the cache `go install` above already filled.
       - name: Infrastructure argv matches the pinned gc
         env:
-          GASCITY_PIN: baf57f4ff60ea949d2a0c3922a65be95cf6b7cc1
+          GASCITY_PIN: f5302d1dcfd5c0f903c05188c4be679435cfbdff
         run: |
           src="$(cd "$(mktemp -d)" && go mod download -json "github.com/gastownhall/gascity@${GASCITY_PIN}" | python -c 'import json, sys; print(json.load(sys.stdin)["Dir"])')"
           python tests/infra_argv_drift.py "$src/internal/runtime/proctable/infrastructure_argv.go"
