@@ -65,7 +65,9 @@ func (s *server) handleSlackEvents() http.HandlerFunc {
 //   - A plain message with no binding and no alias → dropped (Tier 2 does
 //     not firehose every channel message at the mayor).
 //
-// Bot, system, and edited messages are dropped to avoid echo loops, as are
+// Bot, system, and edited messages are dropped to avoid echo loops (a
+// thread reply broadcast to the channel, subtype thread_broadcast, is a
+// normal human reply and is kept), as are
 // events carrying another workspace's team_id.
 func (s *server) routeEvent(env slackEventEnvelope) {
 	if !s.admitEvent(env) {
@@ -79,7 +81,10 @@ func (s *server) routeEvent(env slackEventEnvelope) {
 	if msg.Type != "app_mention" && msg.Type != "message" {
 		return
 	}
-	if msg.BotID != "" || msg.Subtype != "" || msg.User == "" {
+	// thread_broadcast is a human thread reply posted with "Also send to
+	// channel"; route it like any other thread reply. Every other subtype
+	// (edits, deletes, joins, bot posts, ...) is still dropped.
+	if msg.BotID != "" || (msg.Subtype != "" && msg.Subtype != "thread_broadcast") || msg.User == "" {
 		return
 	}
 
