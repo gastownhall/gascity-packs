@@ -4,6 +4,11 @@ policy, item result classes, report paths, commit refs when available, and any
 operator recovery instructions. Direct implement does not run gap-analysis or
 review loops. Publish settings are push {{push}} and open_pr {{open_pr}}.
 
+When `prepare` failed validation, the drain was skipped and no implementation
+ran. Still write the summary: report the failure with artifact
+`status: blocked`, carry the `prepare` failure reason and recovery instructions,
+and list no changed files.
+
 Write to summary_path {{summary_path}} when provided; otherwise use the default
 implementation summary path for the workflow run. Update workflow root metadata
 with `gc.implementation.summary_path=<absolute path>` so the optional publish

@@ -86,5 +86,5 @@ timeout = "5m"
 id = "prepare-convoy"
 title = "Validate implementation convoy"
 needs = ["decompose"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.scope_ref" = "drain-scope", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.run_target" = "gc.run-operator" }
 description_file = "../assets/workflows/build-from-decompose-base/prepare-convoy.md"
