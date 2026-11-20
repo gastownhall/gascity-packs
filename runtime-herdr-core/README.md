@@ -86,6 +86,7 @@ runtime-herdr-core/
     infra_argv_drift.py            CI: the infrastructure argv table equals gc's at the pinned commit
   soak/                            the scratch-city soak: RUNBOOK.md and its harness (runs only on a disposable VM)
   docs/soak-report.md              the soak report (the first 24-hour soak)
+  docs/soak2-report.md             Soak 2's report (the 12-hour repeat on the per-op cost and core-start fixes)
 ```
 
 ## Install and commands
