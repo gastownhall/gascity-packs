@@ -28,19 +28,10 @@ gmol() {   # root_id -> molecule-member JSON array
     fi
     # unique_by sorts by id, so the union comes back in bead-id order.
     #
-    # `updated_at` is `omitempty` on the reader's bead struct -- absent only on
-    # a bead never updated since it was created, which no verdict carrier can
-    # be: it got its verdict key from `gc bd update`. So the re-sort this line
-    # used to carry was live, and the `| last` it fed really did mean "most
-    # recently updated".
-    #
-    # It is gone because the verdict selection below no longer decides by
-    # position at all. It reads recency where recency is used -- narrowing to
-    # the newest `updated_at` explicitly, by value -- instead of staging it in
-    # the row order for a later `| last` to consume. That is what makes the
-    # selection invariant under a permutation of bead ids. The lane-status
-    # aggregation further down does still take the id-last value per key, and
-    # dropping the re-sort changed what that means; see the note there.
+    # Some reader/store deployments omit updated_at even on updated beads.
+    # Consumers below use recency only when every relevant candidate is dated;
+    # otherwise they retain all candidates and resolve conflicts fail-closed.
+    # No decision or report path may depend on this union's bead-id order.
     jq -s 'map(select(type=="array")) | add // [] | unique_by(.id)' "$tmp"/*.json || rc=1
     rm -rf "$tmp"
     return "$rc"
@@ -215,31 +206,36 @@ if [ "$REVIEW_MODE" = "report" ]; then
     REPORT_MODE_PATH="$(metadata_value "$PARENT_JSON" "gc.var.report_path")"
   fi
   if [ -z "$REPORT_MODE_PATH" ]; then
-    # This `| last` picks a report *path* out of the same id-ordered union, not
-    # a loop decision. Dropping the re-sort in gmol did change it -- from
-    # recency-last to id-last -- so this is a documented behavior change, not a
-    # preservation. The two orders diverge only when one attempt carries more
-    # than one row with a report path. Report mode is left unrepaired here
-    # deliberately; the residual is recorded rather than claimed away.
+    # A report path has no approval vocabulary to break a tie. Accept a single
+    # distinct path among the newest fully dated candidates, or among all
+    # candidates when any date is missing. Ambiguity must not select by id.
     REPORT_MODE_PATH="$(printf '%s\n' "$MATCHES" | jq -r --arg attempt "$ATTEMPT" '
       [
         .[]
         | select((.metadata["gc.attempt"] // "") == $attempt)
-        | (
-            .metadata["code_review.review_report_path"] //
-            .metadata["code_review.report_path"] //
-            .metadata["code_review.output_path"] //
-            ""
-          )
-        | select(. != "")
-      ] | last // ""
+        | {
+            updated_at: (.updated_at // ""),
+            path: (
+              .metadata["code_review.review_report_path"] //
+              .metadata["code_review.report_path"] //
+              .metadata["code_review.output_path"] // ""
+            )
+          }
+        | select(.path != "")
+      ]
+      | if length > 0 and all(.[]; .updated_at != "")
+        then (map(.updated_at) | max) as $latest
+          | map(select(.updated_at == $latest))
+        else . end
+      | map(.path) | unique
+      | if length == 1 then .[0] else "" end
     ' 2>/dev/null)"
   fi
   if [ -n "$REPORT_MODE_PATH" ]; then
     echo "Implementation review report mode satisfied: $REPORT_MODE_PATH"
     exit 0
   fi
-  echo "Implementation review report mode needs a review report path"
+  echo "Implementation review report mode needs an unambiguous review report path"
   exit 1
 fi
 
@@ -273,27 +269,26 @@ LANE_STATUS="$(printf '%s\n' "$MATCHES" | jq -r \
   def approved($value):
     (($value // "") | ascii_downcase) as $v
     | any($approvals[]; . == $v);
+  # Resolve each lane independently: a timestamp from another lane says nothing
+  # about its freshness. An undated candidate keeps the dispute open.
+  def lane_verdict($rows; $key):
+    ($rows | map(select(.metadata[$key] != null and .metadata[$key] != "")))
+    | if length > 0 and all(.[]; (.updated_at // "") != "")
+      then (map(.updated_at) | max) as $latest
+        | map(select(.updated_at == $latest))
+      else . end
+    | map(.metadata[$key]) | unique
+    | . as $values
+    | map(select(approved(.) | not))
+    | .[0] // $values[0] // "";
   [
     .[]
     | current_loop
-    | .metadata
-    | {
-        acceptance: (."code_review.acceptance_verdict" // ""),
-        test_evidence: (."code_review.test_evidence_verdict" // ""),
-        simplicity: (."code_review.simplicity_verdict" // "")
-      }
   ] as $rows
-  # Each key still takes the id-last non-empty value out of the id-ordered
-  # union gmol returns. Dropping the re-sort in gmol changed that from
-  # recency-last to id-last: a behavior change, not a preservation. The two
-  # diverge only when one attempt carries the same lane key twice, in which
-  # case this path can now report a stale value where it used to report the
-  # fresh one. That is a real residual, recorded and deliberately left
-  # unrepaired here rather than described as equivalent.
   | {
-      acceptance: ([$rows[].acceptance | select(. != "")] | last // ""),
-      test_evidence: ([$rows[].test_evidence | select(. != "")] | last // ""),
-      simplicity: ([$rows[].simplicity | select(. != "")] | last // "")
+      acceptance: lane_verdict($rows; "code_review.acceptance_verdict"),
+      test_evidence: lane_verdict($rows; "code_review.test_evidence_verdict"),
+      simplicity: lane_verdict($rows; "code_review.simplicity_verdict")
     } as $latest
   | if ($latest.acceptance != "" or $latest.test_evidence != "" or $latest.simplicity != "") then
       if (approved($latest.acceptance) and approved($latest.test_evidence) and approved($latest.simplicity)) then
