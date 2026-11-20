@@ -204,6 +204,13 @@ your use case:
 See the [tiering design memo](./docs/design/slack-pack-tiering.md) for the
 rationale.
 
+### Microsoft Teams
+
+- [teams-mini](./teams-mini) is the Teams counterpart of slack-mini:
+  `@`-mention a bot in a channel, group chat or personal chat and the message
+  reaches your mayor; one verb posts back. Built on the Azure Bot Service, so
+  it needs a public HTTPS endpoint; no bindings, no state.
+
 ### Contributor workflow packs
 
 Discipline for sending good work *to* another repo — planning, building,

@@ -1,0 +1,56 @@
+# teams-mini — "Talk to your mayor from Microsoft Teams."
+#
+# The minimum viable Teams→gc surface, the Teams counterpart of slack-mini:
+# register an Azure Bot, add the app to a team or chat, @-mention it, and
+# the mention bridges to your gc mayor session. One outbound verb
+# (`gc teams-mini post-message`) posts plain text back into a conversation.
+#
+# Pack-shipped binary:
+#
+#   - Adapter (./adapter/gc-teams-mini-adapter, built from adapter/*.go, no
+#     dependencies outside the Go standard library). A Bot Framework inbound
+#     receiver + outbound publisher. The [[service]] block below has gc
+#     supervise it as a proxy_process. It binds a Unix domain socket at
+#     $GC_SERVICE_SOCKET for /post-message + /healthz, and a public TCP port
+#     (LISTEN_PUBLIC, default 0.0.0.0:8777) for /api/messages, the Bot
+#     Framework messaging endpoint. Terminate TLS in front of it (e.g.
+#     Tailscale Funnel) and register the public URL on the Azure Bot.
+#
+#   Unlike Slack, Teams has no ingress-free transport: the Bot Framework
+#   always POSTs to a public HTTPS endpoint. Every inbound request carries a
+#   Bot Framework JWT, which the adapter verifies against Microsoft's
+#   published signing keys before anything is bridged.
+#
+# This pack ships NO operator CLI binary: the single outbound verb is a
+# bash wrapper (commands/post-message.sh) that POSTs to the adapter through
+# gc's /svc/teams-mini reverse proxy.
+#
+# Tier 1 keeps no on-disk state: no conversation bindings, no per-session
+# identity, no rig routing. The adapter remembers each conversation's
+# serviceUrl in memory so replies can be addressed; nothing is persisted.
+
+[pack]
+name = "teams-mini"
+version = "0.1.0"
+schema = 2
+
+# proxy_process service: gc supervises the adapter as part of the city's
+# service set. The adapter binds a UDS at $GC_SERVICE_SOCKET for
+# /post-message + /healthz; gc reverse-proxies /svc/teams-mini/* to it. It
+# also binds public TCP (LISTEN_PUBLIC, default 0.0.0.0:8777) for
+# /api/messages. proxy_process owns only the UDS lifecycle.
+#
+# Secrets (TEAMS_APP_ID, TEAMS_APP_PASSWORD, TEAMS_TENANT_ID) and
+# GC_CITY_NAME are inherited from the service environment at start. See
+# README.md "Configure".
+
+[[service]]
+name = "teams-mini"
+kind = "proxy_process"
+
+[service.publication]
+visibility = "private"
+
+[service.process]
+command = ["./adapter/run.sh"]
+health_path = "/healthz"

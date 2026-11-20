@@ -58,7 +58,7 @@ jobs:
           # pinning them would waive findings most contributors never see.
           # Refute: gc lint oversight-rig  (0 findings on main, 4 on v1.4.1)
           for pack in gascity gascity/roles bmad compound-engineering gstack superpowers profiler \
-                      pr-pipeline slack-channel slack-full slack-mini runtime-herdr-core; do
+                      pr-pipeline slack-channel slack-full slack-mini teams-mini runtime-herdr-core; do
             "$GC_BIN" lint "$pack"
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest oversight-rig/tests/test_order_scopes.py -q
@@ -106,6 +106,10 @@ jobs:
 
       - name: Run Slack mini adapter tests
         working-directory: slack-mini/adapter
+        run: go test ./...
+
+      - name: Run Teams mini adapter tests
+        working-directory: teams-mini/adapter
         run: go test ./...
 
       - name: Run runtime-cloudflare module tests

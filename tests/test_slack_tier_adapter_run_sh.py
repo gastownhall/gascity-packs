@@ -13,6 +13,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 TIERS = {
     "slack-mini": "gc-slack-mini-adapter",
     "slack-channel": "gc-slack-channel-adapter",
+    "teams-mini": "gc-teams-mini-adapter",
 }
 
 GO_STUB = """#!/usr/bin/env bash
