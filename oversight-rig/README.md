@@ -53,7 +53,7 @@ city, configure local paths, and verify dry-run output before scheduling writes.
 ## Requirements
 
 - An extmsg/slack adapter in the city for outbound delivery and inbound replies — **compose this pack with your slack pack** (e.g. `slack-full`, `slack-channel`, or `slack-mini`). This pack ships only the oversight role and its escalation machinery, not a slack bridge.
-- Optional: the project-lead's rig-scoped dispatch examples use convoy formulas (`mol-decompose`, `mol-pr-from-issue`) supplied by a workflow pack (e.g. `gastown`). The role works without them.
+- Optional: the project-lead's rig-scoped dispatch examples use convoy formulas — a methodology pack's planning formula (e.g. `compound-planning`), `gascity`'s `build-from-decompose`, and `pr-pipeline`'s `mol-pr-from-issue`. The role works without them.
 - Optional: the executive-status skill needs Python 3.11 or newer. Obsidian and a publishing adapter are not required; without them it writes ordinary Markdown to a configured path.
 
 ## Install
