@@ -20,10 +20,19 @@ LOAD=$(jq -r .load <<<"$prof")
 MODE=$(jq -r .mode <<<"$prof")
 CITY="$HOME/cities/$CITY_NAME"
 DATA=$(jq -r .data <<<"$prof")
+# The check, load, probe and sample units run on the city ~/soak-data/current
+# names, so start and end act on them only when that city is the profile's;
+# every soak call below is the profile's city whatever current names.
+export SOAK_CITY="$CITY" SOAK_DATA="$DATA" SOAK_MODE="$MODE"
+is_current() { [ "$HOME/soak-data/current" -ef "$DATA" ]; }
 
 case "$ACTION" in
   start)
     "$SOAK" city-init "$CITY_NAME" --steady "$STEADY" --burst "$BURST" --mode "$MODE" --load "$LOAD"
+    if ! is_current; then
+      echo "soak-phase4 start: ~/soak-data/current is not $DATA after city-init" >&2
+      exit 1
+    fi
     gc start "$CITY"
     "$SOAK" wait --steady "$STEADY" --first-turns --timeout 900
     "$SOAK" phase soak-legacy
@@ -37,6 +46,10 @@ case "$ACTION" in
       echo "soak-phase4 end: $CITY_NAME was aborted; nothing runs (see $DATA/ABORTED)" >&2
       exit 1
     fi
+    if ! is_current; then
+      echo "soak-phase4 end: ~/soak-data/current is not $DATA; nothing runs (is $PROFILE the running soak's profile?)" >&2
+      exit 1
+    fi
     "$SOAK" phase soak-end
     systemctl --user stop soak-load.service soak-probe.timer
     echo "waiting 15 minutes for the last turns and nudges to settle"
@@ -44,20 +57,23 @@ case "$ACTION" in
     # No timer run after the final check, none across the gc stop: a run
     # still going finishes first (check --final waits for it on check.lock).
     systemctl --user stop soak-check.timer
+    # Nothing before it keeps the city from its gc stop (a report that fails
+    # shows in the exit line below).
     set +e
     "$SOAK" check --final
     final=$?
     (cd "$CITY" && gc doctor --json > "$DATA/doctor-final.json")
-    set -e
     "$SOAK" report --city "$CITY_NAME" --markdown > "$DATA/report.md"
+    report=$?
     "$SOAK" note operator city-stop "end of the soak"
+    set -e
     gc stop "$CITY"
     systemctl --user stop soak-sample.service
     set +e
     "$SOAK" final-scan | tee "$DATA/final-scan.json"
     scan=$?
     set -e
-    echo "final check exit $final; final scan exit $scan; report: $DATA/report.md"
+    echo "final check exit $final; report exit $report; final scan exit $scan; report: $DATA/report.md"
     ;;
   *)
     echo "usage: soak-phase4 start|end [profile]" >&2

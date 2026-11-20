@@ -1075,14 +1075,21 @@ systemctl --user enable --now soak-sample.service soak-load.service soak-check.t
 ~/soak/bin/soak schedule soak1
 ```
 
+The switch and `end` also refuse unless `~/soak-data/current` points at
+their city's data directory, because the check, load, probe and sample
+units run on the city it names; `soak-phase4 start` checks the same after
+its `city-init`. Each script passes its city and data directory to every
+`soak` call it makes, so none of them acts on another city whatever
+`current` names later.
+
 Timeline (T0 is the `soak-start` note):
 
 | When | Action |
 |---|---|
 | T0 to T0 + 12 h | legacy reconciler. `soak check` every 5 minutes, digest hourly, probes every 30 minutes |
-| T0 + 12 h | switch to v2 under load, from its timer: `soak-phase2 hc-soak soak-v2` runs phase 2's commands on `hc-soak` (`soak phase soak-v2`, `toml-del`, the operator note, the supervisor restart, V1 to V3 checked, no agent-kill drill); from before the snapshot before the restart to after the snapshot after it, it pauses `soak-probe.timer` and holds `probe.lock` (section 7.3), so neither a new probe nor one already running can kill a box that would then read as one v2 ended (the switch first waits for a running probe's kill), and it releases the lock and resumes the timer however it ends; it reads 50000 supervisor log lines for V1 because 500 cover well under the 90 s wait at soak log volume |
+| T0 + 12 h | switch to v2 under load, from its timer: `soak-phase2 hc-soak soak-v2` runs phase 2's commands on `hc-soak` (`soak phase soak-v2`, `toml-del`, the operator note, the supervisor restart, V1 to V3 checked, no agent-kill drill); from before the snapshot before the restart to after the snapshot after it, it pauses `soak-probe.timer` and holds `probe.lock` (section 7.3), so neither a new probe nor one already running can kill a box that would then read as one v2 ended (the switch first waits for a running probe's kill). An abort can come while it runs: `soak check` holds `check.lock` in the data directory for its whole run, the abort's included, and the switch takes `check.lock` after `probe.lock`, looks for `ABORTED` again and holds the lock to the supervisor restart, so an abort either ends the switch before its config edit or waits for the restart. However it ends, it releases both locks and resumes the timer under `check.lock`, and only while no `ABORTED` exists, so a resume never undoes the abort's stop; an `ABORTED` found after the 30-minute settle ends it there with exit 1, before its report. It reads 50000 supervisor log lines for V1 because 500 cover well under the 90 s wait at soak log volume |
 | T0 + 12 h to T0 + 24 h | v2 |
-| T0 + 24 h | from its timer, `soak-phase4 end soak1`: `soak phase soak-end`; stop `soak-load` and `soak-probe.timer`; wait 15 minutes; stop `soak-check.timer`, so no timer run follows the final check or crosses the `gc stop` (one still running finishes first: the final check waits for it); `soak check --final` (all predicates, the secrets grep and the orphan scan once more); `gc doctor --json > doctor-final.json`; `soak report --city hc-soak --markdown > report.md`; `soak note operator city-stop`; `gc stop ~/cities/hc-soak`; stop `soak-sample`; then `soak final-scan` (the secrets grep of `R` once more and the check that no holder or core of the city's core tuple and no process of any of its sessions runs, whether or not the session wrote an agent log; a core tuple `gc herdr-core status --env` cannot name fails it as `core tuple unknown`) |
+| T0 + 24 h | from its timer, `soak-phase4 end soak1`: `soak phase soak-end`; stop `soak-load` and `soak-probe.timer`; wait 15 minutes; stop `soak-check.timer`, so no timer run follows the final check or crosses the `gc stop` (one still running finishes first: the final check waits for it); `soak check --final` (all predicates, the secrets grep and the orphan scan once more); `gc doctor --json > doctor-final.json`; `soak report --city hc-soak --markdown > report.md`; `soak note operator city-stop` (none of these four keeps the city from its stop: the last line gives the final check's, the report's and the final scan's exit codes); `gc stop ~/cities/hc-soak`; stop `soak-sample`; then `soak final-scan` (the secrets grep of `R` once more and the check that no holder or core of the city's core tuple and no process of any of its sessions runs, whether or not the session wrote an agent log; a core tuple `gc herdr-core status --env` cannot name fails it as `core tuple unknown`) |
 
 During the soak nothing else runs against the city: no manual nudges, no
 config edits but the scheduled switch, and no doctor runs but the one
@@ -1146,9 +1153,11 @@ creates two transient timers in the soak user's manager (`systemd-run
 
 `systemctl --user list-timers 'soak-hc-soak2-*'` shows them;
 `journalctl --user -u soak-hc-soak2-v2-switch.service` (and `-end`) shows
-what each ran. Both scripts refuse when `ABORTED` exists, and the abort
-procedure stops both timers. `soak report --city hc-soak2` and `soak check`
-read the data directory as for Soak 1; the halves are the `soak-legacy` and
+what each ran. Both scripts refuse when `ABORTED` exists or when
+`~/soak-data/current` does not point at `~/soak-data/hc-soak2`, the abort
+procedure stops both timers, and a switch the abort finds running ends as
+in section 12. `soak report --city hc-soak2` and `soak check` read the data
+directory as for Soak 1; the halves are the `soak-legacy` and
 `soak-v2` phases whatever their length. Watching is as for Soak 1. Its results
 go to `runtime-herdr-core/docs/soak2-report.md`, a report of its own.
 
@@ -1204,7 +1213,10 @@ free disk under 10 GiB.
 
 1. Write `ABORTED` (time, phase, hits). Stop `soak-load`,
    `soak-probe.timer` and the city's scheduled switch and end timers
-   (`soak schedule`, section 12.1).
+   (`soak schedule`, section 12.1). A switch already running edits
+   nothing after the abort and leaves `soak-probe.timer` stopped; one past
+   its supervisor restart ends after its settle, before its report
+   (section 12).
 2. Capture first (`soak capture`), into `captures/<time>.tar.gz`:
    `gc trace status`; `gc trace reasons --since 30m`;
    `gc trace show --since 30m --type cycle_result --json`;

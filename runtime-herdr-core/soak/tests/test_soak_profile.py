@@ -10,7 +10,7 @@ import shutil
 import stat
 import subprocess
 from pathlib import Path
-from typing import List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
 import pytest
 
@@ -270,6 +270,84 @@ def test_the_scheduled_scripts_refuse_after_an_abort(argv: List[str], tmp_path: 
     calls = log.read_text(encoding="utf-8").splitlines()
     # Only the guard and the profile read ran: no phase, no gc, no systemctl.
     assert all(c in ("soak guard", "soak profile soak2") for c in calls), calls
+
+
+PHASE4_STUBS = {
+    "soak": """#!/usr/bin/env bash
+echo "soak $*" >> "$STUB_LOG"
+echo "$1 ${SOAK_CITY-}|${SOAK_DATA-}|${SOAK_MODE-}" >> "$STUB_ENV"
+case "$1" in
+  profile)
+    city=hc-soak
+    if [ "$2" = soak2 ]; then city=hc-soak2; fi
+    printf '{"city":"%s","steady":6,"burst":10,"load":"soak","mode":"abort","data":"%s"}\\n' "$city" "$HOME/soak-data/$city"
+    ;;
+  report) exit "${STUB_REPORT_EXIT:-0}" ;;
+esac
+exit 0
+""",
+    "gc": ABORT_STUBS["gc"],
+    "systemctl": ABORT_STUBS["systemctl"],
+    "sleep": "#!/usr/bin/env bash\nexit 0\n",
+}
+
+
+def phase4_rig(tmp_path: Path, current: str, **env: str) -> Tuple[Dict[str, str], Path, Path]:
+    """``soak-phase4`` with stub ``soak``, ``gc``, ``systemctl`` and ``sleep``,
+    Soak 1's and Soak 2's cities and data directories, ``current`` naming
+    ``current``'s: env, the calls' log and each soak call's city variables."""
+    home = tmp_path / "home"
+    (home / "soak" / "bin").mkdir(parents=True)
+    for city in ("hc-soak", "hc-soak2"):
+        (home / "cities" / city).mkdir(parents=True)
+        (home / "soak-data" / city).mkdir(parents=True)
+    (home / "soak-data" / "current").symlink_to(home / "soak-data" / current)
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    for name, body in PHASE4_STUBS.items():
+        path = home / "soak" / "bin" / "soak" if name == "soak" else stubs / name
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+    log, env_log = tmp_path / "calls.log", tmp_path / "env.log"
+    log.touch()
+    env_log.touch()
+    full = {"HOME": str(home), "PATH": f"{stubs}:{os.environ.get('PATH', '/usr/bin:/bin')}", "STUB_LOG": str(log), "STUB_ENV": str(env_log)}
+    full.update(env)
+    return full, log, env_log
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_phase4_end_refuses_a_profile_whose_city_is_not_the_running_soaks(tmp_path: Path) -> None:
+    # Soak 2 runs; a bare `soak-phase4 end` (the default profile, Soak 1's)
+    # neither stops Soak 2's units nor writes over Soak 1's results.
+    env, log, _ = phase4_rig(tmp_path, current="hc-soak2")
+    res = subprocess.run(["bash", str(BIN / "soak-phase4"), "end"], env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1 and "current is not" in res.stderr, res.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == ["soak guard", "soak profile soak1"]
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_phase4_start_stops_when_current_does_not_name_the_new_city(tmp_path: Path) -> None:
+    env, log, _ = phase4_rig(tmp_path, current="hc-soak")  # the stub city-init leaves current alone
+    res = subprocess.run(["bash", str(BIN / "soak-phase4"), "start", "soak2"], env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1 and "current is not" in res.stderr, res.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert calls[-1].startswith("soak city-init hc-soak2 ")
+    assert not [c for c in calls if c.startswith(("gc ", "systemctl "))], calls
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_phase4_end_stops_the_city_when_the_report_fails_and_keeps_every_soak_call_on_it(tmp_path: Path) -> None:
+    env, log, env_log = phase4_rig(tmp_path, current="hc-soak2", STUB_REPORT_EXIT="1")
+    res = subprocess.run(["bash", str(BIN / "soak-phase4"), "end", "soak2"], env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    assert "report exit 1" in res.stdout
+    home = env["HOME"]
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert calls.index("soak report --city hc-soak2 --markdown") < calls.index(f"gc stop {home}/cities/hc-soak2")
+    assert "systemctl --user stop soak-sample.service" in calls and "soak final-scan" in calls
+    seen = {line.split(" ", 1)[1] for line in env_log.read_text(encoding="utf-8").splitlines() if line.split(" ", 1)[0] not in ("guard", "profile")}
+    assert seen == {f"{home}/cities/hc-soak2|{home}/soak-data/hc-soak2|abort"}
 
 
 # --- (c) the report on a Soak 2 data directory ---------------------------------------

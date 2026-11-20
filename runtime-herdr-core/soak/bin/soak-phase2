@@ -23,6 +23,15 @@ if [ -e "$DATA/ABORTED" ]; then
   echo "soak-phase2: $CITY_NAME was aborted; no switch (see $DATA/ABORTED)" >&2
   exit 1
 fi
+# The check, load and probe timers run on the city ~/soak-data/current names
+# and take their locks in its data directory: the switch's pause and locks
+# below hold them off only when that city is this one. Its soak calls then
+# stay on this city whatever current names later.
+if ! [ "$HOME/soak-data/current" -ef "$DATA" ]; then
+  echo "soak-phase2: ~/soak-data/current is not $DATA; no switch" >&2
+  exit 1
+fi
+export SOAK_CITY="$CITY" SOAK_DATA="$DATA"
 cd "$CITY"
 "$SOAK" phase "$PHASE"
 gc doctor "${CHECKS[@]}" --json > "$DATA/v2-before.json" || true
@@ -30,15 +39,32 @@ gc doctor "${CHECKS[@]}" --json > "$DATA/v2-before.json" || true
 # probe timer, when it runs (the soak), pauses from before the first snapshot
 # to after the second, and the switch holds probe.lock across both: every
 # probe holds it from its flag check to its kill, so the switch first waits
-# for a probe already running, and no probe kills in between. However the
-# script ends, the lock is released and the timer resumed.
+# for a probe already running, and no probe kills in between.
+# An abort can come while the switch runs; `soak check` holds check.lock for
+# its whole run, the abort's included. The switch takes check.lock after
+# probe.lock, looks for ABORTED again and holds the lock to the supervisor
+# restart, so an abort either ends the switch before its config edit or waits
+# for the restart. The timer resumes under check.lock and only while no
+# ABORTED exists, so a resume never undoes an abort's stop. However the
+# script ends, both locks are released (`flock -u`: a child left running
+# keeps the descriptor, not the lock).
 probe_paused=""
 resume_probes() {
   flock -u 9 2>/dev/null || true
   exec 9>&-
+  flock -u 8 2>/dev/null || true
+  exec 8>&-
   if [ -n "$probe_paused" ]; then
     probe_paused=""
-    systemctl --user start soak-probe.timer
+    exec 8>>"$DATA/check.lock"
+    flock 8
+    if [ -e "$DATA/ABORTED" ]; then
+      echo "soak-phase2: $CITY_NAME was aborted; soak-probe.timer stays stopped (see $DATA/ABORTED)" >&2
+    else
+      systemctl --user start soak-probe.timer
+    fi
+    flock -u 8
+    exec 8>&-
   fi
 }
 trap resume_probes EXIT
@@ -48,10 +74,18 @@ if systemctl --user is-active --quiet soak-probe.timer; then
 fi
 exec 9>>"$DATA/probe.lock"
 flock 9
+exec 8>>"$DATA/check.lock"
+flock 8
+if [ -e "$DATA/ABORTED" ]; then
+  echo "soak-phase2: $CITY_NAME was aborted; no switch (see $DATA/ABORTED)" >&2
+  exit 1
+fi
 snap=$("$SOAK" snapshot)
 "$SOAK" toml-del city.toml daemon session_reconciler
 "$SOAK" note operator supervisor-restart "switch to the v2 reconciler"
 systemctl --user restart gascity-supervisor.service
+flock -u 8
+exec 8>&-
 sleep 90
 # At soak log volume 500 lines cover well under 90 s; read far enough back to
 # reach the restart.
@@ -66,6 +100,11 @@ resume_probes
 cat "$DATA/v2-snapshot.json"
 echo "settling $SETTLE_S s"
 sleep "$SETTLE_S"
+# An abort since the restart ends the switch here: no drill on an aborted city.
+if [ -e "$DATA/ABORTED" ]; then
+  echo "soak-phase2: $CITY_NAME was aborted during the switch; no drill or report (see $DATA/ABORTED)" >&2
+  exit 1
+fi
 if [ "$DRILL" = "--drill" ]; then
   "$SOAK" drill agent-kill
 fi

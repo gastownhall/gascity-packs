@@ -354,11 +354,15 @@ MiB in hours 21 to 24, also across the restart at its switch).
    touches it (S3 above), which here also moved its CPU out of the soak
    user's measured figure.
 7. Harness, fixed in this change: the abort also stops a soak's scheduled
-   switch and end timers, and a conformance run stops its scratch cores even
-   when writing an output fails. The probe race at the switch is closed by
-   #661's `probe.lock`, which the VM's harness did not have. Harness, open:
-   starting the timers with a stale last activation (deviations), and a load
-   loop that drops periods when the city's commands slow down.
+   switch and end timers; a switch the abort finds running edits nothing
+   after it and leaves the probe timer stopped; the scheduled scripts
+   refuse a city `~/soak-data/current` does not point at, and `end` stops
+   the city even when its report fails; and a conformance run stops its
+   scratch cores even when writing an output fails. The probe race at the
+   switch is closed by #661's `probe.lock`, which the VM's harness did not
+   have. Harness, open: starting the timers with a stale last activation
+   (deviations), and a load loop that drops periods when the city's
+   commands slow down.
 8. Why Soak 2 had no backlog is not established (workflows above). A soak
    that answers it needs a load the box can carry and the store in a known
    cgroup.

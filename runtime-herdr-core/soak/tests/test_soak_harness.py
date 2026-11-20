@@ -703,18 +703,36 @@ def test_the_drills_hand_c5_what_they_ended(proc_tree: ProcTree, tmp_path: Path,
 PHASE2_STUBS = {
     "soak": """#!/usr/bin/env bash
 data="$HOME/soak-data/hc-soak"
+if [ -n "${PHASE2_ENV_LOG:-}" ]; then echo "$1 ${SOAK_CITY-}|${SOAK_DATA-}" >> "$PHASE2_ENV_LOG"; fi
+# an abort that lands on this call (`soak check` writes ABORTED)
+if [ "$1" = "${PHASE2_ABORT_ON:-}" ]; then echo "AP1 x" > "$data/ABORTED"; fi
 if [ "$1" = snapshot ]; then
   if flock --nonblock "$data/probe.lock" true; then held=free; else held=held; fi
   echo "soak snapshot${2:+ $2} lock=$held" >> "$PHASE2_LOG"
+  if [ "${2:-}" = --compare ] && [ -n "${PHASE2_SLOW_ABORT:-}" ]; then
+    # a check run that holds check.lock now and writes ABORTED a second later
+    exec 7>>"$data/check.lock"
+    flock 7
+    ( "$PHASE2_SLOW_ABORT" 1; echo "AP1 x" > "$data/ABORTED" ) </dev/null >/dev/null 2>&1 &
+  fi
   echo '{}'
   exit 0
 fi
 echo "soak $1" >> "$PHASE2_LOG"
+if [ "$1" = "${PHASE2_SOAK_HEIR_ON:-}" ]; then
+  # a child left running from under both locks: it inherits fds 8 and 9
+  "$PHASE2_SOAK_HEIR" 120 </dev/null >/dev/null 2>&1 &
+  echo "$!" > "$PHASE2_HEIR_PID"
+fi
 if [ "$1" = toml-del ] && [ -n "${PHASE2_TOML_DEL_FAILS:-}" ]; then exit 1; fi
 exit 0
 """,
     "systemctl": """#!/usr/bin/env bash
 echo "systemctl $*" >> "$PHASE2_LOG"
+if [ "$2" = restart ]; then
+  if flock --nonblock "$HOME/soak-data/hc-soak/check.lock" true; then held=free; else held=held; fi
+  echo "check.lock $held at the restart" >> "$PHASE2_LOG"
+fi
 exit 0
 """,
     "gc": """#!/usr/bin/env bash
@@ -728,19 +746,23 @@ if [ "$1" = supervisor ]; then
 fi
 exit 0
 """,
-    "sleep": "#!/usr/bin/env bash\nexit 0\n",
+    "sleep": """#!/usr/bin/env bash
+if [ "${PHASE2_ABORT_ON:-}" = sleep ]; then echo "AP1 x" > "$HOME/soak-data/hc-soak/ABORTED"; fi
+exit 0
+""",
 }
 
 
 def phase2_rig(tmp_path: Path, **env: str) -> Tuple[List[str], Dict[str, str], Path, Path]:
     """``soak-phase2 hc-soak soak-v2`` with stub ``soak``, ``gc``, ``systemctl``
-    and ``sleep`` (real ``flock``), the probe timer active: argv, env, the
-    stubs' log, the probe lock."""
+    and ``sleep`` (real ``flock``), the probe timer active and ``current``
+    naming the city: argv, env, the stubs' log, the probe lock."""
     home = tmp_path / "home"
     (home / "soak" / "bin").mkdir(parents=True)
     (home / "cities" / "hc-soak").mkdir(parents=True)
     data = home / "soak-data" / "hc-soak"
     data.mkdir(parents=True)
+    (home / "soak-data" / "current").symlink_to(data)
     stubs = tmp_path / "stubs"
     stubs.mkdir()
     for name, body in PHASE2_STUBS.items():
@@ -788,7 +810,7 @@ def test_a_switch_that_fails_still_releases_probe_lock_and_resumes_the_probe_tim
     assert res.returncode == 1
     calls = log.read_text(encoding="utf-8").splitlines()
     assert calls[-2:] == ["soak toml-del", "systemctl --user start soak-probe.timer"]
-    assert "soak snapshot lock=held" in calls and lock_free(lock)
+    assert "soak snapshot lock=held" in calls and lock_free(lock) and lock_free(lock.with_name("check.lock"))
 
 
 @needs_flock
@@ -811,6 +833,137 @@ def test_a_child_left_running_under_probe_lock_never_keeps_it_after_the_switch(t
         os.kill(heir, 0)  # and it ran throughout
     finally:
         os.kill(heir, signal.SIGKILL)
+
+
+# An abort can land while the switch runs: the switch is a timer's service, and
+# the abort stops only the timers.
+
+SWITCH_EDITS = ("soak toml-del", "soak note", "systemctl --user restart gascity-supervisor.service")
+
+
+@needs_flock
+def test_the_switch_holds_check_lock_through_the_restart_and_keeps_its_soak_calls_on_its_city(tmp_path: Path) -> None:
+    from soakhc import lock_free
+
+    env_log = tmp_path / "env.log"
+    argv, env, log, lock = phase2_rig(tmp_path, PHASE2_ENV_LOG=str(env_log))
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert calls[calls.index("systemctl --user restart gascity-supervisor.service") + 1] == "check.lock held at the restart"
+    check = lock.with_name("check.lock")
+    assert check.exists() and lock_free(check) and lock_free(lock)
+    home = env["HOME"]
+    seen = {line.split(" ", 1)[1] for line in env_log.read_text(encoding="utf-8").splitlines() if not line.startswith("guard ")}
+    assert seen == {f"{home}/cities/hc-soak|{home}/soak-data/hc-soak"}
+
+
+@needs_flock
+def test_an_abort_after_the_entry_check_ends_the_switch_before_its_config_edit(tmp_path: Path) -> None:
+    # The abort lands after the entry check, here on `soak phase`: the switch
+    # looks again under check.lock, edits nothing and leaves the probe timer stopped.
+    from soakhc import lock_free
+
+    argv, env, log, lock = phase2_rig(tmp_path, PHASE2_ABORT_ON="phase")
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1 and "aborted; no switch" in res.stderr, res.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert "soak phase" in calls and "systemctl --user stop soak-probe.timer" in calls
+    assert not set(calls) & {*SWITCH_EDITS, "systemctl --user start soak-probe.timer"}, calls
+    check = lock.with_name("check.lock")
+    assert check.exists() and lock_free(check) and lock_free(lock)
+
+
+@needs_flock
+def test_the_switch_waits_for_a_check_run_and_edits_nothing_when_that_run_aborted(tmp_path: Path) -> None:
+    from soakhc import lock_free
+
+    argv, env, log, lock = phase2_rig(tmp_path)
+    check = lock.with_name("check.lock")
+    with open(check, "a", encoding="utf-8") as run:  # a check run still going: it aborts the city
+        fcntl.flock(run.fileno(), fcntl.LOCK_EX)
+        switch = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(1.0)
+        assert switch.poll() is None
+        assert "soak toml-del" not in log.read_text(encoding="utf-8")  # waiting before its config edit
+        (check.parent / "ABORTED").write_text("AP1 x\n", encoding="utf-8")
+    _, err = switch.communicate(timeout=60)
+    assert switch.returncode == 1 and "aborted; no switch" in err, err
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert not set(calls) & {*SWITCH_EDITS, "systemctl --user start soak-probe.timer"}, calls
+    assert lock_free(check) and lock_free(lock)
+
+
+@needs_flock
+def test_an_abort_during_the_wait_after_the_restart_leaves_the_probe_timer_stopped(tmp_path: Path) -> None:
+    # The review's reproduction: ABORTED appears during `sleep 90`.
+    argv, env, log, _ = phase2_rig(tmp_path, PHASE2_ABORT_ON="sleep")
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1 and "soak-probe.timer stays stopped" in res.stderr, res.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert "systemctl --user restart gascity-supervisor.service" in calls  # the abort came after it
+    assert "systemctl --user start soak-probe.timer" not in calls
+    assert "soak report" not in calls  # the switch ends at its settle
+
+
+@needs_flock
+def test_the_probe_timer_resumes_under_check_lock_so_an_abort_still_running_keeps_it_stopped(tmp_path: Path) -> None:
+    # A check run holds check.lock when the switch resumes the timer and
+    # writes ABORTED a second later: the resume waits for it, then sees ABORTED.
+    from soakhc import lock_free
+
+    sleep = shutil.which("sleep")
+    assert sleep is not None
+    argv, env, log, lock = phase2_rig(tmp_path, PHASE2_SLOW_ABORT=sleep)
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1 and "soak-probe.timer stays stopped" in res.stderr, res.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert "soak snapshot --compare lock=held" in calls
+    assert "systemctl --user start soak-probe.timer" not in calls
+    assert lock_free(lock.with_name("check.lock")) and lock_free(lock)
+
+
+@needs_flock
+@pytest.mark.parametrize("heir_on, fails", [("note", False), ("toml-del", True)])
+def test_a_child_left_running_under_check_lock_never_keeps_it_after_the_switch(tmp_path: Path, heir_on: str, fails: bool) -> None:
+    # As for probe.lock: closing fd 8 alone would leave check.lock held, the
+    # resume and every later check run blocked behind the child, whether the
+    # switch got to the restart or failed before it.
+    from soakhc import lock_free
+
+    sleep = shutil.which("sleep")
+    assert sleep is not None
+    heir_pid = tmp_path / "heir.pid"
+    knobs = {"PHASE2_SOAK_HEIR_ON": heir_on, "PHASE2_SOAK_HEIR": sleep, "PHASE2_HEIR_PID": str(heir_pid)}
+    if fails:
+        knobs["PHASE2_TOML_DEL_FAILS"] = "1"
+    argv, env, log, lock = phase2_rig(tmp_path, **knobs)
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    heir = int(heir_pid.read_text(encoding="utf-8"))
+    try:
+        assert res.returncode == (1 if fails else 0), res.stderr
+        check = lock.with_name("check.lock")
+        assert os.readlink(f"/proc/{heir}/fd/8") == str(check)  # the child holds the switch's fd 8
+        assert lock_free(check) and lock_free(lock)
+        assert "systemctl --user start soak-probe.timer" in log.read_text(encoding="utf-8").splitlines()
+        os.kill(heir, 0)  # and it ran throughout
+    finally:
+        os.kill(heir, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("current", [None, "hc-soak2"])
+def test_the_switch_refuses_a_city_that_current_does_not_name(tmp_path: Path, current: Optional[str]) -> None:
+    # The check, load and probe timers run on current's city: the switch's
+    # pause and locks would not hold them off.
+    argv, env, log, _ = phase2_rig(tmp_path)
+    link = Path(env["HOME"]) / "soak-data" / "current"
+    link.unlink()
+    if current is not None:
+        (link.parent / current).mkdir()
+        link.symlink_to(link.parent / current)
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1 and "current is not" in res.stderr, res.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == ["soak guard"]
 
 
 def test_python_entry_points_compile() -> None:
