@@ -100,7 +100,7 @@ signal 233 legacy and 358 v2, all expected (below).
 | incarnations per hour | 14.9 | 38.8 | 13.0 | 59.3 |
 | controller-tree CPU, mean / p95 (cores) | 1.62 / 2.58 | 1.59 / 2.68 | 1.38 / 2.06 | 1.30 / 1.99 |
 | the soak user's CPU (cores of 4), store included? | 3.95, yes | 2.71, no (about 1.3 more) | 3.98, yes | 2.57, no (about 1.3 more) |
-| the box (sar): idle; run queue; 1-min load | 0.33%; 18; 18.4 | 0.57%; 25; 23.3 | 0.15%; 19; 17.4 | 0.14%; 36; 31.1 |
+| the box (sar): idle; run queue; 1-min load | 0.41%; 18; 18.4 | 0.76%; 25; 23.3 | 0.09%; 19; 17.4 | 0.11%; 36; 31.1 |
 | core RSS: hour-2 reference, max deviation | 8.5 MiB, 81% | 8.7 MiB, 16.7% | 9.5 MiB, 7.9% | 8.9 MiB, 3.3% |
 | first turns exact; boot to first turn p50 / p95 (s) | 179 of 179; 0.84 / 0.86 | 233 of 233; 0.84 / 0.87 | 156 of 156; 0.84 / 0.87 | 356 of 356; 0.85 / 0.88 |
 | nudges: received once; sent to received p50 / p95 (s) | 360 of 360; 14.7 / 29.9 | 180 of 180; 11.3 / 27.8 | 360 of 360; 17.7 / 28.4 | 180 of 180; 17.3 / 75.1 |
@@ -221,8 +221,9 @@ shows:
   flight, the first v2 hour (from 5 minutes after the switch) against the
   last legacy hour: `get-meta` 202 to 323 ms with 0 or 1 other ops in
   flight and 306 to 503 ms with 2 or 3; `observe` 220 to 300 ms and 314 to
-  515 ms. `is-running` (231 to 196 ms) and `get-last-activity` (233 to
-  213 ms) did not step.
+  515 ms. With 0 or 1 other ops in flight, `is-running` (231 to 196 ms)
+  and `get-last-activity` (233 to 213 ms) did not step; with 2 or 3 they
+  rose 20% and 11%, against 64% for `get-meta` and `observe`.
 - v2 calls a different mix: `observe` 0.82/s, `is-attached` 0.51/s and
   `get-last-activity` 0.69/s, against 0.47, 0.31 and 0.45 under legacy, and
   `get-meta` 0.75/s against 1.94. More ops were in flight after the switch,
@@ -376,4 +377,6 @@ copies:
 - the stopped city's infrastructure store and the workflow recount;
 - the city's configuration;
 - the bring-up's data and the notes on the bring-up city moved aside;
+- the VM's sysstat data for both soaks, and the system journal's session
+  and unit lines (the store scope's CPU) with logind's setting;
 - the analysis scripts and their outputs.
