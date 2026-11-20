@@ -4305,6 +4305,235 @@ class DiscordGatewayServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Sec-WebSocket-Accept"):
             gateway_service.validate_websocket_handshake(header_blob, key)
 
+    # --- buffered_target ---
+
+    def test_buffered_target_failed_status_includes_buffered_delivery(self) -> None:
+        target = gateway_service.buffered_target(
+            "sky", status="failed", idempotency_key="ingress:x:target:sky", message="hello world"
+        )
+
+        self.assertEqual(target["session_name"], "sky")
+        self.assertEqual(target["status"], "failed")
+        self.assertEqual(target["idempotency_key"], "ingress:x:target:sky")
+        self.assertIn("buffered_delivery", target)
+        self.assertEqual(target["buffered_delivery"]["message"], "hello world")
+        self.assertEqual(target["buffered_delivery"]["intent"], "default")
+
+    def test_buffered_target_pending_status_includes_buffered_delivery(self) -> None:
+        target = gateway_service.buffered_target(
+            "sky", status="pending", idempotency_key="ingress:x:target:sky", message="queued msg", intent="follow_up"
+        )
+
+        self.assertIn("buffered_delivery", target)
+        self.assertEqual(target["buffered_delivery"]["intent"], "follow_up")
+
+    def test_buffered_target_delivered_status_omits_buffered_delivery(self) -> None:
+        target = gateway_service.buffered_target(
+            "sky", status="delivered", idempotency_key="ingress:x:target:sky", message="should be absent"
+        )
+
+        self.assertNotIn("buffered_delivery", target)
+
+    def test_buffered_target_normalizes_empty_intent_to_default(self) -> None:
+        target = gateway_service.buffered_target(
+            "sky", status="failed", idempotency_key="ingress:x:target:sky", message="msg", intent=""
+        )
+
+        self.assertEqual(target["buffered_delivery"]["intent"], "default")
+
+    def test_buffered_target_stores_error_when_provided(self) -> None:
+        target = gateway_service.buffered_target(
+            "sky", status="failed", idempotency_key="ingress:x:target:sky", message="msg", error="connection refused"
+        )
+
+        self.assertEqual(target["error"], "connection refused")
+
+    def test_buffered_target_omits_error_when_empty(self) -> None:
+        target = gateway_service.buffered_target(
+            "sky", status="failed", idempotency_key="ingress:x:target:sky", message="msg"
+        )
+
+        self.assertNotIn("error", target)
+
+    # --- replay_buffered_ingress_deliveries ---
+
+    def _write_old_ingress(self, ingress_id: str, status: str, targets: list) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path(ingress_id),
+            {
+                "ingress_id": ingress_id,
+                "status": status,
+                "created_at": "2000-01-01T00:00:00Z",
+                "updated_at": "2000-01-01T00:00:00Z",
+                "targets": targets,
+            },
+        )
+
+    def test_replay_buffered_ingress_deliveries_redrives_failed_target(self) -> None:
+        self._write_old_ingress(
+            "in-rbuf-1",
+            "failed",
+            [
+                gateway_service.buffered_target(
+                    "sky",
+                    status="failed",
+                    idempotency_key="ingress:in-rbuf-1:target:sky",
+                    message="hello",
+                    error="connection refused",
+                )
+            ],
+        )
+
+        with mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}):
+            stats = gateway_service.replay_buffered_ingress_deliveries()
+
+        self.assertEqual(stats["attempted"], 1)
+        self.assertEqual(stats["delivered"], 1)
+        self.assertEqual(stats["failed"], 0)
+        receipt = common.load_chat_ingress("in-rbuf-1")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "delivered")
+        self.assertEqual(receipt["targets"][0]["status"], "delivered")
+        self.assertNotIn("buffered_delivery", receipt["targets"][0])
+
+    def test_replay_buffered_ingress_deliveries_uses_original_idempotency_key(self) -> None:
+        self._write_old_ingress(
+            "in-rbuf-2",
+            "failed",
+            [
+                gateway_service.buffered_target(
+                    "sky",
+                    status="failed",
+                    idempotency_key="ingress:in-rbuf-2:target:sky",
+                    message="hello",
+                )
+            ],
+        )
+
+        with mock.patch.object(common, "deliver_session_message", return_value={"status": "accepted"}) as deliver:
+            gateway_service.replay_buffered_ingress_deliveries()
+
+        deliver.assert_called_once()
+        self.assertEqual(deliver.call_args.kwargs.get("idempotency_key"), "ingress:in-rbuf-2:target:sky")
+
+    def test_replay_buffered_ingress_deliveries_marks_failed_on_gc_api_error(self) -> None:
+        self._write_old_ingress(
+            "in-rbuf-3",
+            "failed",
+            [
+                gateway_service.buffered_target(
+                    "sky",
+                    status="failed",
+                    idempotency_key="ingress:in-rbuf-3:target:sky",
+                    message="hello",
+                )
+            ],
+        )
+
+        with mock.patch.object(common, "deliver_session_message", side_effect=common.GCAPIError("timeout")):
+            stats = gateway_service.replay_buffered_ingress_deliveries()
+
+        self.assertEqual(stats["failed"], 1)
+        self.assertEqual(stats["delivered"], 0)
+        receipt = common.load_chat_ingress("in-rbuf-3")
+        assert receipt is not None
+        self.assertEqual(receipt["targets"][0]["status"], "failed")
+        self.assertIn("timeout", receipt["targets"][0]["error"])
+
+    def test_replay_buffered_ingress_deliveries_logs_failure_to_stderr(self) -> None:
+        import io as _io
+        self._write_old_ingress(
+            "in-rbuf-4",
+            "failed",
+            [
+                gateway_service.buffered_target(
+                    "sky",
+                    status="failed",
+                    idempotency_key="ingress:in-rbuf-4:target:sky",
+                    message="hello",
+                )
+            ],
+        )
+
+        with mock.patch.object(common, "deliver_session_message", side_effect=common.GCAPIError("boom")), \
+             mock.patch("sys.stderr", new_callable=_io.StringIO) as fake_stderr:
+            gateway_service.replay_buffered_ingress_deliveries()
+
+        self.assertIn("in-rbuf-4", fake_stderr.getvalue())
+        self.assertIn("replay failed", fake_stderr.getvalue())
+
+    def test_replay_buffered_ingress_deliveries_skips_recent_receipts(self) -> None:
+        common.atomic_write_json(
+            common.chat_ingress_path("in-rbuf-5"),
+            {
+                "ingress_id": "in-rbuf-5",
+                "status": "failed",
+                "created_at": common.utcnow(),
+                "updated_at": common.utcnow(),
+                "targets": [
+                    gateway_service.buffered_target(
+                        "sky",
+                        status="failed",
+                        idempotency_key="ingress:in-rbuf-5:target:sky",
+                        message="hello",
+                    )
+                ],
+            },
+        )
+
+        with mock.patch.object(common, "deliver_session_message") as deliver:
+            stats = gateway_service.replay_buffered_ingress_deliveries()
+
+        deliver.assert_not_called()
+        self.assertEqual(stats["attempted"], 0)
+
+    def test_replay_buffered_ingress_deliveries_skips_receipts_without_buffered_targets(self) -> None:
+        self._write_old_ingress(
+            "in-rbuf-6",
+            "failed",
+            [{"session_name": "sky", "status": "delivered", "idempotency_key": "ingress:in-rbuf-6:target:sky"}],
+        )
+
+        with mock.patch.object(common, "deliver_session_message") as deliver:
+            stats = gateway_service.replay_buffered_ingress_deliveries()
+
+        deliver.assert_not_called()
+        self.assertEqual(stats["attempted"], 0)
+
+    def test_replay_buffered_ingress_deliveries_partial_delivery_yields_partial_failed_status(self) -> None:
+        self._write_old_ingress(
+            "in-rbuf-7",
+            "failed",
+            [
+                gateway_service.buffered_target(
+                    "sky",
+                    status="failed",
+                    idempotency_key="ingress:in-rbuf-7:target:sky",
+                    message="hello",
+                ),
+                gateway_service.buffered_target(
+                    "lawrence",
+                    status="failed",
+                    idempotency_key="ingress:in-rbuf-7:target:lawrence",
+                    message="hello",
+                ),
+            ],
+        )
+
+        with mock.patch.object(
+            common,
+            "deliver_session_message",
+            side_effect=[{"status": "accepted"}, common.GCAPIError("unreachable")],
+        ):
+            stats = gateway_service.replay_buffered_ingress_deliveries()
+
+        self.assertEqual(stats["attempted"], 2)
+        self.assertEqual(stats["delivered"], 1)
+        self.assertEqual(stats["failed"], 1)
+        receipt = common.load_chat_ingress("in-rbuf-7")
+        assert receipt is not None
+        self.assertEqual(receipt["status"], "partial_failed")
+
 
 if __name__ == "__main__":
     unittest.main()

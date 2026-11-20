@@ -4,6 +4,7 @@ import calendar
 import base64
 import contextlib
 import copy
+import errno as _errno
 import fcntl
 import hashlib
 import json
@@ -12,6 +13,7 @@ import pathlib
 import re
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -39,6 +41,7 @@ DEFAULT_SUPERVISOR_API_BASE = "http://127.0.0.1:8372"
 LOCAL_API_BINDS = {"", "0.0.0.0", "::", "[::]", "*"}
 DISCORD_RATE_LIMIT_RETRIES = 2
 GC_API_REQUEST_TIMEOUT_SECONDS = 20.0
+GC_API_CONNECTION_REFUSED_RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0, 16.0, 32.0)
 GC_API_ASYNC_RESULT_TIMEOUT_SECONDS = 4 * 60.0
 GC_EVENT_REQUEST_FAILED = "request.failed"
 GC_EVENT_SESSION_MESSAGE_SUCCEEDED = "request.result.session.message"
@@ -95,6 +98,44 @@ class GCAPIRequestFailed(GCAPIError):
     def __init__(self, message: str, payload: dict[str, Any]) -> None:
         super().__init__(message)
         self.payload = copy.deepcopy(payload)
+
+
+def _is_connection_refused(exc: urllib.error.URLError) -> bool:
+    reason = exc.reason
+    return isinstance(reason, OSError) and getattr(reason, "errno", None) == _errno.ECONNREFUSED
+
+
+def _log_gc_api_connection_refused_retry(
+    method: str,
+    url: str,
+    *,
+    retry_number: int,
+    retry_total: int,
+    delay_seconds: float,
+    error: urllib.error.URLError,
+) -> None:
+    service = current_service_name() or "discord"
+    print(
+        f"[{service}] {method.upper()} {url} connection refused; "
+        f"retry {retry_number}/{retry_total} in {delay_seconds:g}s: {error}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _log_gc_api_connection_refused_exhausted(
+    method: str,
+    url: str,
+    *,
+    retry_total: int,
+    error: urllib.error.URLError,
+) -> None:
+    service = current_service_name() or "discord"
+    print(
+        f"[{service}] {method.upper()} {url} connection refused after {retry_total} retries: {error}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def utcnow() -> str:
@@ -2089,6 +2130,14 @@ def redact_chat_ingress_record(payload: dict[str, Any]) -> dict[str, Any]:
         body["body"] = "[redacted]"
     if body.get("body_preview"):
         body["body_preview"] = "[redacted]"
+    targets = body.get("targets")
+    if isinstance(targets, list):
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
+            buffered_delivery = target.get("buffered_delivery")
+            if isinstance(buffered_delivery, dict) and buffered_delivery.get("message"):
+                buffered_delivery["message"] = "[redacted]"
     return body
 
 
@@ -2405,10 +2454,20 @@ def discover_supervisor_gc_api_scope(city_cfg: dict[str, Any]) -> str:
     return scope
 
 
+def supervisor_api_base() -> str:
+    """Supervisor API base URL: GC_SUPERVISOR_API_BASE_URL, else the built-in default.
+
+    This is distinct from GC_API_BASE_URL, which names a city-scoped API root and
+    switches off supervisor scope discovery entirely.
+    """
+    override = str(os.environ.get("GC_SUPERVISOR_API_BASE_URL", "")).strip()
+    return override.rstrip("/") if override else DEFAULT_SUPERVISOR_API_BASE
+
+
 def _discover_supervisor_gc_api_scope_uncached(city_cfg: dict[str, Any]) -> str:
     workspace_name = resolved_workspace_name(city_cfg)
     request = urllib.request.Request(
-        DEFAULT_SUPERVISOR_API_BASE + "/v0/cities",
+        supervisor_api_base() + "/v0/cities",
         headers={
             "Accept": "application/json",
             "User-Agent": "gas-city-discord/0.1",
@@ -2442,7 +2501,7 @@ def gc_api_base_url() -> str:
         return override.rstrip("/")
     city_cfg = load_city_toml()
     if discover_supervisor_gc_api_scope(city_cfg):
-        return DEFAULT_SUPERVISOR_API_BASE
+        return supervisor_api_base()
     api_cfg = city_cfg.get("api") or {}
     if not isinstance(api_cfg, dict):
         api_cfg = {}
@@ -2495,24 +2554,50 @@ def gc_api_request_with_status(
         body = json.dumps(payload).encode("utf-8")
         request_headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=request_headers, method=method.upper())
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-            status_code = getattr(response, "status", None)
-            if not isinstance(status_code, int):
-                getcode = getattr(response, "getcode", None)
-                candidate = getcode() if callable(getcode) else None
-                status_code = candidate if isinstance(candidate, int) else 200
-    except urllib.error.HTTPError as exc:
-        raw = exc.read()
-        message = raw.decode("utf-8", errors="replace")
-        raise GCAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}") from exc
-    except urllib.error.URLError as exc:
-        raise GCAPITransportError(f"{method.upper()} {url} failed: {exc}") from exc
-    except TimeoutError as exc:
-        raise GCAPITransportError(f"{method.upper()} {url} timed out") from exc
-    except OSError as exc:
-        raise GCAPITransportError(f"{method.upper()} {url} failed: {exc}") from exc
+    # A refused connection means the request never reached the server, so
+    # retrying it cannot duplicate anything; ride out a short gc API restart.
+    retry_delays = GC_API_CONNECTION_REFUSED_RETRY_DELAYS_SECONDS
+    retry_count = 0
+    while True:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+                status_code = getattr(response, "status", None)
+                if not isinstance(status_code, int):
+                    getcode = getattr(response, "getcode", None)
+                    candidate = getcode() if callable(getcode) else None
+                    status_code = candidate if isinstance(candidate, int) else 200
+            break
+        except urllib.error.HTTPError as exc:
+            raw = exc.read()
+            message = raw.decode("utf-8", errors="replace")
+            raise GCAPIError(f"{method.upper()} {url} failed with {exc.code}: {message}") from exc
+        except urllib.error.URLError as exc:
+            if _is_connection_refused(exc):
+                if retry_count < len(retry_delays):
+                    delay = retry_delays[retry_count]
+                    retry_count += 1
+                    _log_gc_api_connection_refused_retry(
+                        method,
+                        url,
+                        retry_number=retry_count,
+                        retry_total=len(retry_delays),
+                        delay_seconds=delay,
+                        error=exc,
+                    )
+                    time.sleep(delay)
+                    continue
+                _log_gc_api_connection_refused_exhausted(
+                    method,
+                    url,
+                    retry_total=len(retry_delays),
+                    error=exc,
+                )
+            raise GCAPITransportError(f"{method.upper()} {url} failed: {exc}") from exc
+        except TimeoutError as exc:
+            raise GCAPITransportError(f"{method.upper()} {url} timed out") from exc
+        except OSError as exc:
+            raise GCAPITransportError(f"{method.upper()} {url} failed: {exc}") from exc
     if not raw:
         return status_code, {}
     try:
