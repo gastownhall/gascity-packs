@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Human Slack messages carrying hosted files are now ingested instead of
+  being dropped solely because Slack marks them with the `file_share` subtype.
+  Their text and authenticated local `file://` attachments reach the existing
+  inbound delivery path. Human replies broadcast to the channel
+  (`thread_broadcast`) are admitted the same way, while bot, edit, delete,
+  and system subtypes remain rejected. (`th-mwt3m`)
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and
