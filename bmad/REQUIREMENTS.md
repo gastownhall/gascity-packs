@@ -46,6 +46,12 @@ for every derived pack.
   (`bmad-fix-loop`) vars, plus `implementation_target`
   (`bmad.story-implementer`), so adapters can select them through the
   standard selector surface.
+- Convoy continuation: `bmad-build-from-convoy` extends
+  `build-from-convoy-base` with the same step graph as `build-from-convoy`,
+  overriding only `implement` (`bmad-story-development` drain),
+  `implement-same-session` (`bmad-story-development-item` shared drain), and
+  `review` (`bmad-code-review-flow` expansion), with the same selector defaults
+  and `[metadata.gc.methodology]` as `bmad-build`.
 - Interaction modes: `bmad-build` inherits the `interaction_mode` var
   (`interactive` | `autonomous` | `headless`, default `interactive`) from
   `build-base` and declares all three values in

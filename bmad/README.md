@@ -278,9 +278,24 @@ gc sling gc.run-operator <bead-id> --on bmad-build \
   --var drain_policy=same-session
 ```
 
+Continue from stories that already exist — `bmad-build-from-convoy` skips
+requirements, architecture and decomposition, and runs BMAD story development,
+BMAD code review, the fix loop, finalize and publish over an existing story
+convoy. It is to `build-from-convoy` what `bmad-build` is to `build-basic`.
+Unlike `bmad-implementation`, which drains the convoy directly with no review,
+every story still goes through BMAD review:
+
+```sh
+gc sling gc.run-operator <convoy-id> --on bmad-build-from-convoy \
+  --var artifact_root=plans/epic-3/build \
+  --var interaction_mode=autonomous \
+  --var drain_policy=same-session
+```
+
 ## What's vendored
 
-- Formula: `bmad-build`
+- Formulas: `bmad-build`, and `bmad-build-from-convoy` (extends
+  `build-from-convoy-base`)
 - Methodology formulas: `bmad-planning`, `bmad-decomposition`,
   `bmad-implementation`, `bmad-review`, and `bmad-fix-loop`
 - Expansion formulas: `bmad-code-review-flow`

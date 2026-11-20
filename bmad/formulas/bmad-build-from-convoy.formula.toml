@@ -1,0 +1,85 @@
+description = """
+BMAD Method continuation from an existing implementation convoy.
+
+This formula extends `build-from-convoy-base` and swaps in the BMAD story
+formulas the way `bmad-build` does: every convoy member runs BMAD story
+development, then BMAD code review, the review fix loop, finalize, and the
+optional publish run once over the whole convoy. Use it when the stories
+already exist as a convoy. Use `bmad-build` to start from requirements, and
+`bmad-implementation` for implementation without review.
+"""
+formula = "bmad-build-from-convoy"
+version = 1
+contract = "graph.v2"
+extends = ["build-from-convoy-base"]
+target_required = false
+
+[catalog]
+name = "bmad-build-from-convoy"
+description = "Continue a build from an existing story convoy through BMAD story development, BMAD code review, fix loop, finalization, and optional publish."
+
+[metadata.gc.methodology]
+allowed_drain_policies = ["separate", "same-session"]
+implementation_strategy = "drain"
+interaction_modes = ["interactive", "autonomous", "headless"]
+review_modes = ["report", "agent", "interactive"]
+
+[vars]
+[vars.implementation_target]
+description = "BMAD task implementation role."
+default = "bmad.story-implementer"
+
+[vars.implementation_formula]
+description = "BMAD implementation entry formula."
+default = "bmad-implementation"
+
+[vars.implementation_item_formula]
+description = "BMAD single-item implementation formula."
+default = "bmad-story-development-item"
+
+[vars.code_review_formula]
+description = "BMAD code-review methodology formula."
+default = "bmad-review"
+
+[vars.review_fix_formula]
+description = "BMAD review-fix methodology formula."
+default = "bmad-fix-loop"
+
+[[steps]]
+id = "implement"
+title = "Drain BMAD story development for the convoy"
+needs = ["prepare-convoy"]
+condition = "{{drain_policy}} == separate"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/bmad-build-from-convoy/implement.md"
+
+[steps.drain]
+context = "separate"
+formula = "bmad-story-development"
+member_access = "exclusive"
+
+[[steps]]
+id = "implement-same-session"
+title = "Drain BMAD story development for the convoy in one shared session"
+needs = ["prepare-convoy"]
+condition = "{{drain_policy}} == same-session"
+metadata = { "gc.run_target" = "{{implementation_target}}" }
+description_file = "../assets/workflows/bmad-build-from-convoy/implement-same-session.md"
+
+[steps.drain]
+context = "shared"
+formula = "bmad-story-development-item"
+on_item_failure = "skip_remaining"
+member_access = "exclusive"
+
+[steps.drain.item]
+single_lane = true
+
+[[steps]]
+id = "review"
+title = "BMAD code review"
+needs = ["prepare-review"]
+metadata = { "gc.run_target" = "bmad.bmad-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+expand = "bmad-code-review-flow"
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
+description_file = "../assets/workflows/bmad-build-from-convoy/review.md"

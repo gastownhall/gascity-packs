@@ -515,5 +515,72 @@ class DerivedPackCompatibilityTests(unittest.TestCase):
                 )
 
 
+    def test_bmad_build_from_convoy_is_a_bmad_convoy_continuation(self) -> None:
+        """bmad-build-from-convoy is to build-from-convoy what bmad-build is to
+        build-basic: the gascity continuation graph (convoy validation,
+        drain, review, fix loop, finalize, publish) with the BMAD story and
+        review formulas swapped in, so an existing story convoy gets BMAD
+        review instead of bmad-implementation's direct, unreviewed drain."""
+        data = base_contract.load_formula(PACKS_ROOT / "bmad", "bmad-build-from-convoy")
+        resolved = resolved_build_formula("bmad", {"formula": "bmad-build-from-convoy"})
+        reference = resolved_build_formula("bmad", {"formula": "build-from-convoy"})
+        bmad_build = resolved_build_formula("bmad", {"formula": "bmad-build"})
+
+        self.assertEqual(data["extends"], ["build-from-convoy-base"])
+        self.assertEqual(data["contract"], "graph.v2")
+        self.assertEqual(data["catalog"]["name"], "bmad-build-from-convoy")
+        self.assertNotIn("internal", data)
+        self.assertEqual(
+            data["metadata"]["gc"]["methodology"],
+            pack_methodology_metadata("bmad", {"formula": "bmad-build"}),
+        )
+        # Same graph as the gascity continuation, step for step.
+        self.assertEqual(
+            [step["id"] for step in resolved["steps"]],
+            [step["id"] for step in reference["steps"]],
+        )
+        steps = {step["id"]: step for step in resolved["steps"]}
+        reference_steps = {step["id"]: step for step in reference["steps"]}
+        for step_id, step in steps.items():
+            with self.subTest(step=step_id, field="needs"):
+                self.assertEqual(step.get("needs"), reference_steps[step_id].get("needs"))
+                self.assertEqual(step.get("condition"), reference_steps[step_id].get("condition"))
+
+        # The BMAD swaps mirror bmad-build's.
+        build_steps = {step["id"]: step for step in bmad_build["steps"]}
+        for step_id in ("implement", "implement-same-session"):
+            with self.subTest(step=step_id):
+                self.assertEqual(steps[step_id]["drain"], build_steps[step_id]["drain"])
+        self.assertEqual(steps["implement"]["drain"]["formula"], "bmad-story-development")
+        self.assertEqual(
+            steps["implement-same-session"]["drain"]["formula"], "bmad-story-development-item"
+        )
+        for key in ("expand", "expand_vars", "metadata"):
+            with self.subTest(step="review", key=key):
+                self.assertEqual(steps["review"][key], build_steps["review"][key])
+        for var_name in (
+            "implementation_target",
+            "implementation_formula",
+            "implementation_item_formula",
+            "code_review_formula",
+            "review_fix_formula",
+        ):
+            with self.subTest(var=var_name):
+                self.assertEqual(
+                    resolved["vars"][var_name]["default"],
+                    bmad_build["vars"][var_name]["default"],
+                )
+        for step_id in ("implement", "implement-same-session", "review"):
+            with self.subTest(step=step_id, field="description_file"):
+                self.assertEqual(
+                    steps[step_id]["description_file"],
+                    f"../assets/workflows/bmad-build-from-convoy/{step_id}.md",
+                )
+                prompt = (
+                    PACKS_ROOT / "bmad" / "assets" / "workflows" / "bmad-build-from-convoy" / f"{step_id}.md"
+                ).read_text(encoding="utf-8")
+                self.assertIn(NATIVE_DISPATCH_GUARD, prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
