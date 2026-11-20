@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Inbound messages carry composer attribution.** A Slack message's
+  `user` is its speaker, not necessarily its composer: an app can post
+  under a user's id, and a "Sent using <@U...>" context block names the
+  app's bot user. The legacy path now sends an optional `attribution` map
+  on `/extmsg/inbound` (`attribution_version` "1" plus, when Slack set
+  them, `user_id`, `app_id`, `bot_id`, `bot_profile_app_id`,
+  `composer_user_id` and `subtype`). Display names are never carried. A
+  gc that accepts `message.attribution` persists it with the transcript
+  entry. A gc that predates the field answers 422 or 400 naming it; the
+  first such answer latches attribution off for the life of the adapter
+  process, that message is resent once without the field, and one log
+  line says so. Other 4xx answers are not resent. The `inbound:` log line
+  names the composer fields when set.
+
 ### Fixed
 
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
