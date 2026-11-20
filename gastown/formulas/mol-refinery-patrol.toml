@@ -512,7 +512,12 @@ Clearing `handoff_stage` is required, not cosmetic: rejection invalidates the
 polecat's "submit completed" marker, and leaving it set would let the witness's
 Step 3a hand this already-rejected tip straight back here on the next crash.
 4. Do NOT delete the branch (new polecat needs it for conflict resolution).
-5. Clean up temp branch: `git checkout {{target_branch}} && git branch -D temp`
+5. Clean up temp branch: `git checkout --detach "origin/{{target_branch}}" && git branch -D temp`
+   Never check the target out by name: in a worktree rig the rig root already owns it,
+   `git checkout {{target_branch}}` is fatal, HEAD stays on `temp`, and the stranded
+   branch wedges the next patrol's exit-checked `git checkout -b temp` (gk-4flsj).
+   Detaching onto `origin/{{target_branch}}` frees the name the same way the direct-mode
+   cleanup does.
 6. Pour next patrol iteration before burning:
 ```bash
 CURRENT_WISP=${GC_BEAD_ID:-}
@@ -618,7 +623,10 @@ TARGET=$(gc bd show $WORK --json | jq -r '.[0].metadata.target // "{{target_bran
      remote branch, so a stale marker would point the witness's Step 3a at
      work that no longer exists on origin.
    - Delete branch: `git push origin --delete $BRANCH`
-   - Clean up: `git checkout "$TARGET" && git branch -D temp`
+   - Clean up: `git checkout --detach "origin/$TARGET" && git branch -D temp`
+     (detach, not `git checkout "$TARGET"` — the rig root worktree owns the target
+     name in a worktree rig, the checkout is fatal, and the stranded `temp` wedges
+     the next patrol's `git checkout -b temp` materialization; gk-4flsj)
    - Pour next patrol iteration before burning:
      ```bash
      CURRENT_WISP=${GC_BEAD_ID:-}
@@ -760,13 +768,24 @@ branch_has_real_change() {
   bhrc_target="$1"
   bhrc_branch="$2"
   bhrc_base=$(git merge-base "$bhrc_target" "$bhrc_branch" 2>/dev/null) || return 2
+  # An EMPTY merge-base output is the same tool-failure class as a non-zero
+  # exit: verify it names a commit before diff/rev-list can score it as "0".
+  [ -n "$bhrc_base" ] || return 2
+  git rev-parse --verify --quiet "${bhrc_base}^{commit}" >/dev/null || return 2
   git diff --quiet "$bhrc_base" "$bhrc_branch"
   case "$?" in
     0) return 1 ;;  # no diff -> empty -> refuse
     1) : ;;         # diff present -> fall through to the commit-count check
     *) return 2 ;;  # git diff errored -> suspect -> refuse (fail closed)
   esac
-  [ "$(git rev-list --count "$bhrc_base..$bhrc_branch" 2>/dev/null || echo 0)" -ge 1 ] || return 1
+  # An unmeasurable count is a tool error (return 2), NOT a zero verdict:
+  # `|| echo 0` would silently convert a rev-list failure into "empty branch"
+  # and let the caller mis-halt it as a routable no-work state.
+  bhrc_ahead=$(git rev-list --count "${bhrc_base}..${bhrc_branch}" 2>/dev/null)
+  case "$bhrc_ahead" in
+    ''|*[!0-9]*) return 2 ;;
+    0) return 1 ;;
+  esac
   return 0
 }
 
@@ -1009,8 +1028,18 @@ case "$ANCESTOR_STATUS" in
       gc runtime drain-ack
       exit 1
     fi
-    # Ancestor but no recorded real commits: a 0-commit branch. Fall through to
-    # the false-completion guard, which refuses to close it as merged.
+    if [ -n "$FORK_SHA" ] && { ! git rev-parse --verify --quiet "${FORK_SHA}^{commit}" >/dev/null || [ -z "$REAL_COMMITS" ]; }; then
+      # fork_sha was recorded but does not resolve, or the count could not be
+      # taken: a store/git TOOL error, not a verdict about the branch. Halt-and-
+      # retry (STOP) instead of falling through to the false-completion halt —
+      # a transient read flake must never be reported as a suspected phantom.
+      echo "FORK_SHA '$FORK_SHA' unverifiable or commit count unmeasurable for $WORK; cannot evaluate already-merged. STOP. Do not mutate bead state."
+      gc runtime drain-ack
+      exit 1
+    fi
+    # Ancestor but no recorded real commits: a 0-commit branch (or fork_sha
+    # never recorded — stay conservative). Fall through to the false-completion
+    # guard, which refuses to close it as merged.
     ;;
   1) : ;;  # not an ancestor -> a normal merge candidate; fall through
   *)
@@ -1399,9 +1428,21 @@ patrol retry/escalate.
 
 **5. Cleanup:**
 ```bash
-git checkout "$TARGET"
-git branch -d temp
+git checkout --detach "origin/$TARGET" && (git branch -d temp || git branch -D temp)
 ```
+Never check the target out by name here: in a worktree rig the rig root worktree
+already owns `$TARGET`, so `git checkout "$TARGET"` is fatal (`already used by
+worktree`), HEAD stays on `temp`, `git branch -d` refuses to delete the branch
+the current worktree uses, and the stranded `temp` wedges the NEXT patrol — its
+`git checkout -b temp` materialization fails on the surviving name and both
+STOP arms drain without merging (gk-4flsj, observed twice in one cycle
+2026-11-03). Detach onto the freshly-fetched `origin/$TARGET` instead, the same
+idiom the direct-mode cleanup and the lease-failure re-entry already use.
+`temp` is generally NOT merged into `$TARGET` in mr mode (the PR is pending), so
+`-d` is expected to decline and the `-D` fallback runs; that is safe here because
+step 1 pushed `temp` to `origin/$BRANCH` and step 3 verified `pr_head_sha` equals
+it — the durable copy is on origin. If the detach itself fails, STOP and debug:
+do not delete `temp` while HEAD still uses it.
 Do not invoke task-artifact cleanup on this publication path. The artifact and
 its durable `pending` marker remain intact until reconciliation verifies and
 closes the MR handoff, then performs cleanup.
