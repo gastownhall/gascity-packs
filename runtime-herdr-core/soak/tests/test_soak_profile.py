@@ -6,7 +6,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import stat
+import subprocess
 from pathlib import Path
 from typing import List, Sequence
 
@@ -116,6 +118,24 @@ def test_conf_run_removes_the_scratch_dir_when_a_step_fails(tmp_path: Path) -> N
     assert list(tmp.iterdir()) == []
 
 
+def test_conf_run_stops_the_scratch_cores_when_an_output_write_fails(tmp_path: Path) -> None:
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    torn: List[str] = []
+
+    def teardown(root: str) -> Teardown:
+        torn.append(root)
+        return Teardown(root=root)
+
+    with pytest.raises(OSError):
+        conf_run(
+            "/p/e", tmp_path / "missing-out", {"FAKE_GC_LOG": str(tmp_path / "log")},
+            gc_bin=str(fake_gc(tmp_path)), teardown=teardown, tmp_dir=str(tmp),
+        )
+    assert len(torn) == 1 and torn[0].endswith("/state")
+    assert list(tmp.iterdir()) == []
+
+
 GC_RUNTIME = re.compile(r"\bgc runtime (check|conformance)\b")
 
 
@@ -207,10 +227,49 @@ def test_an_abort_stops_the_scheduled_timers(tmp_path: Path, monkeypatch: pytest
     assert (tmp_path / "ABORTED").exists()
 
 
-@pytest.mark.parametrize("script", ["soak-phase2", "soak-phase4"])
-def test_the_scheduled_scripts_refuse_after_an_abort(script: str) -> None:
-    text = (BIN / script).read_text(encoding="utf-8")
-    assert '"$DATA/ABORTED"' in text
+ABORT_STUBS = {
+    "soak": """#!/usr/bin/env bash
+echo "soak $*" >> "$STUB_LOG"
+if [ "$1" = profile ]; then
+  printf '{"city":"hc-soak2","steady":6,"burst":10,"load":"soak","mode":"abort","data":"%s"}\\n' "$HOME/soak-data/hc-soak2"
+fi
+exit 0
+""",
+    "gc": """#!/usr/bin/env bash
+echo "gc $*" >> "$STUB_LOG"
+exit 0
+""",
+    "systemctl": """#!/usr/bin/env bash
+echo "systemctl $*" >> "$STUB_LOG"
+exit 0
+""",
+}
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+@pytest.mark.parametrize("argv", [["soak-phase2", "hc-soak2", "soak-v2"], ["soak-phase4", "end", "soak2"]])
+def test_the_scheduled_scripts_refuse_after_an_abort(argv: List[str], tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    (home / "soak" / "bin").mkdir(parents=True)
+    (home / "cities" / "hc-soak2").mkdir(parents=True)
+    data = home / "soak-data" / "hc-soak2"
+    data.mkdir(parents=True)
+    (data / "ABORTED").write_text("AP1 x\n", encoding="utf-8")
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    for name, body in ABORT_STUBS.items():
+        path = home / "soak" / "bin" / "soak" if name == "soak" else stubs / name
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+    log = tmp_path / "calls.log"
+    log.touch()
+    env = {"HOME": str(home), "PATH": f"{stubs}:{os.environ.get('PATH', '/usr/bin:/bin')}", "STUB_LOG": str(log)}
+    res = subprocess.run(["bash", str(BIN / argv[0]), *argv[1:]], env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1, res.stderr
+    assert "aborted" in res.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    # Only the guard and the profile read ran: no phase, no gc, no systemctl.
+    assert all(c in ("soak guard", "soak profile soak2") for c in calls), calls
 
 
 # --- (c) the report on a Soak 2 data directory ---------------------------------------

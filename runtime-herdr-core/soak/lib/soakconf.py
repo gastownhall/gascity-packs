@@ -90,19 +90,23 @@ def conf_run(
     ``entry`` in a scratch city; write ``runtime-check.txt``,
     ``conformance.json``, ``conformance.err`` and ``conf-teardown.json`` to
     ``out``; stop the scratch cores with ``teardown`` and remove the scratch
-    directory."""
+    directory, also when a step or an output write raises."""
     scratch = ConfScratch(Path(tempfile.mkdtemp(prefix="hcconf.", dir=tmp_dir)))
     try:
-        scratch.state.mkdir(mode=0o700)
-        os.chmod(scratch.state, 0o700)
-        env = conf_env(base_env, scratch)
-        cwd = str(scratch.root)
-        check = run([gc_bin, "runtime", "check", entry], cwd=cwd, env=env, timeout=CHECK_TIMEOUT_S)
-        (out / "runtime-check.txt").write_text(check.out + check.err, encoding="utf-8")
-        conf = run([gc_bin, "runtime", "conformance", "--json", entry], cwd=cwd, env=env, timeout=CONFORMANCE_TIMEOUT_S)
-        (out / "conformance.json").write_text(conf.out, encoding="utf-8")
-        (out / "conformance.err").write_text(conf.err, encoding="utf-8")
-        torn = teardown(str(scratch.state))
+        try:
+            scratch.state.mkdir(mode=0o700)
+            os.chmod(scratch.state, 0o700)
+            env = conf_env(base_env, scratch)
+            cwd = str(scratch.root)
+            check = run([gc_bin, "runtime", "check", entry], cwd=cwd, env=env, timeout=CHECK_TIMEOUT_S)
+            (out / "runtime-check.txt").write_text(check.out + check.err, encoding="utf-8")
+            conf = run([gc_bin, "runtime", "conformance", "--json", entry], cwd=cwd, env=env, timeout=CONFORMANCE_TIMEOUT_S)
+            (out / "conformance.json").write_text(conf.out, encoding="utf-8")
+            (out / "conformance.err").write_text(conf.err, encoding="utf-8")
+        finally:
+            # Whatever raised above (a step, or writing an output file), a
+            # core the run started is stopped before its state dir goes.
+            torn = teardown(str(scratch.state))
         write_atomic(out / "conf-teardown.json", json.dumps(torn.as_rec(), indent=2, sort_keys=True) + "\n")
     finally:
         shutil.rmtree(scratch.root, ignore_errors=True)
