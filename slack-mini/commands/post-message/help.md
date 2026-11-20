@@ -6,17 +6,24 @@ adapter calls Slack chat.postMessage. Use it to reply to an inbound mention
 in its thread, or to push a notification to a channel.
 
 Flags:
-  --channel    Slack channel id (e.g. C0123ABCD) — required.
-  --text       Message text — required.
-  --thread-ts  Reply inside an existing thread. Pass the inbound message's
-               ts (surfaced to your session as the conversation's
-               reply-to id) to answer in-thread.
+  --channel       Slack channel id (e.g. C0123ABCD) — required.
+  --text          Message text — required.
+  --thread-ts     Reply inside an existing thread. Pass the inbound message's
+                  ts (surfaced to your session as the conversation's
+                  reply-to id) to answer in-thread.
+  --unfurl-links  true or false. Passed through to chat.postMessage as
+                  unfurl_links. Absent = Slack default.
+  --unfurl-media  true or false. Passed through to chat.postMessage as
+                  unfurl_media. Absent = Slack default.
 
 Examples:
   gc slack-mini post-message --channel C0123 --text "build is green"
 
   gc slack-mini post-message --channel C0123 \
     --thread-ts 1700000000.0001 --text "done — see PR #42"
+
+  gc slack-mini post-message --channel C0123 --text "links stay plain" \
+    --unfurl-links false --unfurl-media false
 
 On success, prints Slack's JSON response: {"ok":true,"ts":...,"channel":...}.
 The returned ts is the new message's timestamp.

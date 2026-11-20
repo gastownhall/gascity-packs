@@ -10,11 +10,15 @@
 #   gc slack-mini post-message --channel C0123 --text "build is green"
 #   gc slack-mini post-message --channel C0123 --thread-ts 1700000000.0001 \
 #       --text "follow-up in thread"
+#   gc slack-mini post-message --channel C0123 --text "links stay plain" \
+#       --unfurl-links false --unfurl-media false
 set -eu
 
 channel=""
 text=""
 thread_ts=""
+unfurl_links=""
+unfurl_media=""
 
 require_value() {
   # $1 = flag name, $2 = arg count remaining (including the flag itself)
@@ -29,9 +33,13 @@ while [ $# -gt 0 ]; do
     --channel)    require_value "$1" "$#"; channel="$2"; shift 2 ;;
     --text)       require_value "$1" "$#"; text="$2"; shift 2 ;;
     --thread-ts)  require_value "$1" "$#"; thread_ts="$2"; shift 2 ;;
+    --unfurl-links) require_value "$1" "$#"; unfurl_links="$2"; shift 2 ;;
+    --unfurl-media) require_value "$1" "$#"; unfurl_media="$2"; shift 2 ;;
     --channel=*)   channel="${1#*=}"; shift ;;
     --text=*)      text="${1#*=}"; shift ;;
     --thread-ts=*) thread_ts="${1#*=}"; shift ;;
+    --unfurl-links=*) unfurl_links="${1#*=}"; shift ;;
+    --unfurl-media=*) unfurl_media="${1#*=}"; shift ;;
     -h|--help)
       cat "$(dirname "$0")/post-message/help.md"
       exit 0
@@ -51,6 +59,14 @@ if [ -z "$text" ]; then
   echo "gc slack-mini post-message: --text is required" >&2
   exit 2
 fi
+case "$unfurl_links" in
+  ""|true|false) ;;
+  *) echo "gc slack-mini post-message: --unfurl-links must be true or false" >&2; exit 2 ;;
+esac
+case "$unfurl_media" in
+  ""|true|false) ;;
+  *) echo "gc slack-mini post-message: --unfurl-media must be true or false" >&2; exit 2 ;;
+esac
 
 api_base="${GC_API_BASE_URL:-http://127.0.0.1:9443}"
 api_base="${api_base%/}"
@@ -65,12 +81,19 @@ fi
 url="${SLACK_MINI_ADAPTER_URL:-${api_base}/v0/city/${city}/svc/slack-mini/post-message}"
 
 # Build the request body with jq so channel/text/thread_ts are correctly
-# JSON-escaped (text may contain quotes, newlines, etc.).
+# JSON-escaped (text may contain quotes, newlines, etc.). Unfurl flags are
+# sent as JSON booleans when given and omitted entirely when absent, so
+# Slack applies its default.
 body=$(jq -n \
   --arg channel "$channel" \
   --arg text "$text" \
   --arg thread_ts "$thread_ts" \
-  '{channel: $channel, text: $text} + (if $thread_ts == "" then {} else {thread_ts: $thread_ts} end)')
+  --arg unfurl_links "$unfurl_links" \
+  --arg unfurl_media "$unfurl_media" \
+  '{channel: $channel, text: $text}
+    + (if $thread_ts == "" then {} else {thread_ts: $thread_ts} end)
+    + (if $unfurl_links == "" then {} elif $unfurl_links == "true" then {unfurl_links: true} else {unfurl_links: false} end)
+    + (if $unfurl_media == "" then {} elif $unfurl_media == "true" then {unfurl_media: true} else {unfurl_media: false} end)')
 
 # Capture status and body separately so the adapter's JSON error payload
 # ({"ok":false,"error":...}) reaches the operator instead of being swallowed
