@@ -87,6 +87,10 @@ default = "false"
 description = "Set true to allow final PR creation after all checks pass."
 default = "false"
 
+[vars.base_branch]
+description = "Branch to cut implementation worktrees from and to target when publishing. Empty means the remote default branch. Set it per rig with formula_vars."
+default = ""
+
 [[steps]]
 id = "prepare-review"
 title = "Validate review continuation inputs"

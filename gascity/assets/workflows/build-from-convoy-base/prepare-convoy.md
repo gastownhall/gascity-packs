@@ -11,6 +11,10 @@ convoys. Record the resolved convoy as both:
 - `gc.input_convoy_id=<implementation-convoy-id>`
 - `gc.build.implementation_convoy_id=<implementation-convoy-id>`
 
+Record base_branch `{{base_branch}}` as `gc.var.base_branch` (empty means the
+remote default branch). When it is set, verify origin has it with
+`git ls-remote --exit-code --heads origin <base_branch>` and fail if not.
+
 Close only after the convoy identity, drain policy {{drain_policy}}, selected
 implementation target {{implementation_target}}, and source artifact paths are
 validated and recorded.

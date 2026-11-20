@@ -31,6 +31,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WORKFLOW_STEP = REPO_ROOT / "gascity/assets/workflows/do-work/prepare-worktree.md"
+# Every step that cuts an implementation worktree.
+WORKFLOW_STEPS = (WORKFLOW_STEP,)
 FORMULAS = (
     REPO_ROOT
     / "contributing-to-gascity/formulas/mol-contributing-fine-tune.formula.toml",
@@ -57,6 +59,7 @@ FORMULA_BLOCK = (
 # indented. Capture the body and dedent it rather than pinning a column count.
 # The legacy form was an inline backticked command in the same list item.
 WORKFLOW_BLOCK = (
+    re.compile(r"```sh\n(\s*BASE_BRANCH=\"\{\{base_branch\}\}\".*?)\n[ \t]*```", re.DOTALL),
     re.compile(r"```sh\n(\s*DEFAULT_BRANCH=.*?)\n[ \t]*```", re.DOTALL),
     re.compile(r"`(DEFAULT_BRANCH=\$\(git remote show origin[^`]*)`"),
 )
@@ -89,6 +92,11 @@ def run_snippet(snippet: str, variable: str, cwd: Path) -> str:
             f"snippet exited {proc.returncode}: {proc.stderr[:1000]}"
         )
     return proc.stdout.strip()
+
+
+def render(snippet: str, base_branch: str) -> str:
+    """Substitute the formula variable the way gc renders the prompt."""
+    return snippet.replace("{{base_branch}}", base_branch)
 
 
 def extract(path: Path, patterns: tuple[re.Pattern[str], ...]) -> str:
@@ -221,21 +229,56 @@ class DefaultBranchResolutionTest(unittest.TestCase):
             + "\n  ".join(offenders),
         )
 
-    # --- the shipped workflow step ---------------------------------------
+    # --- the shipped workflow steps --------------------------------------
+
+    def workflow_snippets(self, base_branch: str = "") -> list[tuple[Path, str]]:
+        return [
+            (path, render(extract(path, WORKFLOW_BLOCK), base_branch))
+            for path in WORKFLOW_STEPS
+        ]
 
     def test_workflow_step_resolves_without_the_remote(self) -> None:
-        snippet = extract(WORKFLOW_STEP, WORKFLOW_BLOCK)
         self.sever_remote()
-        self.assertEqual(run_snippet(snippet, "DEFAULT_BRANCH", self.clone), "trunk")
+        for path, snippet in self.workflow_snippets():
+            with self.subTest(step=str(path.relative_to(REPO_ROOT))):
+                self.assertEqual(run_snippet(snippet, "DEFAULT_BRANCH", self.clone), "trunk")
+                self.assertEqual(run_snippet(snippet, "BASE_BRANCH", self.clone), "trunk")
 
     def test_workflow_step_fails_closed_rather_than_guessing(self) -> None:
         """It has no `main` fallback, deliberately: #228 landed because basing
         a worktree on the wrong branch is worse than refusing to make one.
         """
-        snippet = extract(WORKFLOW_STEP, WORKFLOW_BLOCK)
         self.drop_origin_head()
         self.sever_remote()
-        self.assertEqual(run_snippet(snippet, "DEFAULT_BRANCH", self.clone), "")
+        for path, snippet in self.workflow_snippets():
+            with self.subTest(step=str(path.relative_to(REPO_ROOT))):
+                self.assertEqual(run_snippet(snippet, "DEFAULT_BRANCH", self.clone), "")
+                self.assertEqual(run_snippet(snippet, "BASE_BRANCH", self.clone), "")
+
+    def test_workflow_step_uses_an_explicit_base_branch(self) -> None:
+        """base_branch set: the worktree base is that branch, not the remote
+        default (trunk here), and resolving it needs neither origin/HEAD nor
+        the network, so a checkout that could not resolve its default still
+        cuts from the named base."""
+        for path, snippet in self.workflow_snippets(base_branch="release/1.x"):
+            with self.subTest(step=str(path.relative_to(REPO_ROOT)), origin="intact"):
+                self.assertEqual(run_snippet(snippet, "BASE_BRANCH", self.clone), "release/1.x")
+        self.drop_origin_head()
+        self.sever_remote()
+        for path, snippet in self.workflow_snippets(base_branch="release/1.x"):
+            with self.subTest(step=str(path.relative_to(REPO_ROOT)), origin="severed"):
+                self.assertEqual(run_snippet(snippet, "BASE_BRANCH", self.clone), "release/1.x")
+
+    def test_workflow_steps_cut_the_worktree_from_the_resolved_base(self) -> None:
+        for path in WORKFLOW_STEPS:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(step=str(path.relative_to(REPO_ROOT))):
+                self.assertIn('git fetch --prune origin "$BASE_BRANCH"', text)
+                self.assertIn('--detach "origin/$BASE_BRANCH"', text)
+                self.assertNotIn('"origin/$DEFAULT_BRANCH"', text)
+                # An explicit base that origin lacks must stop the step, not
+                # quietly fall back to the default branch.
+                self.assertIn("for an explicit base", text)
 
 
 if __name__ == "__main__":

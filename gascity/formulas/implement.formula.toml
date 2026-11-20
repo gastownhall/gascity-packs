@@ -11,6 +11,7 @@ Launch inputs:
 - drain_policy: {{drain_policy}}
 - implementation_target: {{implementation_target}}
 - summary_path: {{summary_path}} (empty means use the default implementation summary)
+- base_branch: {{base_branch}} (empty means the remote default branch)
 - push: {{push}}
 - open_pr: {{open_pr}}
 """
@@ -48,6 +49,10 @@ default = "false"
 [vars.open_pr]
 description = "Set true to allow publish PR creation after direct implementation succeeds."
 default = "false"
+
+[vars.base_branch]
+description = "Branch to cut implementation worktrees from and to target when publishing. Empty means the remote default branch. Set it per rig with formula_vars."
+default = ""
 
 [[steps]]
 id = "prepare"

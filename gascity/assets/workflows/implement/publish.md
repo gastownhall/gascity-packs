@@ -11,3 +11,7 @@ explicit caller authorization to publish the direct implementation result, and
 use the same protected-branch, lease-safe push, sanitized PR title/body, and
 collision checks as the pack publish helper. If neither push nor open_pr is an
 explicit opt-in, close with `gc.outcome=pass` without mutating remotes.
+
+PR base: when base_branch `{{base_branch}}` is set, every PR targets it and the
+pushed branch must descend from `origin/<base_branch>`; when it is empty, target
+the repository default branch. Never retarget an explicit base_branch.

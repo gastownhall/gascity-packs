@@ -25,6 +25,10 @@ default = "gc.implementation-worker"
 description = "Optional per-item summary path."
 default = ""
 
+[vars.base_branch]
+description = "Branch to cut implementation worktrees from and to target when publishing. Empty means the remote default branch. Set it per rig with formula_vars."
+default = ""
+
 [[steps]]
 id = "prepare-worktree"
 title = "Prepare item worktree"

@@ -5,6 +5,7 @@ Launch inputs:
 - final_report: {{final_report}}
 - push: {{push}}
 - open_pr: {{open_pr}}
+- base_branch: {{base_branch}} (empty means the remote default branch)
 """
 formula = "publish"
 version = 1
@@ -24,6 +25,10 @@ default = "false"
 [vars.open_pr]
 description = "Positive authorization to open a PR."
 default = "false"
+
+[vars.base_branch]
+description = "Branch to cut implementation worktrees from and to target when publishing. Empty means the remote default branch. Set it per rig with formula_vars."
+default = ""
 
 [[steps]]
 id = "preflight"

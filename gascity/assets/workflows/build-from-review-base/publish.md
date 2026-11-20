@@ -13,3 +13,7 @@ If publishing is authorized, publish only after the continuation finalized
 successfully and the review stage approved or explicitly allowed publication.
 Record push status, PR status, or a blocked publish reason on the workflow root
 and publish step before closing.
+
+PR base: when base_branch `{{base_branch}}` is set, every PR targets it and the
+pushed branch must descend from `origin/<base_branch>`; when it is empty, target
+the repository default branch. Never retarget an explicit base_branch.

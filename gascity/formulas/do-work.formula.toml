@@ -7,6 +7,7 @@ Launch inputs:
 - context_path: {{context_path}} (empty means no extra context bundle)
 - implementation_target: {{implementation_target}}
 - summary_path: {{summary_path}} (empty means use the default item summary path)
+- base_branch: {{base_branch}} (empty means the remote default branch)
 """
 formula = "do-work"
 version = 1
@@ -25,6 +26,10 @@ default = "gc.implementation-worker"
 
 [vars.summary_path]
 description = "Optional per-item summary path."
+default = ""
+
+[vars.base_branch]
+description = "Branch to cut implementation worktrees from and to target when publishing. Empty means the remote default branch. Set it per rig with formula_vars."
 default = ""
 
 [[steps]]

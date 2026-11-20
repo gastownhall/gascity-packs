@@ -22,3 +22,7 @@ gc bd close "$CLAIMED_BEAD_ID" --reason 'Publishing disabled; build-basic result
 ```
 
 Close only after the push, PR creation, or no-op publish result is recorded.
+
+PR base: when base_branch `{{base_branch}}` is set, every PR targets it and the
+pushed branch must descend from `origin/<base_branch>`; when it is empty, target
+the repository default branch. Never retarget an explicit base_branch.
