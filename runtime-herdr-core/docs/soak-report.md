@@ -4,7 +4,8 @@ Soak 1: a scratch city on runtime herdr-core, brought up on the legacy
 session reconciler, switched to v2, put through ten fault drills and then a
 watched 24-hour soak (12 hours legacy, 12 hours v2) on a disposable VM,
 following [`soak/RUNBOOK.md`](../soak/RUNBOOK.md). Run 2026-11-17 to
-2026-11-19.
+2026-11-19. Soak 2, a 12-hour repeat on the pack with the per-op cost and
+core-start fixes, has its own report: [`soak2-report.md`](soak2-report.md).
 
 ## Verdict
 

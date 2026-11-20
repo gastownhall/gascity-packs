@@ -767,17 +767,22 @@ def digest(outcomes: Sequence[Rec], now: float) -> str:
 
 
 def abort(city: City, outcome: Outcome, paths: SoakPaths, gc: str, procfs: ProcFS) -> None:
-    """Abort steps 1 and 2: ``ABORTED``, stop load and probes, capture. A capture
-    that fails is recorded and never keeps the city running: ``_check`` runs
-    ``stop_city`` (step 3) after this, whatever happens here."""
+    """Abort steps 1 and 2: ``ABORTED``, stop load, probes and the scheduled
+    timers, capture. A capture that fails is recorded and never keeps the city
+    running: ``_check`` runs ``stop_city`` (step 3) after this, whatever happens
+    here."""
     from soakcapture import capture
+    from soakprofile import timer_units
 
     aborted = city.file("ABORTED")
     with open(aborted, "a", encoding="utf-8") as handle:
         handle.write(f"aborted {iso(outcome.t)} phase {outcome.phase}\n")
         for f in outcome.hits:
             handle.write(f"  {f.id}: {f.reason}\n")
-    run(["systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"], timeout=60.0)
+    # The scheduled switch and end (`soak schedule`) must not run on an aborted
+    # city. One call: systemctl stops every unit it can and fails only for the
+    # ones not loaded (a city run without `soak schedule` has none).
+    run(["systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer", *timer_units(city.name)], timeout=60.0)
     try:
         bundle = str(capture(city, paths, gc, procfs))
     except Exception as err:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 1 of the soak runbook: bring-up on the legacy reconciler, 30 minutes
-# of bring-up load, then gc's conformance run against a scratch state root
-# while the city runs. Run as the soak user on the soak VM; stops at the
+# of bring-up load, then gc's conformance run in a scratch city and state
+# root while the city runs. Run as the soak user on the soak VM; stops at the
 # first failure. Results land in ~/soak-data/hc-bringup/.
 set -euo pipefail
 
@@ -28,22 +28,15 @@ echo "bring-up load for $LOAD_S s"
 sleep "$LOAD_S"
 
 snap=$("$SOAK" snapshot)
-S=$(mktemp -d /tmp/hcconf.XXXXXX)
-install -d -m 0700 "$S/state"
 touch "$DATA/CONFORMANCE"
-cd "$S"
+# `soak conf-run` runs gc's runtime check and conformance in a scratch city
+# (GC_EXEC_CITY_NAME, GC_EXEC_CITY_PATH and GC_EXEC_STATE_DIR under a fresh
+# /tmp/hcconf.* directory), stops the cores it left and removes the directory.
 set +e
-GC_EXEC_STATE_DIR="$S/state" gc runtime check "$ENTRY" > "$DATA/runtime-check.txt" 2>&1
-check=$?
-GC_EXEC_STATE_DIR="$S/state" gc runtime conformance --json "$ENTRY" > "$DATA/conformance.json" 2> "$DATA/conformance.err"
-conformance=$?
-"$SOAK" conf-teardown "$S/state" > "$DATA/conf-teardown.json"
-teardown=$?
+"$SOAK" conf-run "$ENTRY" "$DATA" > "$DATA/conf-run.json"
 set -e
-cd "$HOME"
-rm -rf "$S"
 rm -f "$DATA/CONFORMANCE"
-echo "check=$check conformance=$conformance teardown=$teardown"
+jq -r '"check=\(.check) conformance=\(.conformance) teardown=\(.teardown) scratch_removed=\(.scratch_removed)"' "$DATA/conf-run.json" || echo "conf-run: no summary (see $DATA/conf-run.json)" >&2
 set +e
 "$SOAK" snapshot --compare "$snap" > "$DATA/conformance-snapshot.json"
 untouched=$?

@@ -21,6 +21,9 @@ NOTE_COVERS: Dict[str, List[str]] = {
 }
 """What a planned operator action may end, for the predicates' fault cover."""
 
+CONF_HC_VERSION = "0.1.19"
+"""The pinned hc that stops a conformance run's scratch cores."""
+
 
 def _city(env: Mapping[str, str], paths: SoakPaths) -> City:
     return city_from_env(env, paths)
@@ -39,6 +42,44 @@ def cmd_city_init(args: argparse.Namespace, env: Mapping[str, str], paths: SoakP
         print(f"soak city-init: {err}", file=sys.stderr)
         return 1
     print(f"city ready: {city}")
+    return 0
+
+
+def cmd_conf_run(args: argparse.Namespace, env: Mapping[str, str], paths: SoakPaths) -> int:
+    from soakconf import conf_run
+    from soakhc import Teardown, conf_teardown
+
+    hc_bin = str(paths.pinned_hc(CONF_HC_VERSION))
+    procfs = ProcFS()
+
+    def teardown(root: str) -> Teardown:
+        return conf_teardown(root, hc_bin, env, procfs)
+
+    result = conf_run(os.path.abspath(args.entry), Path(args.out), env, teardown=teardown)
+    _print(result.as_rec())
+    return 0 if result.ok else 1
+
+
+def cmd_profile(args: argparse.Namespace, env: Mapping[str, str], paths: SoakPaths) -> int:
+    from soakprofile import profile, schedule_argv
+
+    try:
+        prof = profile(args.name)
+    except LookupError as err:
+        print(f"soak: {err}", file=sys.stderr)
+        return 2
+    if args.cmd == "profile":
+        print(json.dumps(prof.as_rec(paths), sort_keys=True))
+        return 0
+    for argv in schedule_argv(prof, paths, env):
+        print("$ " + " ".join(argv))
+        if args.dry_run:
+            continue
+        res = run(argv, timeout=60.0)
+        print((res.out + res.err).rstrip())
+        if not res.ok:
+            print(f"soak schedule: systemd-run exited {res.code}", file=sys.stderr)
+            return 1
     return 0
 
 
@@ -352,6 +393,14 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--final", action="store_true")
     s = sub.add_parser("conf-teardown")
     s.add_argument("root")
+    s = sub.add_parser("conf-run", help="gc runtime check and conformance in a scratch city, removed after")
+    s.add_argument("entry")
+    s.add_argument("out")
+    s = sub.add_parser("profile", help="a soak run's city, shape, load and halves, as JSON")
+    s.add_argument("name")
+    s = sub.add_parser("schedule", help="the VM timers for a soak run's switch to v2 and its end")
+    s.add_argument("name")
+    s.add_argument("--dry-run", action="store_true")
     s = sub.add_parser("orphans")
     s.add_argument("--older", type=float, default=600.0)
     s = sub.add_parser("drill")
@@ -384,9 +433,13 @@ def main(argv: Sequence[str], env: Mapping[str, str]) -> int:
     if args.cmd == "conf-teardown":
         from soakhc import conf_teardown
 
-        result = conf_teardown(os.path.abspath(args.root), str(paths.pinned_hc("0.1.19")), env, ProcFS())
+        result = conf_teardown(os.path.abspath(args.root), str(paths.pinned_hc(CONF_HC_VERSION)), env, ProcFS())
         _print(result.as_rec())
         return 0 if result.ok else 1
+    if args.cmd == "conf-run":
+        return cmd_conf_run(args, env, paths)
+    if args.cmd in ("profile", "schedule"):
+        return cmd_profile(args, env, paths)
     try:
         city = _city(env, paths)
     except LookupError as err:
