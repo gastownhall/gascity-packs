@@ -1,0 +1,14 @@
+[Unit]
+Description=herdr-core soak: per-op exec/exit trace
+
+[Service]
+Environment=BPFTRACE_STRLEN=128
+ExecStart=/usr/bin/bpftrace /home/soak/soak/bin/soak-optrace.bt /home/soak/packs/runtime-herdr-core/assets/bin/gc-runtime-herdr-core
+StandardOutput=append:/home/soak/soak-data/optrace/optrace.log
+StandardError=append:/home/soak/soak-data/optrace/optrace.err
+UMask=0022
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

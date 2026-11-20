@@ -1,0 +1,20 @@
+#!/usr/bin/env bpftrace
+/* soak-optrace.bt <entry>: one line per runtime-pack op process.
+ *   B <mono_ns>                                         trace started
+ *   E <mono_ns> <pid> <ppid> <parent comm> <argv...>    the op was exec'd
+ *   X <mono_ns> <pid> <exit_code> <wall_ms> <cpu_us>    the op exited
+ * exit_code is the kernel's: low 7 bits the killing signal, else status << 8. */
+BEGIN { printf("B %llu\n", nsecs); }
+tracepoint:syscalls:sys_enter_execve /str(args.filename) == str($1)/
+{
+  @start[pid] = nsecs;
+  printf("E %llu %d %d %s ", nsecs, pid, curtask->real_parent->tgid, curtask->real_parent->comm);
+  join(args.argv);
+}
+tracepoint:sched:sched_process_exit /@start[pid] && pid == tid/
+{
+  printf("X %llu %d %d %llu %llu\n", nsecs, pid, curtask->exit_code,
+         (nsecs - @start[pid]) / 1000000, (curtask->utime + curtask->stime) / 1000);
+  delete(@start[pid]);
+}
+END { clear(@start); }

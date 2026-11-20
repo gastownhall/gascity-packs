@@ -1,0 +1,11 @@
+[Unit]
+Description=herdr-core soak: formula load and nudges
+
+[Service]
+EnvironmentFile=%h/soak-data/current/soak.env
+ExecStart=%h/soak/bin/soak load
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

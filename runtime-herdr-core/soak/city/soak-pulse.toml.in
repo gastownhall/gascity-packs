@@ -1,0 +1,13 @@
+formula = "soak-pulse"
+description = "Soak load: one deterministic step for an always-on session."
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars.run]
+description = "Load-generator run label."
+default = "manual"
+
+[[steps]]
+id = "pulse"
+title = "soak {{run}} pulse"

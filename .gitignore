@@ -18,3 +18,6 @@
 # Python test/runtime artifacts
 __pycache__/
 *.py[cod]
+
+# Soak evidence holds VM paths, hostnames and bead ids; it stays local
+runtime-herdr-core/soak/evidence/

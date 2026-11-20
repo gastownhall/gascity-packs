@@ -1,0 +1,13 @@
+#!/usr/bin/python3 -I
+"""The soak's scripted agent (see lib/soakagent.py). Its command name is
+``soak-agent``, which the city's provider lists in ``process_names``."""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+
+from soakagent import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main(os.environ))

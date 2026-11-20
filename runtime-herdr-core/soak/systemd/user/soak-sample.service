@@ -1,0 +1,11 @@
+[Unit]
+Description=herdr-core soak: 60 s sampler
+
+[Service]
+EnvironmentFile=%h/soak-data/current/soak.env
+ExecStart=%h/soak/bin/soak sample
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+provider = "soak"
+prompt_template = "assets/prompts/soak.template.md"
+work_dir = ".gc/agents/{{.AgentBase}}"
+min_active_sessions = 0
+max_active_sessions = ${BURST}
+
+[env]
+SOAK_ROLE = "burst"
+SOAK_DATA = "${DATA}"
+SOAK_DRAIN_IDLE_S = "60"
+SOAK_CANARY_TOKEN = "${CANARY}"

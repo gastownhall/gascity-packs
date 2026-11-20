@@ -41,7 +41,7 @@ jobs:
         run: python3 validate_registry.py --require-git
 
       - name: Run Python pack tests
-        run: python3 -m pytest tests contributing-to-gascity/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests runtime-herdr-core/tests/unit -q
+        run: python3 -m pytest tests contributing-to-gascity/tests gascity/tests discord/tests github/tests oversight-rig/tests slack-full/tests slack-channel/tests pr-pipeline/tests profiler/tests runtime-herdr-core/tests/unit runtime-herdr-core/soak/tests -q
 
       - name: Lint and exercise shared role prompt composition
         run: |
@@ -167,6 +167,17 @@ jobs:
 
       - name: Unit tests
         run: python -m pytest tests/unit -q
+
+      # The soak harness (soak/, run by hand on a disposable VM) is typed and
+      # unit-tested here on synthetic logs and fake-hc; nothing in CI runs it.
+      - name: Soak harness mypy --strict
+        working-directory: runtime-herdr-core/soak
+        run: |
+          python -m mypy --config-file mypy.ini --python-version "${{ matrix.target }}"
+          python -m mypy --config-file mypy.ini --python-version "${{ matrix.target }}" bin/soak-agent
+
+      - name: Soak harness unit tests
+        run: python -m pytest soak/tests -q
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff

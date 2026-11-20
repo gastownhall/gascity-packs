@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Phase 1 of the soak runbook: bring-up on the legacy reconciler, 30 minutes
+# of bring-up load, then gc's conformance run against a scratch state root
+# while the city runs. Run as the soak user on the soak VM; stops at the
+# first failure. Results land in ~/soak-data/hc-bringup/.
+set -euo pipefail
+
+SOAK="$HOME/soak/bin/soak"
+CITY_NAME=hc-bringup
+CITY="$HOME/cities/$CITY_NAME"
+DATA="$HOME/soak-data/$CITY_NAME"
+LOAD_S="${SOAK_BRINGUP_LOAD_S:-1800}"
+ENTRY="$HOME/packs/runtime-herdr-core/assets/bin/gc-runtime-herdr-core"
+
+"$SOAK" guard
+"$SOAK" city-init "$CITY_NAME" --steady 3 --burst 2 --mode warn --load bringup
+systemctl --user is-active gascity-supervisor.service >/dev/null || gc supervisor install
+gc start "$CITY"
+"$SOAK" wait --steady 3 --first-turns --timeout 600
+"$SOAK" placement > "$DATA/placement.json" || echo "placement: a B6 check failed (see placement.json)" >&2
+
+cd "$CITY"
+r1=$(gc sling soak-burst soak-run --formula --var run=bringup-1 --json | jq -r .workflow_id)
+r2=$(gc sling soak-steady soak-pulse --formula --var run=bringup-2 --json | jq -r .workflow_id)
+"$SOAK" wait --workflows "$r1,$r2" --timeout 900
+systemctl --user enable --now soak-sample.service soak-load.service soak-check.timer
+echo "bring-up load for $LOAD_S s"
+sleep "$LOAD_S"
+
+snap=$("$SOAK" snapshot)
+S=$(mktemp -d /tmp/hcconf.XXXXXX)
+install -d -m 0700 "$S/state"
+touch "$DATA/CONFORMANCE"
+cd "$S"
+set +e
+GC_EXEC_STATE_DIR="$S/state" gc runtime check "$ENTRY" > "$DATA/runtime-check.txt" 2>&1
+check=$?
+GC_EXEC_STATE_DIR="$S/state" gc runtime conformance --json "$ENTRY" > "$DATA/conformance.json" 2> "$DATA/conformance.err"
+conformance=$?
+"$SOAK" conf-teardown "$S/state" > "$DATA/conf-teardown.json"
+teardown=$?
+set -e
+cd "$HOME"
+rm -rf "$S"
+rm -f "$DATA/CONFORMANCE"
+echo "check=$check conformance=$conformance teardown=$teardown"
+set +e
+"$SOAK" snapshot --compare "$snap" > "$DATA/conformance-snapshot.json"
+untouched=$?
+set -e
+echo "city untouched by the conformance run: $([ "$untouched" -eq 0 ] && echo yes || echo NO)"
+jq '{ok, v2_ready, failed: [.results[] | select((.status|ascii_downcase) == "fail") | .code]}' "$DATA/conformance.json"
+cd "$CITY"
+set +e
+gc doctor --json > "$DATA/doctor.json"
+doctor=$?
+set -e
+echo "doctor=$doctor"
+"$SOAK" report --city "$CITY_NAME" --first-turns
+tail -n 3 "$DATA/check.log"
