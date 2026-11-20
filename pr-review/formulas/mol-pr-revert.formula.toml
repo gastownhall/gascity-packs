@@ -38,6 +38,14 @@ policy change.
 The molecule root bead IS the control bead — all run state lives in its
 notes/metadata. Crash-safe: `gc bd mol current` resumes at the right step.
 
+## Public GitHub Posts
+
+Every comment or review body this workflow posts on GitHub (`gh pr comment`,
+`gh pr review --body`, `gh api .../comments`) starts with the universal
+factory marker line `<!-- gc-agent:v1 -->`, followed by a blank line and the
+rendered body. Write bodies to a file and post with `--body-file` so the
+marker stays on its own first line; never strip it when editing a body.
+
 ## Contract
 
 1. Caller (mayor) slings with:
@@ -534,6 +542,8 @@ fi
 ```bash
 BODY_FILE=$(mktemp)
 cat > "$BODY_FILE" <<MD
+<!-- gc-agent:v1 -->
+
 This PR has been reverted: $REVERT_PR_URL
 
 **Reason:** {{reason}}

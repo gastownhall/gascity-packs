@@ -25,6 +25,8 @@ of it" tone.
 ## Form 1 — No maintainer changes (Path A)
 
 ```markdown
+<!-- gc-agent:v1 -->
+
 ## Adoption Review
 
 Thanks for the contribution, @{contributor}! {fix-summary-1-2-sentences}.
@@ -46,6 +48,8 @@ _Adopted via `/adopt-pr` workflow. Contributor commits preserved._
 ## Form 2 — Maintainer changes present (Paths B, C, D)
 
 ```markdown
+<!-- gc-agent:v1 -->
+
 ## Adoption Review
 
 Thanks for the contribution, @{contributor}! {fix-summary-2-3-sentences}.
@@ -132,9 +136,11 @@ rejected file, edits, and posts manually.
 
 ### Both forms
 
-1. Starts with `## Adoption Review` followed by a blank line and the verbatim
-   opener `Thanks for the contribution, @` (the friendly tone is enforced
-   structurally).
+1. Starts with the universal factory marker line `<!-- gc-agent:v1 -->`,
+   then a blank line, then `## Adoption Review` followed by a blank line and
+   the verbatim opener `Thanks for the contribution, @` (the friendly tone is
+   enforced structurally). The marker line lets analytics classify the post
+   as automation; never drop it.
 2. Ends with the literal footer line below (markdown-italic, with the
    slash-command name rendered as inline code — backticks are part of the
    literal):

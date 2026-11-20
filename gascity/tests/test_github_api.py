@@ -108,7 +108,7 @@ class GitHubAPITests(unittest.TestCase):
 
             self.assertEqual(
                 run.call_args.args[0],
-                ["gh", "api", "-X", "POST", "repos/owner/repo/issues/123/comments", "-f", "body=hello\n"],
+                ["gh", "api", "-X", "POST", "repos/owner/repo/issues/123/comments", "-f", "body=<!-- gc-agent:v1 -->\nhello\n"],
             )
             self.assertEqual(created["id"], 111)
 
@@ -117,7 +117,7 @@ class GitHubAPITests(unittest.TestCase):
 
             self.assertEqual(
                 run.call_args.args[0],
-                ["gh", "api", "-X", "PATCH", "repos/owner/repo/issues/comments/111", "-f", "body=hello\n"],
+                ["gh", "api", "-X", "PATCH", "repos/owner/repo/issues/comments/111", "-f", "body=<!-- gc-agent:v1 -->\nhello\n"],
             )
             self.assertEqual(updated["author"], "bot")
 

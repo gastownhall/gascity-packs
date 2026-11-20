@@ -18,6 +18,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from gc_agent_marker import with_agent_marker
+
 WEBHOOK_SERVICE_NAME = "github-webhook"
 ADMIN_SERVICE_NAME = "github-admin"
 SCHEMA_VERSION = 1
@@ -1217,7 +1219,7 @@ def post_issue_comment(
     return github_api_request(
         "POST",
         f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(repo)}/issues/{issue_number}/comments",
-        payload={"body": body},
+        payload={"body": with_agent_marker(body)},
         bearer_token=token,
     )
 

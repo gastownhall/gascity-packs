@@ -14,6 +14,14 @@ The molecule root bead IS the control bead — all run state is stored in its
 notes via `gc bd update <root-id> --notes "key: value"` and structured
 evidence in metadata via `gc bd update <root-id> --set-metadata "key=value"`.
 
+## Public GitHub Posts
+
+Every comment or review body this workflow posts on GitHub (`gh pr comment`,
+`gh pr review --body`, `gh api .../comments`) starts with the universal
+factory marker line `<!-- gc-agent:v1 -->`, followed by a blank line and the
+rendered body. Write bodies to a file and post with `--body-file` so the
+marker stays on its own first line; never strip it when editing a body.
+
 ## Contract
 
 1. Caller slings with `--var pr=<int> --var feedback_source=<source>`
@@ -550,7 +558,9 @@ or no longer present.
 If cleared, post a reply on the original copilot thread noting the change:
 ```bash
 gh api "/repos/$REPO/pulls/{{pr}}/comments" \\
-  -f body="Addressed in $last_apply_commit." \\
+  -f body="<!-- gc-agent:v1 -->
+
+Addressed in $last_apply_commit." \\
   -f in_reply_to=<original_comment_id>
 ```
 
@@ -559,7 +569,9 @@ gh api "/repos/$REPO/pulls/{{pr}}/comments" \\
 Similar to copilot — post a reply to `{{feedback_ref}}`:
 ```bash
 gh api "/repos/$REPO/pulls/{{pr}}/comments" \\
-  -f body="Addressed in $last_apply_commit." \\
+  -f body="<!-- gc-agent:v1 -->
+
+Addressed in $last_apply_commit." \\
   -f in_reply_to={{feedback_ref}}
 ```
 
