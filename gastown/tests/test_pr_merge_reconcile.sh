@@ -37,6 +37,9 @@ case "$1" in
                 cat "$GC_TEST_LIST_JSON"
                 ;;
             show)
+                if [ "${GC_TEST_SHOW_FAIL:-0}" != "0" ]; then
+                    exit 1
+                fi
                 show_status=${GC_TEST_SHOW_STATUS:-closed}
                 show_result=${GC_TEST_SHOW_RESULT:-mr_merged}
                 show_pr_state=${GC_TEST_SHOW_PR_STATE:-merged}
@@ -108,6 +111,10 @@ for arg in "$@"; do
 done
 printf '\n' >>"$GC_TEST_LOG"
 [ "${GC_TEST_GH_FAIL:-0}" = "0" ] || exit 1
+if [ "$1" = "pr" ] && [ "$2" = "merge" ]; then
+    [ "${GC_TEST_GH_MERGE_FAIL:-0}" = "0" ] || exit 1
+    exit 0
+fi
 cat "$GC_TEST_PR_INFO"
 SH
 
@@ -117,10 +124,18 @@ printf 'curl' >>"$GC_TEST_LOG"
 for arg in "$@"; do
     case "$arg" in
         Authorization:*) printf ' <Authorization: REDACTED>' >>"$GC_TEST_LOG" ;;
+        *enablePullRequestAutoMerge*) printf ' <query: REDACTED>' >>"$GC_TEST_LOG" ;;
         *) printf ' <%s>' "$arg" >>"$GC_TEST_LOG" ;;
     esac
 done
 printf '\n' >>"$GC_TEST_LOG"
+case "$*" in
+    *graphql*)
+        [ "${GC_TEST_GH_MERGE_FAIL:-0}" = "0" ] || exit 1
+        printf '%s\n' '{"data":{"enablePullRequestAutoMerge":{"clientMutationId":"m1"}}}'
+        exit 0
+        ;;
+esac
 cat "$GC_TEST_REST_INFO"
 SH
 
@@ -215,23 +230,26 @@ reset_case() {
     unset GC_TEST_CLEANUP_FAIL
     unset GC_TEST_SHOW_STATUS GC_TEST_SHOW_RESULT
     unset GC_TEST_SHOW_PR_STATE GC_TEST_SHOW_MERGED_AT GC_TEST_SHOW_CLEANUP_STATE
+    unset GC_TEST_SHOW_FAIL GC_TEST_GH_MERGE_FAIL
     unset GC_TEST_ORIGIN_URL
-    unset GASTOWN_PR_RECONCILE_FORCE_REST GH_TOKEN
+    unset GASTOWN_PR_RECONCILE_FORCE_REST GASTOWN_PR_AUTO_MERGE_METHOD GH_TOKEN
     export GC_TEST_MERGE_REACHABLE=1
 }
 
 write_pending_list() {
     local head=${1:-$HEAD_A}
     local checked=${2:-2026-07-26T19:00:00Z}
+    local extra=${3:-}
     jq -n \
         --arg head "$head" \
         --arg checked "$checked" \
         --arg url "$PR_URL" \
+        --argjson extra "${extra:-null}" \
         '[{
           id: "tr-92a",
           status: "blocked",
           assignee: "gastown__refinery-ac-old",
-          metadata: {
+          metadata: ({
             branch: "polecat/tr-92a",
             target: "main",
             merged_target: "main",
@@ -243,7 +261,7 @@ write_pending_list() {
             pr_state: "open",
             pr_reconcile_pending: "true",
             pr_last_checked_at: $checked
-          }
+          } + (if $extra == null then {} else $extra end))
         }]' >"$LIST_JSON"
 }
 
@@ -252,12 +270,16 @@ write_pr_info() {
     local head=${2:-$HEAD_A}
     local merged_at=${3:-}
     local merge_sha=${4:-}
+    local mergeable=${5:-}
+    local remote_armed=${6:-}
     jq -n \
         --arg url "$PR_URL" \
         --arg state "$state" \
         --arg head "$head" \
         --arg merged_at "$merged_at" \
         --arg merge_sha "$merge_sha" \
+        --argjson mergeable "${mergeable:-null}" \
+        --argjson remote_armed "${remote_armed:-null}" \
         '{
           url: $url,
           number: 181,
@@ -266,7 +288,11 @@ write_pr_info() {
           headRefOid: $head,
           baseRefName: "main",
           mergedAt: (if $merged_at == "" then null else $merged_at end),
-          mergeCommit: (if $merge_sha == "" then null else {oid: $merge_sha} end)
+          mergeCommit: (if $merge_sha == "" then null else {oid: $merge_sha} end),
+          id: "PR_kwDOABCdefg",
+          mergeable: $mergeable,
+          mergeStateStatus: (if $mergeable == true then "CLEAN" else "UNKNOWN" end),
+          autoMergeRequest: $remote_armed
         }' >"$PR_INFO"
 }
 
@@ -281,7 +307,11 @@ write_rest_pr_info() {
           merged_at: null,
           merge_commit_sha: null,
           head: {ref: "polecat/tr-92a", sha: $head},
-          base: {ref: "main"}
+          base: {ref: "main"},
+          node_id: "PR_kwDOABCdefg",
+          mergeable: true,
+          mergeable_state: "clean",
+          auto_merge: null
         }' >"$REST_INFO"
 }
 
@@ -353,6 +383,149 @@ test_open_unchanged_stays_blocked() {
         fail "unchanged open PR must not re-enter the refinery queue"
     ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
         fail "unchanged open PR must not close its bead"
+}
+
+test_unarmed_green_open_pr_is_armed_with_record() {
+    reset_case
+    write_pending_list
+    write_pr_info OPEN "$HEAD_A" "" "" true
+    "$COMMAND"
+
+    grep -F 'gh <pr> <merge> <https://github.com/example/repo/pull/181> <--auto> <--squash>' "$LOG" >/dev/null ||
+        fail "green unchanged PR must arm auto-merge through gh"
+    grep -F '<--set-metadata> <auto_merge_armed=by_reconcile>' "$LOG" >/dev/null ||
+        fail "arming must record the actor kind on the bead"
+    grep -F "<--set-metadata> <auto_merge_armed_by=$GC_AGENT>" "$LOG" >/dev/null ||
+        fail "arming must record the reconciling session as actor"
+    grep -F '<--set-metadata> <auto_merge_armed_at=' "$LOG" >/dev/null ||
+        fail "arming must record when it happened"
+    grep -F '<--set-metadata> <pr_state=open>' "$LOG" >/dev/null ||
+        fail "armed PR must remain tracked as open"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "arming must not close the bead"
+}
+
+test_external_remote_arm_is_observed_and_recorded() {
+    reset_case
+    write_pending_list
+    write_pr_info OPEN "$HEAD_A" "" "" true '{"enabledAt":"2026-07-26T19:45:00Z"}'
+    "$COMMAND"
+
+    ! grep -F 'gh <pr> <merge>' "$LOG" >/dev/null ||
+        fail "already-armed remote must not be armed again"
+    grep -F '<--set-metadata> <auto_merge_armed=observed_external>' "$LOG" >/dev/null ||
+        fail "an unexplained remote arm must be recorded as external"
+    grep -F "<--set-metadata> <auto_merge_armed_by=$GC_AGENT>" "$LOG" >/dev/null ||
+        fail "the observation record must name the observing session"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "observing a remote arm must not close the bead"
+}
+
+test_recorded_external_arm_is_not_restamped() {
+    reset_case
+    write_pending_list "$HEAD_A" "" '{"auto_merge_armed": "by_reconcile", "auto_merge_armed_by": "tributary/gastown.refinery"}'
+    write_pr_info OPEN "$HEAD_A" "" "" true '{"enabledAt":"2026-07-26T19:45:00Z"}'
+    "$COMMAND"
+
+    ! grep -F '<--set-metadata> <auto_merge_armed=' "$LOG" >/dev/null ||
+        fail "a recorded arm must not be restamped on every pass"
+    grep -F '<--set-metadata> <pr_state=open>' "$LOG" >/dev/null ||
+        fail "already-armed PR must remain tracked as open"
+}
+
+test_publish_order_hold_blocks_arming_until_blocker_closes() {
+    reset_case
+    write_pending_list "$HEAD_A" "" '{"publish_after": "tr-90a"}'
+    write_pr_info OPEN "$HEAD_A" "" "" true
+    export GC_TEST_SHOW_STATUS=open
+    "$COMMAND"
+
+    ! grep -F 'gh <pr> <merge>' "$LOG" >/dev/null ||
+        fail "a held PR must not arm auto-merge while its blocker is open"
+    grep -F '<--set-metadata> <publish_order_hold=true>' "$LOG" >/dev/null ||
+        fail "the hold must be stamped on the bead"
+    grep -F '<--set-metadata> <publish_order_blocker_state=open>' "$LOG" >/dev/null ||
+        fail "the hold must record the blocker state"
+    grep -F '<--set-metadata> <pr_state=open>' "$LOG" >/dev/null ||
+        fail "a held PR stays tracked as open"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "a hold must not close the bead"
+    ! grep -F 'gc <mail>' "$LOG" >/dev/null ||
+        fail "a readable open blocker must not escalate to mayor"
+}
+
+test_publish_order_hold_releases_when_blocker_closes() {
+    reset_case
+    write_pending_list "$HEAD_A" "" '{"publish_after": "tr-90a", "publish_order_hold": "true", "publish_order_blocker_state": "open"}'
+    write_pr_info OPEN "$HEAD_A" "" "" true
+    "$COMMAND"
+
+    grep -F 'gh <pr> <merge> <https://github.com/example/repo/pull/181> <--auto> <--squash>' "$LOG" >/dev/null ||
+        fail "a released hold on a green PR must arm auto-merge"
+    grep -F '<--unset-metadata> <publish_order_hold>' "$LOG" >/dev/null ||
+        fail "a released hold must be cleared"
+    grep -F '<--unset-metadata> <publish_order_blocker_state>' "$LOG" >/dev/null ||
+        fail "a released hold must clear the blocker-state stamp"
+    grep -F '<--set-metadata> <auto_merge_armed=by_reconcile>' "$LOG" >/dev/null ||
+        fail "post-release arming must record the actor"
+}
+
+test_publish_order_hold_unknown_blocker_fails_closed_and_escalates() {
+    reset_case
+    write_pending_list "$HEAD_A" "" '{"publish_after": "tr-gone"}'
+    write_pr_info OPEN "$HEAD_A" "" "" true
+    export GC_TEST_SHOW_FAIL=1
+    "$COMMAND"
+
+    ! grep -F 'gh <pr> <merge>' "$LOG" >/dev/null ||
+        fail "an unreadable blocker must hold, never arm"
+    grep -F '<--set-metadata> <publish_order_hold=true>' "$LOG" >/dev/null ||
+        fail "an unreadable blocker must still stamp the hold"
+    grep -F '<--set-metadata> <publish_order_blocker_state=unknown>' "$LOG" >/dev/null ||
+        fail "an unreadable blocker must record its unknown state"
+    grep -F 'pr_reconcile_error=' "$LOG" >/dev/null ||
+        fail "an unreadable blocker must be surfaced as a reconcile error"
+    grep -F 'gc <mail> <send>' "$LOG" >/dev/null ||
+        fail "an unreadable blocker must escalate to mayor"
+}
+
+test_conflicting_open_pr_flags_and_escalates_once() {
+    reset_case
+    write_pending_list
+    write_pr_info OPEN "$HEAD_A" "" "" false
+    "$COMMAND"
+
+    grep -F '<--set-metadata> <pr_state=merge_conflicting>' "$LOG" >/dev/null ||
+        fail "a conflicting PR must be flagged on the bead"
+    ! grep -F 'gh <pr> <merge>' "$LOG" >/dev/null ||
+        fail "a conflicting PR must not arm auto-merge"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "a conflicting PR must not close its bead"
+    [ "$(grep -cF 'gc <mail> <send>' "$LOG")" -eq 1 ] ||
+        fail "a first-seen conflict must escalate to mayor exactly once"
+
+    write_pending_list "$HEAD_A" "" '{"pr_state": "merge_conflicting"}'
+    "$COMMAND"
+    [ "$(grep -cF 'gc <mail> <send>' "$LOG")" -eq 1 ] ||
+        fail "a continuing conflict must not re-escalate"
+}
+
+test_rest_arming_uses_graphql_mutation() {
+    reset_case
+    write_pending_list
+    write_rest_pr_info
+    export GASTOWN_PR_RECONCILE_FORCE_REST=1
+    export GH_TOKEN=test-token
+    "$COMMAND"
+
+    grep -F '<https://api.github.com/graphql>' "$LOG" >/dev/null ||
+        fail "REST-mode arming must use the GraphQL mutation endpoint"
+    ! grep -F 'test-token' "$LOG" >/dev/null ||
+        fail "REST arming must not expose the GitHub token in the log"
+    grep -F '<--set-metadata> <auto_merge_armed=by_reconcile>' "$LOG" >/dev/null ||
+        fail "REST-mode arming must record the actor on the bead"
+    ! grep -F 'gc <bd> <close>' "$LOG" >/dev/null ||
+        fail "REST-mode arming must not close the bead"
 }
 
 test_reconcile_origin_mismatch_retries_without_github_or_close() {
@@ -1079,6 +1252,14 @@ test_formula_uses_pending_merge_gate() {
 test_record_blocks_without_closing
 test_record_rejects_origin_repo_mismatch_before_mutation
 test_open_unchanged_stays_blocked
+test_unarmed_green_open_pr_is_armed_with_record
+test_external_remote_arm_is_observed_and_recorded
+test_recorded_external_arm_is_not_restamped
+test_publish_order_hold_blocks_arming_until_blocker_closes
+test_publish_order_hold_releases_when_blocker_closes
+test_publish_order_hold_unknown_blocker_fails_closed_and_escalates
+test_conflicting_open_pr_flags_and_escalates_once
+test_rest_arming_uses_graphql_mutation
 test_reconcile_origin_mismatch_retries_without_github_or_close
 test_partial_record_never_blocks_without_complete_metadata
 test_marker_only_open_record_is_adopted_for_revalidation
