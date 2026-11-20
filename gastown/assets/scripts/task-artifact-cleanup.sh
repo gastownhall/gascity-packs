@@ -118,6 +118,24 @@ valid_branch() {
         git -C "$RIG_ROOT" check-ref-format "refs/heads/$1" >/dev/null 2>&1
 }
 
+valid_direct_merge_branch() {
+    valid_branch "$1" || return 1
+    # Command substitution must not normalize the recorded branch name.
+    printf '%s' "$META" | jq -e --arg branch "$1" \
+        '.branch == $branch' >/dev/null || return 1
+    case "$1" in
+        "polecat/$WORK") return 0 ;;
+        "polecat/$WORK"-r*)
+            revision_suffix=${1#"polecat/$WORK"-r}
+            case "$revision_suffix" in
+                ""|*[!0-9]*) return 1 ;;
+            esac
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
 task_artifact_path_shape() {
     shaped_candidate=$1
     shaped_bead=$2
@@ -406,9 +424,7 @@ case "$HANDOFF_RESULT" in
         fi
         ;;
     merged|already_merged)
-        EXPECTED_BRANCH="polecat/$WORK"
-        if [ "$BRANCH" != "$EXPECTED_BRANCH" ] ||
-           ! valid_branch "$BRANCH" ||
+        if ! valid_direct_merge_branch "$BRANCH" ||
            ! valid_object_id "$EXPECTED_ARTIFACT_SHA" ||
            ! valid_branch "$TARGET" ||
            ! valid_object_id "$MERGED_SHA"; then
