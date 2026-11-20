@@ -367,9 +367,11 @@ checked against the app yet, so the sessions may not appear there.
   record and no record of the name exits 1 (a `stop` between the two ops
   wins: it drops the record, as `server-stop` drops the city's), and one
   into a parked city (whatever record it finds) or a never-started city
-  without a record exits 1 without starting a core. Without
+  without a record exits 1 without starting a core (it checks and starts
+  the core under the kick lock `server-stop` holds throughout, so a
+  `server-stop` never parks the city in between). Without
   `fresh_only`, `launch` replaces a running agent: it checks `work_dir`
-  first (a launch that cannot start ends nothing), ends the old
+  first (a launch whose `work_dir` is missing ends nothing), ends the old
   incarnation's tree as `stop` does (refused while its processes may
   survive), creates the new terminal, and only then removes the old
   record, so the name reads dead, never absent, in between. The new
@@ -380,8 +382,8 @@ checked against the app yet, so the sessions may not appear there.
   moment `launch` returns, before gc writes it. Known limits: a provision
   record is good for 10 minutes (a gc that crashed between the two ops
   provisions again); an agent that exits during startup fails the launch
-  and leaves its box for gc's stop, which gc runs only when the box
-  carries that start's token; the pack cannot fence input, so gc checks a
+  and leaves its box for gc's failed-start cleanup, which checks the box's
+  token only on a fresh start; the pack cannot fence input, so gc checks a
   queued first turn against the live launch just before the send, not at
   the keystroke; and an agent that reports `blocked` (its own question)
   refuses the turn (`pending_interaction`, nothing typed) until it is

@@ -10,7 +10,8 @@ session steps deferred until the agent runs (``session_setup``,
 ``session_setup_script``) and the work dir they run in.
 
 A record is good for :data:`TTL_MS` after it was written; an older one reads
-as absent, and the next ``provision`` of any name removes it. ``launch``
+as absent, and the next ``provision`` of any name removes it (:func:`sweep`,
+under the record's name's lock, unless that name is busy). ``launch``
 consumes the record once the new incarnation's metadata is written;
 ``stop`` drops the name's record, even with the core down, so a stop
 between ``provision`` and ``launch`` wins; ``server-stop`` drops the city's.
@@ -25,6 +26,7 @@ import errno
 import os
 from typing import TYPE_CHECKING, Dict, Final, List, Mapping, Optional, Tuple
 
+from ..rpp.flock import FileLock, LockFileError, LockTimeout
 from ..rpp.frozen import field, frozen
 from ..rpp.jsonval import JsonObject, JsonShapeError, dumps, loads
 from ..rpp.statedir import StateDirError
@@ -164,15 +166,37 @@ def drop_all(ctx: "OpContext") -> None:
 
 
 def sweep(ctx: "OpContext", now_ms: int) -> None:
-    """Remove the city's expired records; one that cannot be read is left alone."""
+    """Remove the city's expired records, each read again under its name's
+    lock, which every write of it holds: a record a ``provision`` of that
+    name rewrote since the first read is never the one removed. One that
+    cannot be read, or whose name's lock is held (the caller's own among
+    them), is left alone: no lock is waited for, so two provisions sweeping
+    each other's names never wait on each other."""
     for path in _entries(ctx):
-        try:
-            data = read_private_file(path)
-            if data is None:
-                continue
-            doc = JsonObject.of(loads(data))
-            at_ms = doc.req_int("at_ms")
-        except (StateDirError, JsonShapeError):
+        name = _expired_session(ctx, path, now_ms)
+        if name is None:
             continue
-        if now_ms - at_ms > TTL_MS:
-            _unlink(path)
+        try:
+            # The name's lock (OpContext.name_lock), tried without waiting.
+            with FileLock(ctx.lock_path("name", name), shared=False, wait_s=0.0, cancel=ctx.request.cancel):
+                if _expired_session(ctx, path, now_ms) == name:
+                    _unlink(path)
+        except (LockTimeout, LockFileError):
+            continue
+
+
+def _expired_session(ctx: "OpContext", path: str, now_ms: int) -> Optional[str]:
+    """The session of the record at ``path`` once it expired; None while it
+    is good, or when there is none or it cannot be read (one whose session's
+    record lives elsewhere among them)."""
+    try:
+        data = read_private_file(path)
+        if data is None:
+            return None
+        doc = JsonObject.of(loads(data))
+        name, at_ms = doc.req_str("session"), doc.req_int("at_ms")
+        if record_path(ctx, name) != path:
+            return None
+    except (StateDirError, JsonShapeError, UnicodeError):
+        return None
+    return name if now_ms - at_ms > TTL_MS else None

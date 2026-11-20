@@ -16,7 +16,7 @@ import stat
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Optional
 
 import pytest
 from cityharness import City, in_thread, make_city
@@ -28,10 +28,12 @@ from test_herdrcore_inputs import answer
 from test_herdrcore_server import no_core_started
 
 from gc_runtime_herdr_core.hc.paths import resolve_paths
-from gc_runtime_herdr_core.herdrcore import core, provisioned
+from gc_runtime_herdr_core.herdrcore import core, provisioned, unwelded
+from gc_runtime_herdr_core.herdrcore.config import read_private_file
+from gc_runtime_herdr_core.herdrcore.context import OpContext
 from gc_runtime_herdr_core.herdrcore.lifecycle import STARTUP_UNCONFIRMED_KEY
 from gc_runtime_herdr_core.herdrcore.procs import LinuxProcs, scan_environ
-from gc_runtime_herdr_core.herdrcore.reads import META_GC_AGE_S
+from gc_runtime_herdr_core.herdrcore.reads import META_GC_AGE_S, meta_store
 from gc_runtime_herdr_core.rpp.cancel import CancelToken
 from gc_runtime_herdr_core.rpp.frozen import replace
 
@@ -274,6 +276,9 @@ def test_launch_replaces_a_running_agent(city: City) -> None:
     [new] = city.terminals()
     assert new["address"] != old["address"], "the old record is removed"
     assert new["labels"]["gc.obj"] != old["labels"]["gc.obj"]  # type: ignore[index]
+    store = meta_store(city.context())
+    assert not os.path.exists(store.path(str(old["labels"]["gc.obj"]))), "the old incarnation's metadata is forgotten"  # type: ignore[index]
+    assert os.path.exists(store.path(str(new["labels"]["gc.obj"])))  # type: ignore[index]
     answer = observe(city, "mc-a", "cat")
     assert answer["state"] == "running" and answer["agent"] == "alive"
     assert answer["identity"]["GC_INSTANCE_TOKEN"] == second
@@ -455,7 +460,7 @@ def test_launch_waits_for_the_agent_and_fails_when_it_exits_during_startup(city:
     assert provision(city, fresh_only=True).code == 0
     done = launch(city, command="echo oops; exit 3", fresh_only=True)
     assert done.code == 1 and "exited during startup" in done.stderr
-    assert len(city.terminals()) == 1, "the box is left for gc's token-gated stop"
+    assert len(city.terminals()) == 1, "the box is left for gc's failed-start cleanup"
     assert observe(city, "mc-a")["identity"]["GC_INSTANCE_TOKEN"] == TOKEN
     assert city.run("stop", "mc-a").code == 0
     assert city.terminals() == []
@@ -540,6 +545,88 @@ def test_a_provision_after_server_stop_unparks_the_city_and_a_launch_starts(city
     assert started.code == 0, started.stderr
     answer = observe(city, "mc-a", "cat")
     assert answer["state"] == "running" and answer["agent"] == "alive", answer
+
+
+def test_a_server_stop_after_a_launchs_parked_check_is_never_undone(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The launch's parked check and its core start hold the kick lock, as
+    # server-stop does throughout: a server-stop that comes between them
+    # waits for the start, rather than parking the city for it to undo.
+    # With no record the launch then refuses, and the stop's park stands.
+    stops: List[Any] = []
+
+    def stop_first(ctx: OpContext) -> str:
+        stopper = in_thread(lambda: stops.append(city.run("server-stop")))
+        stopper.join(timeout=3.0)  # without the lock the whole stop lands here
+        return core.ensure_core(ctx)
+
+    monkeypatch.setattr(unwelded, "ensure_core", stop_first)
+    done = launch(city)
+    assert done.code == 1, done.stderr
+    wait_for(lambda: bool(stops), timeout=60.0)
+    assert stops[0].code == 0, stops[0].stderr
+    assert core.parked(city.context()), "the stop's park stands"
+    assert no_core_started(city, wait_s=1.0), "no core runs after the stop"
+
+
+def test_a_launch_refuses_when_the_kick_lock_does_not_come(city: City) -> None:
+    # A core start or a server-stop in flight holds the kick lock: a launch
+    # waits for it within its deadline and, when it does not come, exits 1
+    # touching nothing, so the next launch starts the agent.
+    assert provision(city, fresh_only=True).code == 0
+    with city.context().lock(core.KICK_LOCK, shared=False, wait_s=0.0):
+        done = city.run("launch", "mc-a", stdin=config(fresh_only=True), deadline_ms=2500)
+    assert done.code == 1 and "a start or a stop of the city's core is in flight" in done.stderr, done.stderr
+    assert city.terminals() == []
+    assert record_path(city, "mc-a").exists(), "the record stays for the next launch"
+    started = launch(city, fresh_only=True)
+    assert started.code == 0, started.stderr
+
+
+def age(path: Path) -> None:
+    """Make the provision record at ``path`` older than its TTL."""
+    doc = json.loads(path.read_text())
+    doc["at_ms"] = 0
+    path.write_text(json.dumps(doc))
+
+
+def test_a_sweep_never_removes_a_record_rewritten_since_it_read_it(city: City, monkeypatch: pytest.MonkeyPatch) -> None:
+    # mc-b's record expired (a crashed gc's), and gc provisions mc-b again
+    # while mc-a's provision sweeps: the sweep read the expired record, but
+    # it removes one only once a read under its name's lock still finds it expired.
+    assert provision(city, "mc-b").code == 0
+    path = record_path(city, "mc-b")
+    age(path)
+    again: List[Any] = []
+    armed = [True]
+
+    def read_then_provision(at: str) -> Optional[bytes]:
+        data = read_private_file(at)
+        if at == str(path) and armed[0]:
+            armed[0] = False
+            again.append(provision(city, "mc-b"))  # between the sweep's read and its removal
+        return data
+
+    monkeypatch.setattr(provisioned, "read_private_file", read_then_provision)
+    done = provision(city)
+    monkeypatch.undo()
+    assert done.code == 0, done.stderr
+    assert again and again[0].code == 0, again
+    assert path.exists(), "the rewritten record stays"
+    started = launch(city, "mc-b")
+    assert started.code == 0, started.stderr
+
+
+def test_a_sweep_leaves_the_record_of_a_name_whose_lock_is_held(city: City) -> None:
+    # A sweep never waits on another name's lock (its caller holds its own):
+    # an expired record whose name is busy is left for a later sweep.
+    assert provision(city, "mc-b").code == 0
+    path = record_path(city, "mc-b")
+    age(path)
+    with city.context().name_lock("mc-b", shared=False):
+        assert provision(city).code == 0
+    assert path.exists(), "left while mc-b's lock was held"
+    assert provision(city, "mc-c").code == 0
+    assert not path.exists(), "the next sweep removes it"
 
 
 def test_a_concurrent_launch_and_stop_leave_no_agent(city: City) -> None:

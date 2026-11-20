@@ -29,15 +29,18 @@ stages and runs ``pre_start``. ``session_live`` is never run.
 parked city, or without an unexpired provision record in a city never
 started, it exits 1 and starts no core: a late launch after ``gc stop`` or
 ``server-stop`` never revives the city, even when a provision's last write
-landed after ``server-stop`` dropped the records. Under the name's lock, with every
+landed after ``server-stop`` dropped the records. That check and the core's
+start hold the kick lock (:data:`.core.KICK_LOCK`), which ``server-stop``
+holds throughout, so a ``server-stop`` never parks the city between them
+(exit 1 when the lock does not come in time). Under the name's lock, with every
 record of the name (finished ones too):
 
 * ``fresh_only`` and any record: exit 73, touching nothing;
 * no provision record and no record: exit 1 (a ``stop`` between
   ``provision`` and ``launch`` dropped it);
 * a ``work_dir`` that is not an existing directory: exit 1, before any
-  earlier incarnation is ended, so a launch that cannot start never ends
-  the agent it would replace;
+  earlier incarnation is ended, so a launch whose ``work_dir`` is missing
+  never ends the agent it would replace;
 * otherwise each earlier incarnation's tree is ended as a start ends it
   (the same refusal while its processes may survive), but its record stays;
   the new terminal is created (metadata first, observe.v1 rule 5, then the
@@ -51,7 +54,8 @@ provision record's seed, then the launch env's non-empty identity keys and
 keeps the box's value and ``get-meta`` answers the launch's identity from
 the moment ``launch`` returns. Unlocked, ``launch`` waits for the agent's
 processes; an agent that exits during startup fails a launch that is not
-one-shot, and its box is left for gc's token-gated stop. Then it runs the
+one-shot, and its box is left for gc's failed-start cleanup, which checks
+the launch's token only on a fresh start. Then it runs the
 deferred session steps, or its own config's if it carries any, never both
 (warnings only). It ignores the config's ``nudge``.
 """
@@ -64,11 +68,12 @@ from ..hc.errors import HcError
 from ..hc.types import Terminal
 from ..rpp.cancel import Cancelled
 from ..rpp.exitcodes import ExitCode
+from ..rpp.flock import LockTimeout
 from ..rpp.ops import OpError, OpResult
 from ..rpp.wire import StartConfig, WireError, parse_start_config
 from . import provisioned
 from .context import OpContext
-from .core import at_rest, ensure_core, parked
+from .core import KICK_LOCK, KICK_WAIT_S, at_rest, ensure_core, parked
 from .lifecycle import (
     SESSION_LIVE_SKIPPED,
     Plan,
@@ -156,14 +161,26 @@ def op_launch(ctx: OpContext) -> OpResult:
         raise OpError(f"cannot launch {name!r}: {err}") from None
 
 
+def _core_for(ctx: OpContext, name: str) -> str:
+    """The hc binary, once the city's core runs; never a core for a city at
+    rest. A parked city refuses whatever the record says: server-stop parks
+    it after any provision's ensure_core unparked it, so a record there is
+    stale. The check and the start hold the kick lock, as server-stop does
+    throughout, so no server-stop parks the city between them for
+    ensure_core to undo; it is let go before the name's lock, the order
+    server-stop takes them in."""
+    try:
+        with ctx.lock(KICK_LOCK, shared=False, wait_s=max(0.0, ctx.request.deadline.budget(KICK_WAIT_S))):
+            is_parked = parked(ctx)
+            if is_parked or (provisioned.read(ctx, name, ctx.host.now_ms()) is None and at_rest(ctx)):
+                raise _city_stopped(name) if is_parked else _nothing_provisioned(name)
+            return ensure_core(ctx)
+    except LockTimeout:
+        raise OpError(f"cannot launch {name!r}: a start or a stop of the city's core is in flight") from None
+
+
 def _launch(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
-    # Never a core for a city at rest. A parked city refuses whatever the
-    # record says: server-stop parks it after any provision's ensure_core
-    # unparked it, so a record there is stale.
-    is_parked = parked(ctx)
-    if is_parked or (provisioned.read(ctx, name, ctx.host.now_ms()) is None and at_rest(ctx)):
-        raise _city_stopped(name) if is_parked else _nothing_provisioned(name)
-    hc_bin = ensure_core(ctx)
+    hc_bin = _core_for(ctx, name)
     client = ctx.client()
     warnings: List[str] = []
     deferred: List[Optional[SessionSteps]] = []
@@ -174,7 +191,7 @@ def _launch(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
         record: Optional[Provisioned] = provisioned.read(ctx, name, ctx.host.now_ms())
         if record is None and not records:
             raise _nothing_provisioned(name)
-        check_work_dir(cfg)  # before the kill: a launch that cannot start ends nothing
+        check_work_dir(cfg)  # before the kill: a launch whose work_dir is missing ends nothing
         values = carried_values(ctx, records)
         recycle_before_start(ctx, client, name, records, warnings, keep=True)
         await_ended(ctx, client, records)
@@ -184,8 +201,9 @@ def _launch(ctx: OpContext, name: str, cfg: StartConfig) -> OpResult:
         return Plan(meta=seed(name, cfg.env, work_dir=cfg.work_dir, values=values), replaced=records)
 
     created, scoped = create(ctx, client, hc_bin, name, cfg, warnings, plan)
-    # A failure or a cancel from here on leaves the box: gc stops it when it
-    # carries this launch's token (exec.go cleanupAfterFreshStartFailure).
+    # A failure or a cancel from here on leaves the box for gc's failed-start
+    # cleanup, which checks this launch's token only on a fresh start (exec
+    # provider cleanupAfterFreshStartFailure).
     await_launched(ctx, client, created, cfg, scoped, warnings)
     own = steps_of(cfg)
     run_session_steps(ctx, name, cfg.env, own if own is not None else (deferred[0] if deferred else None), warnings)
