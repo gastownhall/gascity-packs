@@ -37,29 +37,55 @@ for required_command in gc git jq; do
 done
 
 if [ -z "$WORK" ]; then
-    PENDING_JSON=$(gc bd --rig "$GC_RIG" list \
-        --status=closed \
-        --has-metadata-key=artifact_cleanup_state \
-        --limit=0 \
-        --json) || {
-        echo "ARTIFACT_CLEANUP_BLOCKED could not list pending cleanup work" >&2
-        exit 1
-    }
-    WORK=$(printf '%s' "$PENDING_JSON" | jq -r '
-        if type != "array" then
+    # The queue is every closed bead that still names a task artifact, not only
+    # the beads a previous run happened to stamp. artifact_cleanup_state is
+    # armed by the refinery rebase step alone, so a bead that never traversed
+    # that step stays invisible to a has-key selection forever, however
+    # well-formed its terminal handoff evidence is. artifact_dir -- and the
+    # legacy work_dir it replaced, which the path read below still honours --
+    # name the same population without depending on that stamp, so the queue is
+    # the union of all three keys. The marker list is queried first so an
+    # explicitly armed bead contributes its recorded row.
+    #
+    # Widening the selection widens nothing else: every row still has to be
+    # closed, still has to carry a terminal merge_result, and still has to pass
+    # the per-artifact validators and live remote evidence below before any
+    # worktree is removed. A row that cannot prove itself is stamped blocked and
+    # so leaves the queue, exactly as an armed row does.
+    POPULATION_JSON=""
+    for POPULATION_KEY in artifact_cleanup_state artifact_dir work_dir; do
+        POPULATION_KEY_JSON=$(gc bd --rig "$GC_RIG" list \
+            --status=closed \
+            --has-metadata-key="$POPULATION_KEY" \
+            --limit=0 \
+            --json) || {
+            echo "ARTIFACT_CLEANUP_BLOCKED could not list pending cleanup work" >&2
+            exit 1
+        }
+        POPULATION_JSON=$(printf '%s\n%s\n' \
+            "$POPULATION_JSON" "$POPULATION_KEY_JSON")
+    done
+    WORK=$(printf '%s' "$POPULATION_JSON" | jq -rs '
+        if any(.[]; type != "array") then
             error("expected a work bead array")
         else
             [
-              .[]
+              (add // [])[]
               | select(type == "object")
+              | select((.id | type) == "string")
+              | select(.status == "closed")
               | select(((.metadata // {}) | type) == "object")
-              | select(.metadata.artifact_cleanup_state == "pending")
+              | select(
+                  (.metadata.artifact_cleanup_state // "") == "" or
+                  .metadata.artifact_cleanup_state == "pending"
+                )
               | select(
                   .metadata.merge_result == "merged" or
                   .metadata.merge_result == "already_merged" or
                   .metadata.merge_result == "mr_merged"
                 )
             ]
+            | unique_by(.id)
             | sort_by(.updated_at // "")
             | .[0].id // empty
         end
