@@ -299,6 +299,26 @@ def test_s7_of_the_v2_half_takes_in_the_check_runs_of_the_settle(final: Rec, v2_
     assert f"| S7 | no abort | yes | yes | {s7} |" in render_markdown(report)
 
 
+def v2_hit() -> Rec:
+    outcome = Outcome(T0 + 13 * 3600 + 300, "soak-v2", "abort")
+    outcome.judge(Finding("AP7", "foreign hc runtime: hold pid 1000 (/home/soak/.local/state/x)"))
+    return outcome.as_rec()
+
+
+@pytest.mark.parametrize(
+    "hit, blind",
+    [(final_check(hit=True), {"t": T0 + 14 * 3600, "truncated": True}), (v2_hit(), {"t": END + 899, "truncated": True})],
+    ids=["settle-hit-v2-blind", "v2-hit-settle-blind"],
+)
+def test_s7_reads_a_hit_as_no_even_beside_a_run_without_a_status(hit: Rec, blind: Rec) -> None:
+    """A hit run is an abort whatever another run could not tell: ``no`` outranks ``unknown``."""
+    inp = inputs()
+    inp.now = END + 900
+    inp.phases.append({"t": END, "phase": "soak-end", "reconciler": "v2"})
+    inp.checks.extend([hit, blind])
+    assert "| S7 | no abort | yes | yes | no (1 hit runs) |" in render_markdown(compute(inp))
+
+
 def test_render_markdown_counts_ops_ended_by_a_signal_by_who_ended_them() -> None:
     src = inputs()
     src.optrace = optrace() + [

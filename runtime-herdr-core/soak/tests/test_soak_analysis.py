@@ -362,6 +362,16 @@ def test_an_op_ended_by_a_signal_is_classed_by_who_ended_it() -> None:
     ]
 
 
+def test_a_start_op_canceled_before_the_start_deadline_is_canceled_not_overrun() -> None:
+    """gc runs provision and launch, as it runs start, under its 120 s start deadline."""
+    ops = ("start", "provision", "launch")
+    lines: List[str] = []
+    for pid, op in enumerate(ops, 11):  # SIGTERM after 45 s, well before 120 s less 1 s
+        lines += [f"E 1000000000 {pid} 77 gc /p/gc-runtime-herdr-core {op} soak-1", f"X 1000000000 {pid} 15 45000 15000"]
+    runs, _ = parse_optrace(lines)
+    assert [(r.op, r.ended_by) for r in runs] == [(op, ENDED_CANCELED) for op in ops]
+
+
 def test_op_stats_count_signaled_ops_per_class_and_name_them() -> None:
     runs, _ = parse_optrace(
         [

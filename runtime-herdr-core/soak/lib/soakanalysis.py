@@ -425,6 +425,7 @@ GC_OP_TIMEOUT_MS: Final = 30_000
 GC_OP_TIMEOUTS_MS: Final[Mapping[str, int]] = {
     "start": 120_000,
     "provision": 120_000,
+    "launch": 120_000,
     "watch-startup": 120_000,
     "observe": 4_000,
     "is-attached": 4_000,

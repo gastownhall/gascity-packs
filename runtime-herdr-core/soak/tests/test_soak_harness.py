@@ -5,6 +5,7 @@ fault does not land never passes."""
 from __future__ import annotations
 
 import configparser
+import fcntl
 import json
 import os
 import shutil
@@ -22,7 +23,7 @@ import soakdrill
 from soakanalysis import Incarnation
 from soakcli import NOTE_COVERS, compare_snapshots, demand_sessions, parser
 from soakdrill import DRILLS, PIN_0_1_20, Before, Drill, DrillError, drill_main, is_always_on, is_dispatcher, new_dispatcher_box, take_lock
-from soakhc import CoreStatus, CoreTuple
+from soakhc import CoreStatus, CoreTuple, HcError
 from soaklib import GUARD_FILE, City, CmdResult, ProcFS, SoakPaths
 
 SOAK = Path(__file__).resolve().parents[1]
@@ -464,6 +465,48 @@ def test_an_interrupted_wedged_stop_still_resumes_the_core(tmp_path: Path, monke
     assert state() not in ("T", "") and core.poll() is None
 
 
+def test_a_core_that_outlives_the_wedged_stops_fails_f9_when_its_tuple_is_no_longer_named(
+    proc_tree: ProcTree, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spawn: Spawn
+) -> None:
+    # After the stops `gc herdr-core status --env` names no core tuple, and the
+    # core outlived them (it carries no GC_* variable): the scans look for the
+    # tuple the drill found before the stop, so F9 sees the core.
+    import soakcapture
+
+    core = spawn()
+    proc_tree.add(core.pid, "herdr-core", argv=["/hc/herdr-core", "serve"], env=MINE)
+
+    def no_tuple(city_dir: str, gc: str = "gc") -> CoreTuple:
+        raise HcError("`gc herdr-core status --env` exited 1: no city is running here")
+
+    stops: List[str] = []
+
+    def gc(argv: Sequence[str], **_kwargs: Any) -> CmdResult:
+        if argv[1] == "stop":
+            stops.append(argv[2])
+            if len(stops) == 1:
+                return CmdResult(tuple(argv), 1, "", "the runtime did not answer a listing (a wedged runtime server?)", 0.1)
+        return CmdResult(tuple(argv), 0, "City stopped." if argv[1] == "stop" else "", "", 0.1)
+
+    monkeypatch.setattr(soakcapture, "core_tuple", no_tuple)
+    monkeypatch.setattr(soakdrill, "core_tuple", no_tuple)
+    monkeypatch.setattr(soakdrill, "run", gc)
+    monkeypatch.setattr(soakdrill, "RECOVERY_STOP_WAIT_S", 0.0)
+    monkeypatch.setattr(Drill, "inject", lambda self, *args: None)
+    monkeypatch.setattr(Drill, "kill", lambda self, *args: True)
+    monkeypatch.setattr(Drill, "measure_recovery", lambda self, before, ended, pairs=(), dispatcher=False: ({}, None, 0.0))
+    monkeypatch.setattr(Drill, "herdr_status", lambda self: "")
+    stub(monkeypatch, "restore_pin", "c1", "settle", "c4", "c5")
+    drill = Drill("stop-wedged", City("c", tmp_path / "city", tmp_path, "warn"), SoakPaths(tmp_path), procfs=ProcFS(str(proc_tree.root)), core=CITY_CORE)
+    drill.drill_stop_wedged(a_before(CoreStatus(core.pid, "0.1.19", (), 1)))
+    judged = {c.id: c for c in drill.criteria}
+    assert judged["F9-first-stop"].passed is True and len(stops) == 3
+    assert judged["F9-second-stop"].passed is False
+    assert judged["F9-second-stop"].measured["remains"] == [f"hc serve pid {core.pid}"]
+    assert judged["F9-recovery-stop"].measured["remains"] == [f"hc serve pid {core.pid}"]
+    assert core.poll() is None
+
+
 def test_a_slow_reap_never_delays_when_a_session_counts_as_back(proc_tree: ProcTree, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The ended session's new box runs 20 s after the fault; the background
     # child of its dead incarnation is gone only after 100 s. C2 measures 20 s
@@ -627,7 +670,7 @@ def test_the_drills_hand_c5_what_they_ended(proc_tree: ProcTree, tmp_path: Path,
     core = spawn()
     monkeypatch.setattr(Drill, "inject", lambda self, *args: None)
     monkeypatch.setattr(soakdrill, "run", lambda argv, **_kwargs: CmdResult(tuple(argv), 0, "City stopped.", "", 0.1))
-    monkeypatch.setattr(soakdrill, "remains", lambda *args: [])
+    monkeypatch.setattr(soakdrill, "remains", lambda *args, **kwargs: [])
     monkeypatch.setattr(Drill, "measure_recovery", lambda self, before, ended, pairs=(), dispatcher=False: ({s: 1.0 for s in ended}, None, 0.0))
     monkeypatch.setattr(Drill, "herdr_status", lambda self: "")
     boxes = {20: (100, "steady-3"), 21: (100, "burst-1")}
@@ -653,6 +696,121 @@ def test_the_drills_hand_c5_what_they_ended(proc_tree: ProcTree, tmp_path: Path,
         ({"steady-4"}, {"steady-4"}),
     ]
     assert calls[-1][0] is upgraded
+
+
+# --- the switch's probe pause: soak-phase2 against stub soak, gc and systemctl ----------------------
+
+PHASE2_STUBS = {
+    "soak": """#!/usr/bin/env bash
+data="$HOME/soak-data/hc-soak"
+if [ "$1" = snapshot ]; then
+  if flock --nonblock "$data/probe.lock" true; then held=free; else held=held; fi
+  echo "soak snapshot${2:+ $2} lock=$held" >> "$PHASE2_LOG"
+  echo '{}'
+  exit 0
+fi
+echo "soak $1" >> "$PHASE2_LOG"
+if [ "$1" = toml-del ] && [ -n "${PHASE2_TOML_DEL_FAILS:-}" ]; then exit 1; fi
+exit 0
+""",
+    "systemctl": """#!/usr/bin/env bash
+echo "systemctl $*" >> "$PHASE2_LOG"
+exit 0
+""",
+    "gc": """#!/usr/bin/env bash
+if [ "$1" = supervisor ]; then
+  if [ -n "${PHASE2_HEIR:-}" ]; then
+    # a child gc leaves running, as a daemon a bd read starts: it inherits fd 9
+    "$PHASE2_HEIR" 60 </dev/null >/dev/null 2>&1 &
+    echo "$!" > "$PHASE2_HEIR_PID"
+  fi
+  echo "city 'hc-soak': session reconciler: v2 (default: session_reconciler is unset)"
+fi
+exit 0
+""",
+    "sleep": "#!/usr/bin/env bash\nexit 0\n",
+}
+
+
+def phase2_rig(tmp_path: Path, **env: str) -> Tuple[List[str], Dict[str, str], Path, Path]:
+    """``soak-phase2 hc-soak soak-v2`` with stub ``soak``, ``gc``, ``systemctl``
+    and ``sleep`` (real ``flock``), the probe timer active: argv, env, the
+    stubs' log, the probe lock."""
+    home = tmp_path / "home"
+    (home / "soak" / "bin").mkdir(parents=True)
+    (home / "cities" / "hc-soak").mkdir(parents=True)
+    data = home / "soak-data" / "hc-soak"
+    data.mkdir(parents=True)
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    for name, body in PHASE2_STUBS.items():
+        path = home / "soak" / "bin" / "soak" if name == "soak" else stubs / name
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+    log = tmp_path / "calls.log"
+    log.touch()
+    full = {"HOME": str(home), "PATH": f"{stubs}:{os.environ.get('PATH', '/usr/bin:/bin')}", "PHASE2_LOG": str(log), "SOAK_V2_SETTLE_S": "0"}
+    full.update(env)
+    return ["bash", str(SOAK / "bin" / "soak-phase2"), "hc-soak", "soak-v2"], full, log, data / "probe.lock"
+
+
+needs_flock = pytest.mark.skipif(shutil.which("flock") is None, reason="flock(1) is not installed")
+
+
+@needs_flock
+def test_the_switch_waits_for_a_running_probe_and_holds_probe_lock_across_both_snapshots(tmp_path: Path) -> None:
+    from soakload import PROBE_LOCK
+
+    argv, env, log, lock = phase2_rig(tmp_path)
+    assert lock.name == PROBE_LOCK
+    with open(lock, "a", encoding="utf-8") as probe:  # a probe still running when the switch starts
+        fcntl.flock(probe.fileno(), fcntl.LOCK_EX)
+        switch = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(1.0)
+        assert switch.poll() is None
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write("probe done\n")
+    out, err = switch.communicate(timeout=60)
+    assert switch.returncode == 0, err
+    calls = log.read_text(encoding="utf-8").splitlines()
+    stop, start = "systemctl --user stop soak-probe.timer", "systemctl --user start soak-probe.timer"
+    assert calls.index(stop) < calls.index("probe done") < calls.index("soak snapshot lock=held")
+    assert calls.index("soak snapshot lock=held") < calls.index("soak snapshot --compare lock=held") < calls.index(start)
+    assert calls.count(start) == 1
+
+
+@needs_flock
+def test_a_switch_that_fails_still_releases_probe_lock_and_resumes_the_probe_timer(tmp_path: Path) -> None:
+    from soakhc import lock_free
+
+    argv, env, log, lock = phase2_rig(tmp_path, PHASE2_TOML_DEL_FAILS="1")
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 1
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert calls[-2:] == ["soak toml-del", "systemctl --user start soak-probe.timer"]
+    assert "soak snapshot lock=held" in calls and lock_free(lock)
+
+
+@needs_flock
+def test_a_child_left_running_under_probe_lock_never_keeps_it_after_the_switch(tmp_path: Path) -> None:
+    # A process started while the switch holds probe.lock inherits fd 9 and
+    # outlives the switch: closing fd 9 alone would leave the lock held for as
+    # long as that child runs, and every later probe blocked behind it.
+    from soakhc import lock_free
+
+    sleep = shutil.which("sleep")
+    assert sleep is not None
+    heir_pid = tmp_path / "heir.pid"
+    argv, env, log, lock = phase2_rig(tmp_path, PHASE2_HEIR=sleep, PHASE2_HEIR_PID=str(heir_pid))
+    res = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+    heir = int(heir_pid.read_text(encoding="utf-8"))
+    try:
+        assert res.returncode == 0, res.stderr
+        assert os.readlink(f"/proc/{heir}/fd/9") == str(lock)  # the child holds the switch's fd 9
+        assert lock_free(lock)
+        os.kill(heir, 0)  # and it ran throughout
+    finally:
+        os.kill(heir, signal.SIGKILL)
 
 
 def test_python_entry_points_compile() -> None:

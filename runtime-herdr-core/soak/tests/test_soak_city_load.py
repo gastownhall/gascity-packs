@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import random
 import stat
 import sys
+import threading
 from collections import Counter
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List, Sequence, Tuple
 
 import pytest
 
@@ -22,8 +24,9 @@ from soakcity import (
     toml_del,
     toml_set,
 )
-from soakload import LoadConfig, LoadGen, due_actions, next_round_robin, pick_mode, running_sessions
-from soaklib import City, read_jsonl
+from soakhc import lock_free
+from soakload import PROBE_LOCK, LoadConfig, LoadGen, due_actions, next_round_robin, pick_mode, running_sessions
+from soaklib import City, CmdResult, ProcFS, read_jsonl
 
 SOAK = Path(__file__).resolve().parents[1]
 HAVE_TOMLLIB = sys.version_info >= (3, 11)
@@ -199,6 +202,42 @@ def test_load_generator_tick_runs_every_due_action_against_a_fake_gc(tmp_path: P
     assert gen.tick(5000.0) == []
     calls: List[List[str]] = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert calls[1][:2] == ["sling", "soak-burst"] and "--formula" in calls[1]
+
+
+def test_a_probe_waits_for_probe_lock_and_holds_it_until_its_kill_is_done(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The switch (``soak-phase2``) holds ``probe.lock`` across its snapshots:
+    a probe started meanwhile neither lists nor kills until it is released,
+    and a switch that takes the lock waits for a probe still running."""
+    import soakload
+
+    data = tmp_path / "data"
+    data.mkdir()
+    city = City("hc-soak", tmp_path / "city", data, "abort")
+    lock = city.file(PROBE_LOCK)
+    seen: List[Tuple[str, bool]] = []
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> CmdResult:
+        seen.append((" ".join(argv[1:3]), lock_free(lock)))
+        doc = {"sessions": [{"id": "s1", "template": "soak-steady", "state": "active"}]}
+        return CmdResult(tuple(argv), 0, json.dumps(doc), "", 0.1)
+
+    def fake_kill(city: City, session_id: str, procfs: ProcFS, kind: str, note: str = "") -> Dict[str, Any]:
+        seen.append((f"kill {session_id}", lock_free(lock)))
+        return {"kind": kind, "sessions": [session_id]}
+
+    monkeypatch.setattr(soakload, "run", fake_run)
+    monkeypatch.setattr(soakload, "kill_agent", fake_kill)
+    codes: List[int] = []
+    with open(lock, "a", encoding="utf-8") as switch:
+        fcntl.flock(switch.fileno(), fcntl.LOCK_EX)
+        probe = threading.Thread(target=lambda: codes.append(soakload.probe_main(city, ProcFS(str(tmp_path / "proc")))))
+        probe.start()
+        probe.join(0.5)
+        assert probe.is_alive() and seen == []  # waiting for the switch
+    probe.join(10.0)
+    assert codes == [0]
+    assert seen == [("session list", False), ("kill s1", False)]  # under the lock throughout
+    assert lock_free(lock)
 
 
 def test_running_sessions_without_a_template_and_with_qualified_names() -> None:

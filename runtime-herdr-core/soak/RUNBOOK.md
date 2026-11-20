@@ -514,7 +514,10 @@ robin by session id), finds its live incarnation from the agent log (pid and
 start ticks match `/proc`, comm `soak-agent`, `GC_SESSION_ID` and
 `GC_CITY_PATH` in its environment), writes a `probe-kill` fault record, and
 sends it `SIGKILL`. The next `boot` of that session gives the
-death-to-restart latency. 48 samples, 24 per reconciler.
+death-to-restart latency. 48 samples, 24 per reconciler. Each probe holds
+`probe.lock` in the data directory from its flag check to its kill; the
+switch to v2 holds it across its two snapshots (section 12), and a probe
+that starts meanwhile waits for it.
 
 ### 7.4 Samples (`soak sample`, user service `soak-sample`)
 
@@ -625,8 +628,8 @@ within two minutes; if none do, the city execs another path: read it from
   that point. *killed*: SIGKILL on
   any other op (it outlived gc's 2 s grace, or something else killed it).
   *other*: any other signal. gc's timeouts: 30 s; 120 s for start,
-  provision and watch-startup (it runs under the start deadline); 4 s for
-  observe and is-attached. A window has op figures only when the trace was
+  provision, launch and watch-startup (it runs under the start deadline);
+  4 s for observe and is-attached. A window has op figures only when the trace was
   read, the samples place its clock, and it started (a `B` line) at or
   before the window did; otherwise they are unknown, with the reason. A
   trace that is missing, unreadable, never started or started late is no
@@ -1004,7 +1007,7 @@ Criteria every drill also checks (C1 to C6):
 | F6 `agent-kill` | `kill -KILL <agent pid>` (from its `boot` record) | C2 to C5 for that session |
 | F7 `hc-update` | `"${hcenv[@]}" "$HC" update; echo $?` | exits non-zero (the binary and its directory are read-only); `gc herdr-core status` still says `installed: ... (matches the pin)`; the core's version and pid unchanged; every box unchanged |
 | F8 `upgrade` | write the 0.1.20 pin (below) over `~/packs/runtime-herdr-core/assets/hc-pin.json`; `gc herdr-core upgrade` | prints `handed the city's core over from herdr-core 0.1.19 to 0.1.20; its sessions kept running`; every box unchanged; `gc herdr-core status` runs 0.1.20, `started: by the pack`; then F6 on one agent passes under 0.1.20 |
-| F9 `stop-wedged` | `kill -STOP <core pid>`; `timeout 900 gc stop ~/cities/hc-bringup; echo $?`; `kill -CONT <core pid>`; `gc stop ~/cities/hc-bringup; echo $?`; restore the pin: `git -C ~/src/gascity-packs show "$(cat ~/packs/runtime-herdr-core.COMMIT)":runtime-herdr-core/assets/hc-pin.json > ~/packs/runtime-herdr-core/assets/hc-pin.json`, then `(cd ~/packs/runtime-herdr-core && sha256sum --quiet -c ../runtime-herdr-core.SHA256SUMS)`; `gc start ~/cities/hc-bringup` | the first stop exits non-zero and names the wedged runtime (gc at the pinned commit says the runtime `did not answer a listing ... (a wedged runtime server?)`; a server teardown failure counts too); the second prints `City stopped.` and exits 0, after which no box, holder or core of the city runs; after `gc start` the core runs 0.1.19 and every session is back (C2 and C5 measured from the start) |
+| F9 `stop-wedged` | `kill -STOP <core pid>`; `timeout 900 gc stop ~/cities/hc-bringup; echo $?`; `kill -CONT <core pid>`; `gc stop ~/cities/hc-bringup; echo $?`; restore the pin: `git -C ~/src/gascity-packs show "$(cat ~/packs/runtime-herdr-core.COMMIT)":runtime-herdr-core/assets/hc-pin.json > ~/packs/runtime-herdr-core/assets/hc-pin.json`, then `(cd ~/packs/runtime-herdr-core && sha256sum --quiet -c ../runtime-herdr-core.SHA256SUMS)`; `gc start ~/cities/hc-bringup` | the first stop exits non-zero and names the wedged runtime (gc at the pinned commit says the runtime `did not answer a listing ... (a wedged runtime server?)`; a server teardown failure counts too); the second prints `City stopped.` and exits 0, after which no holder or core of the city's core tuple (as the drill found it before the stop) and no process of any of its sessions runs; after `gc start` the core runs 0.1.19 and every session is back (C2 and C5 measured from the start) |
 | F10 `reboot` | as root: `systemctl reboot`; then as `soak`: `~/soak/bin/soak drill reboot-verify` | within 10 minutes of SSH answering: the supervisor, the city and every configured session run, each with a new incarnation and exactly one first turn; `gc beads health` passes; no orphan; doctor's `exec-runtime-identity` and `ownerless-runtimes` are clean; C6 |
 
 The 0.1.20 pin for F8, written over the pack copy's `assets/hc-pin.json`
@@ -1060,9 +1063,9 @@ Timeline (T0 is the `soak-start` note):
 | When | Action |
 |---|---|
 | T0 to T0 + 12 h | legacy reconciler. `soak check` every 5 minutes, digest hourly, probes every 30 minutes |
-| T0 + 12 h | switch to v2 under load: `soak-phase2 hc-soak soak-v2` runs phase 2's commands on `hc-soak` (`soak phase soak-v2`, `toml-del`, the operator note, the supervisor restart, V1 to V3 checked, no agent-kill drill); it pauses `soak-probe.timer` from the snapshot before the restart to the snapshot after it, so a probe kill cannot read as a box v2 ended, and reads 50000 supervisor log lines for V1 because 500 cover well under the 90 s wait at soak log volume |
+| T0 + 12 h | switch to v2 under load: `soak-phase2 hc-soak soak-v2` runs phase 2's commands on `hc-soak` (`soak phase soak-v2`, `toml-del`, the operator note, the supervisor restart, V1 to V3 checked, no agent-kill drill); from before the snapshot before the restart to after the snapshot after it, it pauses `soak-probe.timer` and holds `probe.lock` (section 7.3), so neither a new probe nor one already running can kill a box that would then read as one v2 ended (the switch first waits for a running probe's kill), and it releases the lock and resumes the timer however it ends; it reads 50000 supervisor log lines for V1 because 500 cover well under the 90 s wait at soak log volume |
 | T0 + 12 h to T0 + 24 h | v2 |
-| T0 + 24 h | `soak phase soak-end`; stop `soak-load` and `soak-probe.timer`; wait 15 minutes; `soak check --final` (all predicates, the secrets grep and the orphan scan once more); `gc doctor --json > doctor-final.json`; `soak report --city hc-soak --markdown > report.md`; `soak note operator city-stop`; `gc stop ~/cities/hc-soak`; then `soak final-scan` (the secrets grep of `R` once more and the check that no box, holder or core of the city runs) |
+| T0 + 24 h | `soak phase soak-end`; stop `soak-load` and `soak-probe.timer`; wait 15 minutes; stop `soak-check.timer`, so no timer run follows the final check or crosses the `gc stop` (one still running finishes first: the final check waits for it); `soak check --final` (all predicates, the secrets grep and the orphan scan once more); `gc doctor --json > doctor-final.json`; `soak report --city hc-soak --markdown > report.md`; `soak note operator city-stop`; `gc stop ~/cities/hc-soak`; stop `soak-sample`; then `soak final-scan` (the secrets grep of `R` once more and the check that no holder or core of the city's core tuple and no process of any of its sessions runs, whether or not the session wrote an agent log; a core tuple `gc herdr-core status --env` cannot name fails it as `core tuple unknown`) |
 
 During the soak nothing else runs against the city: no manual nudges, no
 config edits but the scheduled switch, and no doctor runs but the one
@@ -1165,12 +1168,19 @@ free disk under 10 GiB.
    a capture that fails is written there as `capture: FAILED <error>`, and
    the city is stopped all the same.
 3. `gc stop` the city (its server teardown ends the city's core); then check
-   that no box, holder or core of the city and no process carrying the
-   city's `GC_SESSION_ID`s remain, and write both results into `ABORTED`.
-   Step 3 runs even when step 1 or 2 fails. `check-state.json` records
-   `stopped` once `gc stop` exits 0; until then every later `soak check` run
-   runs `gc stop` again, before it collects anything, so a run that then
-   fails has still tried, and adds its result to `ABORTED`.
+   that no holder or core of the city's core tuple and no process of any of
+   its sessions (the city's `GC_CITY_PATH` and a `GC_SESSION_ID` in its
+   environment: every box and its descendants, the control-dispatcher's and
+   those of an agent that never logged among them) remain, and write both
+   results into `ABORTED`. A core tuple that cannot be found is written as
+   `core tuple unknown`, never as nothing remaining.
+   Step 3 runs even when step 1 or 2 fails, and when the run cannot save the
+   abort or write its own records (a full disk): it tries each, and raises
+   what failed only after the stop. `check-state.json` records `stopped` once
+   `gc stop` exits 0; until then every later `soak check` run runs `gc stop`
+   again, before it collects anything, so a run that then fails has still
+   tried, and adds its result to `ABORTED`. An `ABORTED` that exists counts
+   as an abort even when the run could not save it in `check-state.json`.
 4. The watcher pages the person, who files a work item with the capture.
    The soak restarts from the failed phase only after a fix has landed.
 

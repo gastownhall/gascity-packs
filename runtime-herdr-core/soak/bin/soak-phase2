@@ -20,13 +20,28 @@ CHECKS=(--check exec-runtime-identity --check ownerless-runtimes --check daemon-
 cd "$CITY"
 "$SOAK" phase "$PHASE"
 gc doctor "${CHECKS[@]}" --json > "$DATA/v2-before.json" || true
-# A probe kill during the switch would read as a box v2 ended (V3), so the
-# probe timer, when it runs (the soak), pauses until the snapshot is taken.
+# A probe kill during the switch would read as a box v2 ended (V3). The
+# probe timer, when it runs (the soak), pauses from before the first snapshot
+# to after the second, and the switch holds probe.lock across both: every
+# probe holds it from its flag check to its kill, so the switch first waits
+# for a probe already running, and no probe kills in between. However the
+# script ends, the lock is released and the timer resumed.
 probe_paused=""
+resume_probes() {
+  flock -u 9 2>/dev/null || true
+  exec 9>&-
+  if [ -n "$probe_paused" ]; then
+    probe_paused=""
+    systemctl --user start soak-probe.timer
+  fi
+}
+trap resume_probes EXIT
 if systemctl --user is-active --quiet soak-probe.timer; then
   systemctl --user stop soak-probe.timer
   probe_paused=1
 fi
+exec 9>>"$DATA/probe.lock"
+flock 9
 snap=$("$SOAK" snapshot)
 "$SOAK" toml-del city.toml daemon session_reconciler
 "$SOAK" note operator supervisor-restart "switch to the v2 reconciler"
@@ -41,9 +56,7 @@ else
 fi
 gc doctor "${CHECKS[@]}" --json > "$DATA/v2-after.json" || true
 "$SOAK" snapshot --compare "$snap" > "$DATA/v2-snapshot.json" || true
-if [ -n "$probe_paused" ]; then
-  systemctl --user start soak-probe.timer
-fi
+resume_probes
 cat "$DATA/v2-snapshot.json"
 echo "settling $SETTLE_S s"
 sleep "$SETTLE_S"

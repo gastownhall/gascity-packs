@@ -24,6 +24,9 @@ case "${1:-}" in
     systemctl --user stop soak-load.service soak-probe.timer
     echo "waiting 15 minutes for the last turns and nudges to settle"
     sleep 900
+    # No timer run after the final check, none across the gc stop: a run
+    # still going finishes first (check --final waits for it on check.lock).
+    systemctl --user stop soak-check.timer
     set +e
     "$SOAK" check --final
     final=$?
@@ -32,7 +35,7 @@ case "${1:-}" in
     "$SOAK" report --city "$CITY_NAME" --markdown > "$DATA/report.md"
     "$SOAK" note operator city-stop "end of the soak"
     gc stop "$CITY"
-    systemctl --user stop soak-check.timer soak-sample.service
+    systemctl --user stop soak-sample.service
     set +e
     "$SOAK" final-scan | tee "$DATA/final-scan.json"
     scan=$?

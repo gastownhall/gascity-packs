@@ -797,7 +797,7 @@ def stop_city(city: City, state: State, state_path: Path, gc: str, procfs: ProcF
         state.stopped = True
         state.save(state_path)
     try:
-        left = remains(city, procfs)
+        left = remains(city, procfs, gc)
         after = "nothing of the city remains" if not left else "REMAINING " + "; ".join(left)
     except Exception as err:
         after = f"FAILED {type(err).__name__}: {err}"
@@ -814,34 +814,69 @@ def check_main(city: City, paths: SoakPaths, final: bool = False, gc: str = "gc"
         return _check(city, paths, final, gc)
 
 
-def _check(city: City, paths: SoakPaths, final: bool, gc: str) -> int:
-    procfs = ProcFS()
-    state_path = city.file("check-state.json")
-    state = State.load(state_path)
-    if state.aborted and not state.stopped:
-        # An earlier abort's gc stop failed, or that run was killed: stop the
-        # city before anything this run reads or writes can raise.
-        stop_city(city, state, state_path, gc, procfs)
-    inputs = Collector(city, paths, procfs, gc).collect(state, final=final)
-    outcome = evaluate(inputs, state, city.mode)
+def _append_text(path: Path, text: str) -> None:
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _records(city: City, state: State, inputs: Inputs, outcome: Outcome, final: bool) -> List[Callable[[], None]]:
+    """The writes of one run's outcome: ``check.jsonl``, ``check.log`` and,
+    hourly and on ``--final``, ``digest.log``."""
     rec = outcome.as_rec()
     rec["final"] = final
     if inputs.ops is not None:
         rec["ops"] = {"rate_ctl": inputs.ops.rate_ctl, "rate_all": inputs.ops.rate_all, "sessions": inputs.ops.sessions}
-    append_jsonl(city.file("check.jsonl"), rec)
-    with open(city.file("check.log"), "a", encoding="utf-8") as handle:
-        handle.write(outcome.line() + "\n")
+    writes: List[Callable[[], None]] = [
+        lambda: append_jsonl(city.file("check.jsonl"), rec),
+        lambda: _append_text(city.file("check.log"), outcome.line() + "\n"),
+    ]
     if final or inputs.now - state.last_digest_t >= HOURLY_S:
         state.last_digest_t = inputs.now
-        with open(city.file("digest.log"), "a", encoding="utf-8") as handle:
-            handle.write(digest(read_jsonl(city.file("check.jsonl")), inputs.now))
-    if outcome.hits and city.mode == "abort" and not state.aborted and not city.flag("ABORTED"):
-        state.aborted = True
-        state.save(state_path)
+        writes.append(lambda: _append_text(city.file("digest.log"), digest(read_jsonl(city.file("check.jsonl")), inputs.now)))
+    return writes
+
+
+def _attempt(writes: Sequence[Callable[[], None]]) -> List[OSError]:
+    """Run every write, whatever the ones before it raised; return what they raised."""
+    failed: List[OSError] = []
+    for write in writes:
         try:
+            write()
+        except OSError as err:
+            failed.append(err)
+    return failed
+
+
+def _check(city: City, paths: SoakPaths, final: bool, gc: str) -> int:
+    procfs = ProcFS()
+    state_path = city.file("check-state.json")
+    state = State.load(state_path)
+    if (state.aborted or city.flag("ABORTED")) and not state.stopped:
+        # An earlier abort's gc stop failed, that run was killed, or it could
+        # not save the abort (a full disk; ``ABORTED`` is written only by an
+        # abort): stop the city before anything this run reads or writes can
+        # raise.
+        state.aborted = True
+        stop_city(city, state, state_path, gc, procfs)
+    inputs = Collector(city, paths, procfs, gc).collect(state, final=final)
+    outcome = evaluate(inputs, state, city.mode)
+    writes = _records(city, state, inputs, outcome, final)
+    if outcome.hits and city.mode == "abort" and not state.aborted and not city.flag("ABORTED"):
+        # From the hit on, gc stop runs whatever raises. The abort's save and
+        # this run's records are each tried (the capture holds what got
+        # written); a write that failed (a full disk) is raised after the stop.
+        state.aborted = True
+        failed: List[OSError] = []
+        try:
+            failed = _attempt([lambda: state.save(state_path), *writes])
             abort(city, outcome, paths, gc, procfs)
         finally:
             stop_city(city, state, state_path, gc, procfs)
+        if failed:
+            raise failed[0]
+    else:
+        for write in writes:
+            write()
     state.save(state_path)
     print(outcome.line())
     return 1 if final and outcome.hits else 0

@@ -3,6 +3,7 @@ periodic death probe that measures death-to-restart latency)."""
 
 from __future__ import annotations
 
+import fcntl
 import json
 import random
 import signal
@@ -226,7 +227,21 @@ def next_round_robin(sessions: Sequence[str], last: Optional[str]) -> Optional[s
     return ordered[0]
 
 
+PROBE_LOCK = "probe.lock"
+"""Held by each probe from its flag check to its kill, and by ``soak-phase2``
+across the switch's two snapshots."""
+
+
 def probe_main(city: City, procfs: ProcFS, gc: str = "gc") -> int:
+    """One death probe, under ``probe.lock``: a switch holding the lock waits
+    for a probe already running, and no probe picks or kills a session while
+    the switch holds it (a timer run in that time waits for it)."""
+    with open(city.file(PROBE_LOCK), "a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        return _probe(city, procfs, gc)
+
+
+def _probe(city: City, procfs: ProcFS, gc: str) -> int:
     if city.flag("ABORTED") or city.flag("DRILL") or city.flag("PAUSE"):
         return 0
     state_path = city.file("probe-state.json")

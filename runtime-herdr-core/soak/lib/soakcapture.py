@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from soakanalysis import hc_runtime
 from soakhc import CoreTuple, HcError, HcRpc, core_tuple
@@ -93,24 +93,34 @@ def capture(city: City, paths: SoakPaths, gc: str, procfs: ProcFS) -> Path:
     return bundle
 
 
-def city_session_ids(city: City) -> Set[str]:
-    return {p.stem for p in city.agents.glob("*.jsonl")}
+def remains(city: City, procfs: ProcFS, gc: str = "gc", core: Optional[CoreTuple] = None) -> List[str]:
+    """What of a stopped city still runs: a core or holder of its core tuple,
+    or any process of any of its sessions -- one that carries the city's
+    ``GC_CITY_PATH`` and a non-empty ``GC_SESSION_ID``. That takes in every
+    session's boxes and their descendants whether or not the session wrote a
+    log: ``agents/*.jsonl`` lists only the scripted agents that logged, not the
+    control-dispatcher nor an agent that has written no line.
 
-
-def remains(city: City, procfs: ProcFS, gc: str = "gc") -> List[str]:
-    """What of a stopped city still runs: boxes, holders or a core of its
-    core tuple, or any process carrying its ``GC_SESSION_ID``s."""
+    ``core`` is the core tuple when the caller already knows it; otherwise
+    ``gc herdr-core status --env`` names it. When that fails, the scan cannot
+    see a core or holder (the pack starts the core with no ``GC_*`` in its
+    environment), so it reports ``core tuple unknown: <error>``: a scan that
+    could not look never reads as nothing remaining."""
     left: List[str] = []
     snap = procfs.snapshot(os.getuid())
-    core = _core(city, gc)
+    if core is None:
+        try:
+            core = core_tuple(str(city.path), gc)
+        except HcError as err:
+            left.append(f"core tuple unknown: {err}")
     if core is not None:
         for h in hc_runtime(snap):
             if h.state_home == core.state_home and h.session == core.session:
                 left.append(f"hc {h.role} pid {h.pid}")
-    sessions = city_session_ids(city)
     for proc in snap.values():
-        if proc.env.get("GC_SESSION_ID") in sessions and proc.env.get("GC_CITY_PATH") == str(city.path):
-            left.append(f"session {proc.env.get('GC_SESSION_ID')} pid {proc.pid} {proc.comm}")
+        session = proc.env.get("GC_SESSION_ID", "")
+        if session and proc.env.get("GC_CITY_PATH") == str(city.path):
+            left.append(f"session {session} pid {proc.pid} {proc.comm}")
     return left
 
 

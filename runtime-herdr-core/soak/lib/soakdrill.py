@@ -801,7 +801,9 @@ class Drill:
             first.code != 0 and any(m in first_text.lower() for m in WEDGED_STOP_MARKERS),
         )
         second = run([self.gc, "stop", city], timeout=900.0)
-        left = remains(self.city, self.procfs, self.gc)
+        # The core tuple the drill found before the stop, so no discovery
+        # after it decides what the scan can see.
+        left = remains(self.city, self.procfs, self.gc, core=self.core)
         self.judge(
             "F9-second-stop",
             "the second stop prints City stopped. and exits 0; nothing of the city runs",
@@ -812,7 +814,7 @@ class Drill:
             # Recorded only: stop the city so the restart below measures from a stopped city.
             time.sleep(RECOVERY_STOP_WAIT_S)
             third = run([self.gc, "stop", city], timeout=900.0)
-            left = remains(self.city, self.procfs, self.gc)
+            left = remains(self.city, self.procfs, self.gc, core=self.core)
             self.judge("F9-recovery-stop", "a further stop (recorded)", {"exit": third.code, "tail": (third.out + third.err)[-600:], "remains": left}, None)
         self.restore_pin()
         self.t_inject = time.time()

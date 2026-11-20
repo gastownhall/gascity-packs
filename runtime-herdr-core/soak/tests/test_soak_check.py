@@ -24,6 +24,7 @@ from soakanalysis import (
     NudgeVerdict,
     OpStats,
     first_turns,
+    hc_runtime,
     incarnations,
 )
 from soakcheck import (
@@ -437,6 +438,85 @@ def test_the_abort_is_on_disk_before_its_first_step(tmp_path: Path, monkeypatch:
     ]
 
 
+RECORDS = ("check.jsonl", "check.log", "digest.log")
+
+
+@pytest.mark.parametrize("full", RECORDS)
+def test_an_abort_whose_records_cannot_be_written_still_stops_the_city(full: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A full disk refuses one of the run's records: the abort and its gc stop
+    # still run, the other records are still tried, and the refusal is raised
+    # after the stop.
+    import soakcheck
+    from soaklib import append_jsonl
+
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[0])
+    append_text = soakcheck._append_text
+
+    def refuse(path: Path) -> None:
+        if path.name == full:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+    def jsonl(path: Path, record: Dict[str, Any]) -> None:
+        refuse(path)
+        append_jsonl(path, record)
+
+    def text(path: Path, data: str) -> None:
+        refuse(path)
+        append_text(path, data)
+
+    monkeypatch.setattr(soakcheck, "append_jsonl", jsonl)
+    monkeypatch.setattr(soakcheck, "_append_text", text)
+    with pytest.raises(OSError, match="No space left on device"):
+        rig.check(health=INTEGRITY_HIT)
+    assert rig.calls == [
+        ("systemctl", "--user", "stop", "soak-load.service", "soak-probe.timer"),
+        ("gc", "stop", str(tmp_path)),
+    ]
+    assert rig.state().aborted and rig.state().stopped
+    assert rig.aborted().splitlines()[1:] == [
+        "  AP1: store integrity error: error: checksum mismatch in chunk",
+        f"capture: {tmp_path / 'captures' / 'bundle.tar.gz'}",
+        "gc stop exit 0: ",
+        "after stop: nothing of the city remains",
+    ]
+    assert [name for name in RECORDS if (tmp_path / name).exists()] == [name for name in RECORDS if name != full]
+
+
+def test_an_abort_that_cannot_save_itself_still_stops_the_city_and_the_next_run_stops_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A full disk refuses check-state.json, so the abort is in ABORTED only,
+    # and its gc stop fails: the stop was still tried, and the next run, which
+    # finds ABORTED, runs it again before it collects anything.
+    rig = AbortRig(tmp_path, monkeypatch, stop_codes=[1, 0])
+    save = State.save
+    refusals = [OSError(errno.ENOSPC, "No space left on device")]
+
+    def full_once(self: State, path: Path) -> None:
+        if refusals:
+            raise refusals.pop()
+        save(self, path)
+
+    monkeypatch.setattr(State, "save", full_once)
+    with pytest.raises(OSError, match="No space left on device"):
+        rig.check(health=INTEGRITY_HIT)
+    assert rig.stops() == 1 and not (tmp_path / "check-state.json").exists()
+    rig.collect_error = PermissionError(errno.EACCES, "Permission denied")
+    with pytest.raises(PermissionError):
+        rig.check(now=NOW + 300)
+    assert rig.stops() == 2 and rig.state().aborted and rig.state().stopped
+    rig.collect_error = None
+    rig.check(now=NOW + 600, health=INTEGRITY_HIT)
+    assert rig.stops() == 2 and [argv[0] for argv in rig.calls].count("systemctl") == 1
+    assert rig.aborted().splitlines()[2:] == [
+        f"capture: {tmp_path / 'captures' / 'bundle.tar.gz'}",
+        "gc stop exit 1: city busy (1)",
+        "after stop: nothing of the city remains",
+        "gc stop exit 0: ",
+        "after stop: nothing of the city remains",
+    ]
+
+
 def test_ap5_inputs_unreadable_never_make_ap9() -> None:
     state = primed()
     for i in range(4):
@@ -775,3 +855,132 @@ def test_collect_hands_final_to_ap4_which_then_judges_every_incarnation(tmp_path
     state = State(last_t=t - 300.0)
     assert "AP4" not in ids(evaluate(collector.collect(state), state, "abort"))
     assert "AP4" in ids(evaluate(collector.collect(state, final=True), state, "abort"))
+
+
+# --- what of a stopped city remains: every session's processes, logged or not ---------------------
+
+STOPPED_CORE = CoreTuple("gc-hc-soak", "/run/user/1000/hc/gc-hc-soak.sock", "/R", "/R/hc-config")
+HC_MINE = {"XDG_STATE_HOME": "/R", "HC_SESSION": "gc-hc-soak", "HC_RUNTIME": "1"}
+
+
+def _stopped_city(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> City:
+    """A city whose core tuple is still found (``gc herdr-core status --env``
+    answers) and that has one scripted agent's log, ``agents/steady-1.jsonl``."""
+    import soakcapture
+
+    monkeypatch.setattr(soakcapture, "core_tuple", lambda city_dir, gc="gc": STOPPED_CORE)
+    city = City(name="hc-soak", path=tmp_path / "city", data=tmp_path / "data", mode="abort")
+    _append(city.agents / "steady-1.jsonl", rec("boot", time.time() - 600.0, "b00tb00t:4001:5", session_id="steady-1"))
+    return city
+
+
+NO_TUPLE = "`gc herdr-core status --env` exited 1: no city is running here"
+
+
+def _no_core_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``gc herdr-core status --env`` no longer names the city's core tuple."""
+    import soakcapture
+
+    def fails(city_dir: str, gc: str = "gc") -> CoreTuple:
+        raise HcError(NO_TUPLE)
+
+    monkeypatch.setattr(soakcapture, "core_tuple", fails)
+
+
+def _session_env(city: City, session: str, **extra: str) -> Dict[str, str]:
+    env = {"GC_CITY_PATH": str(city.path), "GC_SESSION_ID": session}
+    env.update(extra)
+    return env
+
+
+def test_remains_finds_every_session_s_processes_after_the_core_and_holders_are_gone(
+    tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from soakcapture import remains
+
+    city = _stopped_city(tmp_path, monkeypatch)
+    dispatcher = _session_env(city, "dispatcher-1", GC_TEMPLATE="core.control-dispatcher", GC_INSTANCE_TOKEN="t0k3n")
+    # The control-dispatcher writes no agent log: its box, and a descendant
+    # reparented to init when the holder went.
+    proc_tree.add(4010, "sh", argv=["sh", "-c", "gc hook --claim"], env=dispatcher)
+    proc_tree.add(4011, "sleep", ppid=1, argv=["sleep", "600"], env=dispatcher)
+    # A scripted agent that never wrote its log, and the one that did.
+    proc_tree.add(4020, "soak-agent", env=_session_env(city, "steady-3"))
+    proc_tree.add(4001, "soak-agent", env=_session_env(city, "steady-1"))
+    # Not this city's sessions: another city's (with the same session id), one
+    # without a city, and a process of this city outside any session.
+    proc_tree.add(4030, "soak-agent", env={"GC_CITY_PATH": "/home/soak/cities/other", "GC_SESSION_ID": "steady-1"})
+    proc_tree.add(4031, "soak-agent", env={"GC_SESSION_ID": "steady-2"})
+    proc_tree.add(4032, "sleep", env={"GC_CITY_PATH": str(city.path), "GC_SESSION_ID": ""})
+    procfs = ProcFS(str(proc_tree.root))
+    assert hc_runtime(procfs.snapshot()) == []  # the core and its holders are gone
+    assert sorted(remains(city, procfs)) == [
+        "session dispatcher-1 pid 4010 sh",
+        "session dispatcher-1 pid 4011 sleep",
+        "session steady-1 pid 4001 soak-agent",
+        "session steady-3 pid 4020 soak-agent",
+    ]
+
+
+def test_remains_names_the_core_and_holders_of_the_city_s_core_tuple_only(
+    tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from soakcapture import remains
+
+    city = _stopped_city(tmp_path, monkeypatch)
+    proc_tree.add(3001, "herdr-core", argv=["/hc/herdr-core", "serve"], env=HC_MINE)
+    proc_tree.add(3002, "herdr-core", argv=["/hc/herdr-core", "hold"], env=HC_MINE)
+    proc_tree.add(3003, "herdr-core", argv=["/hc/herdr-core", "hold"], env=dict(HC_MINE, XDG_STATE_HOME="/other"))
+    proc_tree.add(3004, "herdr-core", argv=["/hc/herdr-core", "serve"], env=dict(HC_MINE, HC_SESSION="gc-other"))
+    assert sorted(remains(city, ProcFS(str(proc_tree.root)))) == ["hc hold pid 3002", "hc serve pid 3001"]
+
+
+def test_remains_that_cannot_name_the_core_tuple_never_reads_as_nothing_remaining(
+    tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from soakcapture import remains
+
+    city = _stopped_city(tmp_path, monkeypatch)
+    _no_core_tuple(monkeypatch)
+    procfs = ProcFS(str(proc_tree.root))
+    assert remains(city, procfs) == [f"core tuple unknown: {NO_TUPLE}"]
+    # The core and a holder outlived the stop; neither carries a GC_* variable.
+    proc_tree.add(3001, "herdr-core", argv=["/hc/herdr-core", "serve"], env=HC_MINE)
+    proc_tree.add(3002, "herdr-core", argv=["/hc/herdr-core", "hold"], env=HC_MINE)
+    assert remains(city, procfs) == [f"core tuple unknown: {NO_TUPLE}"]
+    # The tuple a caller found before the stop: no discovery, and both are seen.
+    assert sorted(remains(city, procfs, core=STOPPED_CORE)) == ["hc hold pid 3002", "hc serve pid 3001"]
+
+
+def test_final_scan_fails_while_a_core_runs_whose_tuple_cannot_be_named(
+    tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import soakcheck
+    import soakcli
+
+    city = _stopped_city(tmp_path, monkeypatch)
+    _no_core_tuple(monkeypatch)
+    city.file("canary").write_text("soak-canary-x\n", encoding="utf-8")
+    monkeypatch.setattr(soakcheck, "canary_scan", lambda roots, canary: [])
+    monkeypatch.setattr(soakcli, "ProcFS", lambda: ProcFS(str(proc_tree.root)))
+    proc_tree.add(3001, "herdr-core", argv=["/hc/herdr-core", "serve"], env=HC_MINE)
+    assert soakcli.cmd_final_scan(city, SoakPaths(home=tmp_path / "home")) == 1
+    assert json.loads(capsys.readouterr().out) == {"canary_hits": [], "remains": [f"core tuple unknown: {NO_TUPLE}"]}
+
+
+def test_final_scan_fails_while_a_dispatcher_descendant_without_an_agent_log_runs(
+    tmp_path: Path, proc_tree: ProcTree, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import soakcheck
+    import soakcli
+
+    city = _stopped_city(tmp_path, monkeypatch)
+    city.file("canary").write_text("soak-canary-x\n", encoding="utf-8")
+    monkeypatch.setattr(soakcheck, "canary_scan", lambda roots, canary: [])
+    monkeypatch.setattr(soakcli, "ProcFS", lambda: ProcFS(str(proc_tree.root)))
+    paths = SoakPaths(home=tmp_path / "home")
+    assert soakcli.cmd_final_scan(city, paths) == 0
+    assert json.loads(capsys.readouterr().out) == {"canary_hits": [], "remains": []}
+    proc_tree.add(4011, "sleep", argv=["sleep", "600"], env=_session_env(city, "dispatcher-1", GC_TEMPLATE="core.control-dispatcher"))
+    assert soakcli.cmd_final_scan(city, paths) == 1
+    assert json.loads(capsys.readouterr().out)["remains"] == ["session dispatcher-1 pid 4011 sleep"]
