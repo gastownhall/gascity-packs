@@ -139,6 +139,12 @@ SLACK_BOT_TOKEN=xoxb-YOUR-BOT-TOKEN-HERE
 SLACK_SIGNING_SECRET=YOUR-SIGNING-SECRET-HERE
 GC_CITY_NAME=<your-city-name>
 
+# Optional: Socket Mode inbound. An app-level token (xapp-..., scope
+# connections:write) makes the adapter take events over an outbound
+# WebSocket, so it no longer needs Funnel to receive them. Enable Socket
+# Mode in the Slack app settings too. See README "Socket Mode".
+# SLACK_APP_TOKEN=xapp-YOUR-APP-LEVEL-TOKEN
+
 # Defaults shown — only override if you have a port conflict.
 # LISTEN_PUBLIC=:8765                      # Funnel exposes this
 # LISTEN_INTERNAL=127.0.0.1:8766           # gc-only, localhost
