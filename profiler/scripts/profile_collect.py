@@ -243,8 +243,14 @@ def main():
     rig_name = (root.get("metadata") or {}).get("gc.var.rig_name") or os.path.basename(rig)
     session_beads, sess_ids = [], set()
     try:
+        # --city <path> is a true scope override (disables GC_RIG/cwd/prefix
+        # auto-detection), not just cwd=city: a rig agent session always
+        # carries GC_RIG, which gc bd gives precedence over cwd, so without
+        # this the "city" read above silently answers from the rig store
+        # instead and comes back with none of the agent:<rig>/ session
+        # labels the loop below filters on.
         city_beads = bd_json(
-            ["list", "--all", "--include-infra", "--flat", "--json"], cwd=city)
+            ["--city", city, "list", "--all", "--include-infra", "--flat", "--json"], cwd=city)
         prefix = f"agent:{rig_name}/"
         for b in city_beads:
             labs = b.get("labels") or []

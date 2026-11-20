@@ -368,6 +368,98 @@ class CollectEndToEndTests(unittest.TestCase):
         self.assertIn("est cost: $0.5000", proc.stdout)
 
 
+FAKE_GC_RIG_HIJACK = """#!/bin/sh
+# Simulates the real bug (GH#520): gc bd gives an inherited GC_RIG
+# precedence over cwd, so a cwd=city read is answered by the rig store
+# whenever GC_RIG is set in the environment -- unless --city <path> is
+# present, which the real gc documents as a true scope override that
+# disables GC_RIG/cwd/prefix auto-detection entirely.
+if [ "$1" != bd ]; then
+  echo "unexpected gc invocation: $*" >&2
+  exit 2
+fi
+case "$*" in
+  *--city*) cat "$FAKE_BD_CITY" ;;
+  *)
+    if [ -n "$GC_RIG" ]; then
+      cat "$FAKE_BD_RIG"
+    else
+      case "$*" in
+        *--include-infra*) cat "$FAKE_BD_CITY" ;;
+        *) cat "$FAKE_BD_RIG" ;;
+      esac
+    fi
+    ;;
+esac
+"""
+
+
+class CollectCityReadDefeatsInheritedRigTests(unittest.TestCase):
+    """GH#520: an inherited GC_RIG must not hijack the city-store read."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = tempfile.TemporaryDirectory()
+        base = pathlib.Path(cls.tmp.name)
+        cls.rig = base / "rig"
+        cls.city = base / "city"
+        cls.out = base / "capture"
+        for d in (cls.rig, cls.city / ".gc", base / "bin"):
+            d.mkdir(parents=True, exist_ok=True)
+
+        rig_beads = [
+            bead(ROOT, title="build", issue_type="workflow",
+                 created_at="2026-07-01T10:00:00Z", closed_at="2026-07-01T12:00:00Z",
+                 metadata={"gc.var.rig_name": "product"}),
+        ]
+        city_beads = [
+            bead("ga-sess1", issue_type="session", labels=["agent:product/run-operator-1"],
+                 created_at="2026-07-01T10:04:00Z", closed_at="2026-07-01T10:36:00Z",
+                 metadata={}),
+        ]
+        (base / "rig-beads.json").write_text(json.dumps(rig_beads), encoding="utf-8")
+        (base / "city-beads.json").write_text(json.dumps(city_beads), encoding="utf-8")
+
+        gc_stub = base / "bin" / "gc"
+        gc_stub.write_text(FAKE_GC_RIG_HIJACK, encoding="utf-8")
+        gc_stub.chmod(0o755)
+
+        (cls.city / "packs.lock").write_text("profiler = 0.1.0\n", encoding="utf-8")
+
+        subprocess.run(["git", "init", "-q", str(cls.rig)], check=True)
+        (cls.rig / "README.md").write_text("rig\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(cls.rig), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(cls.rig), "-c", "user.email=t@example.com",
+                        "-c", "user.name=T", "commit", "-q", "-m", "seed"], check=True)
+
+        cls.env = {
+            "PATH": f"{base / 'bin'}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "HOME": str(base / "home"),
+            "FAKE_BD_RIG": str(base / "rig-beads.json"),
+            "FAKE_BD_CITY": str(base / "city-beads.json"),
+            # The hijack this guards against needs an inherited GC_RIG, as a
+            # rig agent session always carries one.
+            "GC_RIG": "product",
+        }
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.tmp.cleanup()
+
+    def test_session_beads_survive_an_inherited_gc_rig(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "profile_collect.py"), ROOT,
+             "--rig", str(self.rig), "--city", str(self.city), "--out", str(self.out)],
+            capture_output=True, text=True, env=self.env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        session_beads = json.loads((self.out / "session-beads.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            [b["id"] for b in session_beads], ["ga-sess1"],
+            "the city-store session bead must survive GC_RIG being set in the "
+            "environment, the way a rig agent session always carries it",
+        )
+
+
 class CollectFailureTests(unittest.TestCase):
     def test_no_city_is_a_usage_error(self) -> None:
         proc = subprocess.run(

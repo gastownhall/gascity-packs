@@ -83,7 +83,11 @@ is_approved() {
   candidate="$(printf '%s' "${1-}" | tr '[:upper:]' '[:lower:]')"
   [ -n "$candidate" ] || return 1
   for known in "${APPROVAL_VERDICTS[@]}"; do
-    if [ "$candidate" = "${known,,}" ]; then
+    # ${known,,} is a bash-4 parameter expansion; macOS ships bash 3.2
+    # (GH#521), where it is a syntax error -- "bad substitution" on every
+    # verdict, not just a non-match. tr is the same portable lowercasing
+    # already used for $candidate above.
+    if [ "$candidate" = "$(printf '%s' "$known" | tr '[:upper:]' '[:lower:]')" ]; then
       return 0
     fi
   done
