@@ -1,0 +1,24 @@
+Base: 520e95cb22992a8a1017f7a60da267f203497c7e
+Fork source: 27e884fb993a2336cb9fdcb3177b9dee84707789
+Upstream source: 62374eadd0f2f0bf1db84bdec274b209b1216bb3
+
+12376033371a286cbe4344dcd2cb6523ead8eb4a fix(slack-full): replace visible reference footers with durable receipts
+(cherry picked from commit 136c7780ce1ae4a619003952412d3dcb5b0c929c)
+
+aa10e3eb6f413d5a8ea688c9f7c593b73d1b44bf fix(slack-full): preserve newest evidence and normalize auto-link readback
+(cherry picked from commit e8c1637bc1291d7a887bdb258ddbd7e0bc583804)
+
+32620a3fb0d6bad75d8e869e9b26381c83b52abb fix(slack-full): reverify the original posted text after alias reloads
+(cherry picked from commit b86cdf1ff5503b9d09fef1a83b28ba33ace2eefd)
+
+725cf7a214467ec943b263bf7550e2e287610b84 fix(slack-full): retain original replay routing and Slack references
+(cherry picked from commit 771263ff9de041aff5afe5a5dde71e964122c59a)
+
+4e229995ad71ee9b2e1dd240714fc0ad99aff86c fix(slack-full): accept the documented legacy www auto-link form
+(cherry picked from commit 94c2f4ababe7aee4529e3db5b79e46c7c00780a5)
+
+76e76003237f47a082aedc6a5ceecc76e87b40b5 fix(slack-full): match emoji expansions at original text boundaries
+(cherry picked from commit 27e884fb993a2336cb9fdcb3177b9dee84707789)
+
+
+62374eadd0f2f0bf1db84bdec274b209b1216bb3 fixes the upstream reviewer concurrent-metadata finding; ported back to the fork as be66194aa2cfe637503b417dd4fc9825e6e6326b.

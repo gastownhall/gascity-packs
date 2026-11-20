@@ -1,0 +1,15 @@
+# codex-gate review: base 355a458adad243a7e17968e72832b9ffc73df6d5 (merge base of --base 355a458adad243a7e17968e72832b9ffc73df6d5 = 355a458adad243a7e17968e72832b9ffc73df6d5 and the head) head 74a61b0716e89d8b2218860f8bfc3087095989cf; 6 file(s); class QUICK; model gpt-6-astra; 2026-10-15T08:07:00Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 4 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |  3 ++-
+#  slack-full/adapter/publish_readback.go       |  3 ++-
+#  slack-full/adapter/publish_readback_match.go | 40 ++++++++++++++++++++++++++++++++++++----
+#  slack-full/adapter/publish_readback_test.go  | 16 ++++++++++++++++
+#  slack-full/adapter/publish_receipts.go       | 19 +++++++++++++++----
+#  slack-full/adapter/publish_receipts_test.go  | 32 ++++++++++++++++++++++----------
+#  6 files changed, 93 insertions(+), 20 deletions(-)
+
+- **Major — [publish_readback_match.go:488](slack-full/adapter/publish_readback_match.go:488): Repeated delimiters can hide changed URL suffixes.** Posting `*https://a.co/*:id:*` and reading back `*<https://a.co/>*:ok:*` now passes verification; the base rejects it. Both trailing `*` characters are treated as closing the same active delimiter, so protection ends at the first and emoji folding erases the changed `:id:` value. Track delimiter consumption or conservatively preserve repeated-delimiter suffixes, and add this negative regression case.
+
+Static review with an in-memory check of the changed suffix logic; Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

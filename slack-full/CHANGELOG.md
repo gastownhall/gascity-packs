@@ -10,6 +10,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Keyed outbound messages no longer carry a visible reference footer**
+  (gp-obim). Supersedes the entry "Outbound publishes carrying an idempotency
+  key are stamped with a low-visibility reference marker" below. Message text
+  is sent unchanged after the existing alias rewrite, and `MaxMessageLength`
+  again advertises the full 40,000-character ceiling. Every publish readback
+  uses exact timestamp and canonicalized text equality, including thread
+  replies via `conversations.replies`. Bare-domain auto-links (for example,
+  `hou.vc` stored by Slack as `<http://hou.vc|hou.vc>`) confirm without reposting.
+  URL tokens use one boundary rule for full and implicit links: enclosing
+  punctuation, formatting runs (including `**` and `__`), sentence punctuation
+  and trailing Unicode emoji leave the URL literal and the suffix as prose.
+  Host-adjacent emoji aliases normalize consistently; internal path/query
+  identifiers and embedded returned link segments remain literal.
+  Delivery evidence now lives in the adapter's private
+  `<GC_CITY_PATH>/.gc/slack/publish-receipts/` store (fallback:
+  `/tmp/gc-slack-adapter/publish-receipts/`), keyed by the full SHA-256 digest
+  of the caller's idempotency key. The adapter writes acceptance immediately
+  after Slack returns a message ts, then updates the readback state atomically.
+  `GET /publish-receipt?idempotency_key=<URL-encoded key>` on the existing
+  internal server returns the same flat receipt fields as `publish-to-channel`
+  (`delivered`, `conversation_id`, `message_id`, optional `thread_ts`,
+  `reply_to_message_id`, and `failure_kind`), plus `posted_text_sha256`,
+  `posted_at`, and `readback`. The digest covers the exact alias-rewritten
+  bytes posted. Readback is `pending`, `confirmed`, `readback_unconfirmed`,
+  `readback_unavailable`, or `readback_auth`; pending proves acceptance only.
+  Receipts survive restarts and expire after 30 days from posting, swept at
+  startup and hourly. This later-reader audit window is longer than the
+  company inbound receipt store's seven-day retry window. Corrupt receipts
+  are removed on lookup or by the sweep with one log line; the first corrupt
+  lookup returns 404 immediately. I/O failures remain operational errors.
+  A reused key records the newest accepted post. A 404
+  means **unknown**, never undelivered; unkeyed posts, files, and deliveries
+  before this change have no stored evidence. Storage errors are 500 on lookup
+  and `metadata.receipt_store=unavailable` on publish. This store records past
+  delivery observations and does not extend the in-memory dedup TTL or check
+  for later message deletion. The normative contract is in
+  `adapter/publish_receipts.go`; no additional Slack scopes are needed.
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and

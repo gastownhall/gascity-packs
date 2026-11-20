@@ -1,0 +1,28 @@
+Source: 0a9e38a6
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new link guards can confirm changed destinations, reject equivalent escaped text, and perform quadratic normalization on mixed-link messages. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Validate the original URL boundary before folding a label — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:97-103
+  For expected text `https://example.com`, stored text `https://<http://example.com|example.com>` passes both new guards and normalizes to the expected text, despite changing the clickable destination from HTTPS to HTTP. The substring search accepts `example.com` inside the original URL, while `requiresExplicit` only examines the label. Require the label to correspond to the original URL boundary and preserve any explicit scheme; otherwise a changed destination is recorded as confirmed.
+
+- [P2] Preserve confirmation of entity-escaped angle-bracket prose — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:17-22
+  When literal prose such as `Use <std::vector>` reads back as `Use &lt;std::vector&gt;`, this parser classifies the expected span as an explicit link but finds no corresponding stored link. The new destination guard therefore reports a permanent readback failure, although both texts canonicalize identically and previously confirmed. Distinguish actual links from scheme-shaped prose, or make link extraction consistent with the normalizer's entity handling.
+
+- [P2] Avoid re-normalizing growing prefixes for every candidate — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:45-50
+  A message containing many automatic links followed by one explicit link makes this loop quadratic: every candidate re-normalizes the entire expected prefix and an increasingly long stored prefix, then repeats normalization in the emoji fallback. For example, 4,000 repetitions of `www.a.co ` followed by an explicit link fit within the 40,000-character limit but feed approximately 360 MB through each comparison path. The added repeated-link test misses this because it contains no explicit link. Cache normalized prefixes or align links incrementally to avoid substantial CPU and allocation costs during synchronous publishing.
+The new link guards can confirm changed destinations, reject equivalent escaped text, and perform quadratic normalization on mixed-link messages. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Validate the original URL boundary before folding a label — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:97-103
+  For expected text `https://example.com`, stored text `https://<http://example.com|example.com>` passes both new guards and normalizes to the expected text, despite changing the clickable destination from HTTPS to HTTP. The substring search accepts `example.com` inside the original URL, while `requiresExplicit` only examines the label. Require the label to correspond to the original URL boundary and preserve any explicit scheme; otherwise a changed destination is recorded as confirmed.
+
+- [P2] Preserve confirmation of entity-escaped angle-bracket prose — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:17-22
+  When literal prose such as `Use <std::vector>` reads back as `Use &lt;std::vector&gt;`, this parser classifies the expected span as an explicit link but finds no corresponding stored link. The new destination guard therefore reports a permanent readback failure, although both texts canonicalize identically and previously confirmed. Distinguish actual links from scheme-shaped prose, or make link extraction consistent with the normalizer's entity handling.
+
+- [P2] Avoid re-normalizing growing prefixes for every candidate — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:45-50
+  A message containing many automatic links followed by one explicit link makes this loop quadratic: every candidate re-normalizes the entire expected prefix and an increasingly long stored prefix, then repeats normalization in the emoji fallback. For example, 4,000 repetitions of `www.a.co ` followed by an explicit link fit within the 40,000-character limit but feed approximately 360 MB through each comparison path. The added repeated-link test misses this because it contains no explicit link. Cache normalized prefixes or align links incrementally to avoid substantial CPU and allocation costs during synchronous publishing.

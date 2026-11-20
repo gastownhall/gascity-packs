@@ -1,0 +1,22 @@
+Source: 8f3fd166
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher rejects unchanged readback content in two cases previously accepted, incorrectly reporting delivery failures. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Allow auto-links following an unwrapped comma-separated URI — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:179-181
+  When Slack leaves a non-HTTP URI unwrapped, `s3://bucket/x,www.example.com` can read back as `s3://bucket/x,<http://www.example.com|www.example.com>`. The verbatim regex spans both tokens, so this guard rejects the auto-link despite identical normalized text. The preceding-link boundary handling only works when the first URI was also wrapped. Handle punctuation boundaries after unwrapped URIs too, otherwise previously successful publishes become permanent `readback_unconfirmed` failures.
+
+- [P2] Filter impossible candidates before spending the comparison budget — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:147-151
+  For `"🎉 " + strings.Repeat("s3://www.a.co ", 100) + "www.a.co"`, with the emoji converted to `:tada:` and only the final domain auto-linked, the matcher exhausts its budget before reaching the correct occurrence. Each domain inside an earlier URI triggers another comparison against the entire stored prefix because emoji conversion disables the exact-prefix shortcut. This rejects an unchanged message of only about 1.4 KB. Apply the literal-count filter or skip impossible URI candidates before charging these comparisons.
+The new matcher rejects unchanged readback content in two cases previously accepted, incorrectly reporting delivery failures. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Allow auto-links following an unwrapped comma-separated URI — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:179-181
+  When Slack leaves a non-HTTP URI unwrapped, `s3://bucket/x,www.example.com` can read back as `s3://bucket/x,<http://www.example.com|www.example.com>`. The verbatim regex spans both tokens, so this guard rejects the auto-link despite identical normalized text. The preceding-link boundary handling only works when the first URI was also wrapped. Handle punctuation boundaries after unwrapped URIs too, otherwise previously successful publishes become permanent `readback_unconfirmed` failures.
+
+- [P2] Filter impossible candidates before spending the comparison budget — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:147-151
+  For `"🎉 " + strings.Repeat("s3://www.a.co ", 100) + "www.a.co"`, with the emoji converted to `:tada:` and only the final domain auto-linked, the matcher exhausts its budget before reaching the correct occurrence. Each domain inside an earlier URI triggers another comparison against the entire stored prefix because emoji conversion disables the exact-prefix shortcut. This rejects an unchanged message of only about 1.4 KB. Apply the literal-count filter or skip impossible URI candidates before charging these comparisons.

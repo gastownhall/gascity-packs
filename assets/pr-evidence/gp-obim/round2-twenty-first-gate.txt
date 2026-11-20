@@ -1,0 +1,9 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (3579 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T06:44:13Z
+
+1. **Major — Implicit URI protection is lost across embedded spans.** [publish_readback_match.go:155](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:155) accepts posted `hou.vc/@U123/:id:/x` as stored `<http://hou.vc/|hou.vc/><@U123>/:ok:/x`. The reference ends the preceding suffix check but inherits no URI context because `verbatim` recognizes only scheme-bearing URIs. The remaining changed path then compares equal through emoji folding. Preserve implicit URI context across embedded reference/mailto spans and add changed/deleted-tail tests.
+
+2. **Major — Unwrapped URIs swallow closing formatting markers.** [publish_readback_match.go:271](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:271) makes the entire unwrapped URI opaque, including its closing `*`. Consequently, posted `*s3://bucket/x* *www.b.co/x*:thumbsup:` rejects stored `*s3://bucket/x* *<http://www.b.co/x|www.b.co/x>*:+1:`. The first closing marker is skipped, the next opening marker clears bold state, and the legitimate trailing emoji alias fails suffix validation. Process active closing markers on unwrapped URI tokens as well as matched URI tails.
+
+Static review only; Go tests were not run because they create artifacts under the read-only restriction.
+
+VERDICT: BLOCK

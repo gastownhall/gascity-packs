@@ -1,0 +1,10 @@
+Previous head: 355a458adad243a7e17968e72832b9ffc73df6d5
+https://github.com/aphexcx/gascity-packs-prs/actions/runs/38698882854/job/116301943104
+Check	Run Gastown shell tests	2026-10-15T07:35:07.3662709Z jq: parse error: Unfinished JSON term at EOF at line 1, column 1
+Check	Run Gastown shell tests	2026-10-15T07:35:07.4594604Z jq: error (at <stdin>:0): expected exactly one work bead object
+Check	Run Gastown shell tests	2026-10-15T07:35:07.5503204Z jq: error (at <stdin>:0): expected exactly one work bead object
+Check	Run Gastown shell tests	2026-10-15T07:35:07.6347260Z FAIL: canonical collision reached a metadata update
+Check	Run Gastown shell tests	2026-10-15T07:35:07.7189013Z FAIL: redirected artifact root reached a metadata update
+Check	Run Gastown shell tests	2026-10-15T07:35:08.6004583Z gastown/tests/test_polecat_artifact_dir.sh: line 469: rg: command not found
+Check	Run Gastown shell tests	2026-10-15T07:35:08.6005700Z FAIL: shutdown probe did not route the target work query to its rig store
+Check	Run Gastown shell tests	2026-10-15T07:35:08.6020996Z ##[error]Process completed with exit code 1.

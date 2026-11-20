@@ -1,0 +1,22 @@
+Source: 8b9fa34f
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher rejects valid Slack canonicalizations that previously confirmed successfully, producing false permanent delivery failures. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Preserve closing formatting delimiters after full-URI links — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:383-388
+  For `*https://a.co* *www.b.co/x*:thumbsup:`, Slack's readback `*<https://a.co>* *<http://www.b.co/x|www.b.co/x>*:+1:` is incorrectly rejected. Returning the first closing `*` as a literal suffix makes `slackReadbackFormattingMatches` skip its formatting transition. The next opening `*` then closes the state, causing the final emoji alias to be treated as a changed URL tail. Preserve actual closing formatting transitions rather than making the entire suffix opaque; otherwise previously confirmed deliveries become permanent `readback_unconfirmed` failures.
+
+- [P2] Recognize typographic quotes as hostname boundaries — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:412-417
+  For `“www.a.co”:thumbsup:` read back as `“<http://www.a.co|www.a.co>”:+1:`, the closing `”` is not recognized as a hostname boundary. The loop consequently disables `allowShortcodes` and compares the following prose emoji alias literally, returning `readback_unconfirmed` for an unchanged delivered message that the previous matcher accepted. Treat typographic closing quotes as prose boundaries after a bare hostname, as already done for ASCII quotes.
+The new matcher rejects valid Slack canonicalizations that previously confirmed successfully, producing false permanent delivery failures. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Full review comments:
+
+- [P2] Preserve closing formatting delimiters after full-URI links — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:383-388
+  For `*https://a.co* *www.b.co/x*:thumbsup:`, Slack's readback `*<https://a.co>* *<http://www.b.co/x|www.b.co/x>*:+1:` is incorrectly rejected. Returning the first closing `*` as a literal suffix makes `slackReadbackFormattingMatches` skip its formatting transition. The next opening `*` then closes the state, causing the final emoji alias to be treated as a changed URL tail. Preserve actual closing formatting transitions rather than making the entire suffix opaque; otherwise previously confirmed deliveries become permanent `readback_unconfirmed` failures.
+
+- [P2] Recognize typographic quotes as hostname boundaries — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:412-417
+  For `“www.a.co”:thumbsup:` read back as `“<http://www.a.co|www.a.co>”:+1:`, the closing `”` is not recognized as a hostname boundary. The loop consequently disables `allowShortcodes` and compares the following prose emoji alias literally, returning `readback_unconfirmed` for an unchanged delivered message that the previous matcher accepted. Treat typographic closing quotes as prose boundaries after a bare hostname, as already done for ASCII quotes.

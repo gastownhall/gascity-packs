@@ -1,0 +1,11 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (2864 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T06:30:02Z
+
+**Major — URI protection is lost across returned spans.** At [publish_readback_match.go:172](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:172), rescanning only the unconsumed prefix clears `inVerbatim` for a subsequent mailto/reference span.
+
+For example, expected `https://a.co/@U123/:id:/x` accepts stored `<https://a.co/><@U123>/:ok:/x`. The first suffix check stops at the reference; no replacement check protects its tail, so emoji folding erases the changed path segment and incorrectly confirms delivery. Deleting `:id:` also passes. The unconditional comma/semicolon reset at line 178 creates the same gap.
+
+Preserve the original URI’s literal context across embedded mailto/reference spans, and add changed/deleted-tail regressions covering multiple spans and preceding comma/semicolon punctuation.
+
+Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

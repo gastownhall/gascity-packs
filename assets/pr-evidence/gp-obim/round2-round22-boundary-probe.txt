@@ -1,0 +1,14 @@
+Supplemental failing Go overlay reproduction before the fix; excluded from final suite counts.
+Source: b1421040
+2026/10/15 02:14:59 publish: conv=C1 text=23ch posted=23ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 02:14:59 slack readback failed: Slack readback content mismatch for message 1700.001
+2026/10/15 02:14:59 publish: conv=C1 text=26ch posted=26ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 02:14:59 slack readback failed: Slack readback content mismatch for message 1700.001
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.00s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/pipe_separator_ends_implicit_path (0.00s)
+        publish_readback_test.go:525: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/parenthesized_auto-link_after_unwrapped_URI (0.00s)
+        publish_readback_test.go:525: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.245s
+FAIL

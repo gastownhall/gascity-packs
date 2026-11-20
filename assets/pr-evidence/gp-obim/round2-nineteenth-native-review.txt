@@ -1,0 +1,16 @@
+Source: 8b524dba
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new matcher can confirm changed literal URI content when a mailto or reference span splits the URI. Go tests could not run because the read-only sandbox prevented creation of the build directory.
+
+Review comment:
+
+- [P2] Preserve URI protection across mailto and reference spans — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:155-155
+  When readback contains a mailto or reference span inside a source URI, this branch skips the verbatim-boundary checks and advances the cursors without preserving URI protection. For example, posted `s3://bucket/jane@example.com/:id:/x` now matches stored `s3://bucket/<mailto:jane@example.com>/:ok:/x`: after matching the email, both changed path tokens are folded away as prose emoji. The previous matcher rejected this change. Apply the URI-boundary checks to these link types too, so altered paths cannot produce confirmed delivery receipts.
+The new matcher can confirm changed literal URI content when a mailto or reference span splits the URI. Go tests could not run because the read-only sandbox prevented creation of the build directory.
+
+Review comment:
+
+- [P2] Preserve URI protection across mailto and reference spans — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:155-155
+  When readback contains a mailto or reference span inside a source URI, this branch skips the verbatim-boundary checks and advances the cursors without preserving URI protection. For example, posted `s3://bucket/jane@example.com/:id:/x` now matches stored `s3://bucket/<mailto:jane@example.com>/:ok:/x`: after matching the email, both changed path tokens are folded away as prose emoji. The previous matcher rejected this change. Apply the URI-boundary checks to these link types too, so altered paths cannot produce confirmed delivery receipts.

@@ -1,0 +1,3 @@
+Source: /Users/tailor512/city/assets/ops/mayor-tools/codex-gate.sh
+Immutable local copy: /tmp/gp-obim-round3/codex-gate.sh
+SHA256: f0f2ce967a3a9a64f7e61b2c8caf94a8e136bbd0c331472071cd92e0eac8dde1

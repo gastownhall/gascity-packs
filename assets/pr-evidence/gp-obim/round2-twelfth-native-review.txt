@@ -1,0 +1,22 @@
+Source: be3bbb5d
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The matcher can confirm truncated absolute URLs and reject valid adjacent links. Go tests could not run because the read-only sandbox blocks temporary build directories.
+
+Full review comments:
+
+- [P2] Preserve URI suffixes for unlabeled auto-links — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:130-131
+  With expected text `https://example.com/:id:` and readback `<https://example.com/>`, `implicit` is false, so suffix validation is skipped. The matcher consumes `https://example.com/`, then the final prose comparison folds the remaining `:id:` away and incorrectly confirms the truncated URL. The previous matcher compared the entire URI literally. Validate the remaining source-URI span for unlabeled and full-URL-labeled auto-links too.
+
+- [P2] Stop suffix validation before the next explicit link — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:154-156
+  Posting `www.a.co,<https://b.co/🎉|b.co/🎉>` and reading back `<http://www.a.co|www.a.co>,<https://b.co/🎉|b.co/:tada:>` now fails despite only normal auto-linking and label emoji conversion. Normalization removes the second destination from the expected text but retains it in the readback because its label is no longer redundant. This suffix check scans past the comma into that link and rejects it before `slackExplicitLabelsMatch` can handle the conversion. Bound suffix validation at subsequent link spans to avoid permanently marking this previously accepted message unconfirmed.
+The matcher can confirm truncated absolute URLs and reject valid adjacent links. Go tests could not run because the read-only sandbox blocks temporary build directories.
+
+Full review comments:
+
+- [P2] Preserve URI suffixes for unlabeled auto-links — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:130-131
+  With expected text `https://example.com/:id:` and readback `<https://example.com/>`, `implicit` is false, so suffix validation is skipped. The matcher consumes `https://example.com/`, then the final prose comparison folds the remaining `:id:` away and incorrectly confirms the truncated URL. The previous matcher compared the entire URI literally. Validate the remaining source-URI span for unlabeled and full-URL-labeled auto-links too.
+
+- [P2] Stop suffix validation before the next explicit link — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:154-156
+  Posting `www.a.co,<https://b.co/🎉|b.co/🎉>` and reading back `<http://www.a.co|www.a.co>,<https://b.co/🎉|b.co/:tada:>` now fails despite only normal auto-linking and label emoji conversion. Normalization removes the second destination from the expected text but retains it in the readback because its label is no longer redundant. This suffix check scans past the comma into that link and rejects it before `slackExplicitLabelsMatch` can handle the conversion. Bound suffix validation at subsequent link spans to avoid permanently marking this previously accepted message unconfirmed.

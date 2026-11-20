@@ -1,0 +1,28 @@
+Source: 86039a27
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The matcher can confirm truncated URL paths and changed explicit destinations, and its failed-candidate search introduces quadratic work. The Go suite could not run because the read-only sandbox prevents creating its temporary build directory.
+
+Full review comments:
+
+- [P2] Validate the complete URL before folding its suffix — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:88-91
+  A shortened URL can pass verification: expected `hou.vc/:id:` and stored `<http://hou.vc/|hou.vc/>` satisfy this prefix match, after which `slackNormalizeText` drops the unmatched `:id:` as an emoji. The adapter therefore confirms delivery despite losing part of the URL destination. Validate the complete expected URL boundary, or preserve its unmatched suffix literally, before allowing emoji folding.
+
+- [P2] Verify explicit targets when readback uses another link type — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:45-48
+  Posting `<https://jane@example.com|jane@example.com>` and reading back `<mailto:jane@example.com|jane@example.com>` now incorrectly confirms delivery. This loop skips the returned mailto link, while the broadened normalization reduces both messages to `jane@example.com`, hiding the changed destination. Validate expected explicit destinations against their stored counterparts even when the stored link is not an HTTP auto-link.
+
+- [P2] Bound the search after a link-prefix mismatch — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:58-64
+  With expected `strings.Repeat("a.co ", 8000)` and stored `x <http://a.co|a.co>`, every candidate fails its prefix comparison while `expectedCursor` remains zero. Each attempt folds and parses a growing prefix, processing roughly 160 MB of prefix input for a 40,000-character message. This introduces quadratic CPU and allocation work outside the HTTP client's timeout. Use incremental alignment or a shared work budget for failed candidates.
+The matcher can confirm truncated URL paths and changed explicit destinations, and its failed-candidate search introduces quadratic work. The Go suite could not run because the read-only sandbox prevents creating its temporary build directory.
+
+Full review comments:
+
+- [P2] Validate the complete URL before folding its suffix — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:88-91
+  A shortened URL can pass verification: expected `hou.vc/:id:` and stored `<http://hou.vc/|hou.vc/>` satisfy this prefix match, after which `slackNormalizeText` drops the unmatched `:id:` as an emoji. The adapter therefore confirms delivery despite losing part of the URL destination. Validate the complete expected URL boundary, or preserve its unmatched suffix literally, before allowing emoji folding.
+
+- [P2] Verify explicit targets when readback uses another link type — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:45-48
+  Posting `<https://jane@example.com|jane@example.com>` and reading back `<mailto:jane@example.com|jane@example.com>` now incorrectly confirms delivery. This loop skips the returned mailto link, while the broadened normalization reduces both messages to `jane@example.com`, hiding the changed destination. Validate expected explicit destinations against their stored counterparts even when the stored link is not an HTTP auto-link.
+
+- [P2] Bound the search after a link-prefix mismatch — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:58-64
+  With expected `strings.Repeat("a.co ", 8000)` and stored `x <http://a.co|a.co>`, every candidate fails its prefix comparison while `expectedCursor` remains zero. Each attempt folds and parses a growing prefix, processing roughly 160 MB of prefix input for a 40,000-character message. This introduces quadratic CPU and allocation work outside the HTTP client's timeout. Use incremental alignment or a shared work budget for failed candidates.

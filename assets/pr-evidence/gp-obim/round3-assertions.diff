@@ -1,0 +1,67 @@
+diff --git a/slack-full/adapter/publish_readback_test.go b/slack-full/adapter/publish_readback_test.go
+index f5372952..8ccc49c1 100644
+--- a/slack-full/adapter/publish_readback_test.go
++++ b/slack-full/adapter/publish_readback_test.go
+@@ -391,0 +392,21 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
++		{"full URI italic shortcode internal underscore stays literal", "_https://a.co/:white_check_mark:/:id:_", "_<https://a.co/>:white_check_mark:/:ok:_", false},
++		{"full URI italic path internal underscore stays literal", "_https://a.co/foo_bar:id:_ done", "_<https://a.co/foo>_bar:ok:_ done", false},
++		{"full URI italic path internal underscore unchanged", "_https://a.co/foo_bar:id:_:thumbsup:", "_<https://a.co/foo>_bar:id:_:+1:", true},
++		{"full URI italic custom shortcode stays literal", "_https://a.co/:_custom:/:id:_", "_<https://a.co/>:_custom:/:ok:_", false},
++		{"full URI strike path marker stays literal", "~https://a.co/~user/:id:~", "~<https://a.co/>~user/:ok:~", false},
++		{"full URI strike path marker unchanged", "~https://a.co/~user/:id:~:thumbsup:", "~<https://a.co/>~user/:id:~:+1:", true},
++		{"full URI bold path marker stays literal", "*https://a.co/*user/:id:*", "*<https://a.co/>*user/:ok:*", false},
++		{"full URI nested formatting before prose alias", "*_https://a.co_*:thumbsup:", "*_<https://a.co>_*:+1:", true},
++		{"full URI quoted query suffix stays literal", "'https://a.co/?q=':id:''", "'<https://a.co/?q=>':ok:''", false},
++		{"full URI repeated closing marker stays literal", "*https://a.co/*:id:*", "*<https://a.co/>*:ok:*", false},
++		{"full URI repeated adjacent markers stay literal", "*https://a.co/**:id:", "*<https://a.co/>**:ok:", false},
++		{"full URI repeated closing marker unchanged", "*https://a.co/*:id:*", "*<https://a.co/>*:id:*", true},
++		{"full URI formatting before embedded reference stays literal", "*https://a.co/*:id:@U123/x*", "*<https://a.co/>*:ok:<@U123>/x*", false},
++		{"full URI formatting before embedded reference unchanged", "*https://a.co/*:id:@U123/x*:thumbsup:", "*<https://a.co/>*:id:<@U123>/x*:+1:", true},
++		{"full URI bold before prose alias", "*https://a.co*:thumbsup:", "*<https://a.co>*:+1:", true},
++		{"full URI italic before prose alias", "_https://a.co_:thumbsup:", "_<https://a.co>_:+1:", true},
++		{"full URI strike before prose alias", "~https://a.co~:thumbsup:", "~<https://a.co>~:+1:", true},
++		{"full URI unformatted suffix stays literal", "https://a.co:thumbsup:", "<https://a.co>:+1:", false},
++		{"full URI unformatted suffix unchanged", "https://a.co:thumbsup:", "<https://a.co>:thumbsup:", true},
++		{"full URI bold added suffix before closer", "*https://a.co*:thumbsup:", "*<https://a.co>:ok:*:+1:", false},
++		{"full URI bold changed target before closer", "*https://a.co*:thumbsup:", "*<https://b.co>*:+1:", false},
+diff --git a/slack-full/adapter/publish_receipts_test.go b/slack-full/adapter/publish_receipts_test.go
+index 30bf5bf9..2183cc2c 100644
+--- a/slack-full/adapter/publish_receipts_test.go
++++ b/slack-full/adapter/publish_receipts_test.go
+@@ -3,0 +4 @@ import (
++	"bytes"
+@@ -5,0 +7 @@ import (
++	"log"
+@@ -146,5 +148,8 @@ func TestPublishReceiptPrunesCorruptFiles(t *testing.T) {
+-			if _, err := store.Get("corrupt"); !errors.Is(err, errInvalidPublishReceipt) {
+-				t.Fatalf("corrupt lookup = %v", err)
+-			}
+-			if removed, err := store.Prune(); err != nil || removed != 1 {
+-				t.Fatalf("corrupt cleanup = %d, %v", removed, err)
++			var logs bytes.Buffer
++			previousLogOutput := log.Writer()
++			log.SetOutput(&logs)
++			t.Cleanup(func() { log.SetOutput(previousLogOutput) })
++			w := httptest.NewRecorder()
++			handlePublishReceipt(store)(w, httptest.NewRequest(http.MethodGet, "/publish-receipt?idempotency_key=corrupt", nil))
++			if w.Code != http.StatusNotFound {
++				t.Fatalf("first corrupt lookup = %d: %s", w.Code, w.Body)
+@@ -155,4 +160,11 @@ func TestPublishReceiptPrunesCorruptFiles(t *testing.T) {
+-			w := httptest.NewRecorder()
+-			handlePublishReceipt(store)(w, httptest.NewRequest(http.MethodGet, "/publish-receipt?idempotency_key=corrupt", nil))
+-			if w.Code != http.StatusNotFound {
+-				t.Fatalf("pruned receipt lookup = %d: %s", w.Code, w.Body)
++			if _, err := store.Get("corrupt"); !errors.Is(err, os.ErrNotExist) {
++				t.Fatalf("second corrupt lookup = %v", err)
++			}
++			if got := strings.Count(logs.String(), "removed corrupt receipt "+filepath.Base(store.path("corrupt"))); got != 1 {
++				t.Fatalf("corrupt lookup logged %d removals, want one: %s", got, &logs)
++			}
++			if err := os.WriteFile(store.path("sweep-corrupt"), []byte(tc.data), 0o600); err != nil {
++				t.Fatal(err)
++			}
++			if removed, err := store.Prune(); err != nil || removed != 1 {
++				t.Fatalf("sweep cleanup = %d, %v", removed, err)
+@@ -187 +199 @@ func TestPublishReceiptGET(t *testing.T) {
+-		{"corrupt", http.MethodGet, http.StatusInternalServerError},
++		{"corrupt", http.MethodGet, http.StatusNotFound},

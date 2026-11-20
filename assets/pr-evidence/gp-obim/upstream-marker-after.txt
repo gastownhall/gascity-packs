@@ -1,0 +1,12 @@
+$ rg -n _ref: slack-channel slack-mini
+Exit 1; zero matches
+$ rg -n reference marker|_ref: slack-full/docs slack-full/README.md
+Exit 1; zero matches
+$ rg -n _ref: slack-full/adapter
+slack-full/adapter/main_test.go:933:	if strings.Contains(captured.Text, "_ref:") {
+slack-full/adapter/company_hydration_test.go:455:		"turn_ref: gct-aaaaaaaaaaaaaaaaaaaa",
+slack-full/adapter/company_hydration.go:451:		fmt.Fprintf(b, "turn_ref: %s\n", neutralizeMarkupBoundaries(turn.TurnRef))
+slack-full/adapter/company_delivery_test.go:130:		"turn_ref: " + ptr.TurnRef,
+Exit 0;
+
+The three turn_ref: hits are unrelated existing protocol fields. No sibling source or footer-contract documentation was changed.

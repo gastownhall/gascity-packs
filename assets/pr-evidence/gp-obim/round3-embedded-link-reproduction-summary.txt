@@ -1,0 +1,11 @@
+At fork source 963445e0fb41a0b798e693974d3498996bf5b66e, new embedded-link rows only:
+env -u GC_TEMPLATE GC_NO_INSTALL=1 CGO_CPPFLAGS=-I/opt/homebrew/opt/icu4c@78/include CGO_LDFLAGS=-L/opt/homebrew/opt/icu4c@78/lib go -C slack-full/adapter test ./... -run TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate -count=1
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.15s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_formatting_before_embedded_reference_stays_literal (0.00s)
+        publish_readback_test.go:560: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/full_URI_formatting_before_embedded_reference_unchanged (0.00s)
+        publish_readback_test.go:560: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.398s
+FAIL
+exit 1

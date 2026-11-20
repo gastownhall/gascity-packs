@@ -1,0 +1,26 @@
+# Round 3: formatted URI boundaries and immediate corrupt-receipt cleanup
+
+Fork base: 355a458adad243a7e17968e72832b9ffc73df6d5; source: 89d3b6692f050b96e3416928b249a079889a6b1d.
+Upstream base: 34f643e8c85c74c316ccb82987d468e8c7f652c5; source: d543ef56b00f26ff6d5fe632e25f414812738e93.
+Both existing DRAFT PR branches are retained. Subsequent commits add evidence only.
+
+B1: the exact posted/readback pair `*https://a.co*:thumbsup:` / `*<https://a.co>*:+1:` failed before the fix, as did its italic and strikethrough twins. Full URI suffix validation now ends literal protection at the start of a trailing run of recognized closing formatting markers and emoji, verifies the prefix and marker exactly, and lets the existing prose comparison canonicalize the following emoji. Unformatted `https://a.co:thumbsup:` / `<https://a.co>:+1:` remains rejected because there is no formatting boundary: that suffix is literal URI content. Its unchanged counterpart passes. Added suffixes and changed targets remain rejected; integration fixtures check successful keyed retries post once.
+
+The initial QUICK review found that an internal underscore could prematurely end literal protection. Both the exact reviewer example and an independent path-identifier probe reproduced it. The correction treats shortcode identifiers atomically and excludes word-internal underscores from formatting markers. Regression rows include leading-underscore custom shortcodes and an unchanged path followed by prose emoji. The second QUICK review found that a tilde before path text could also end protection early. Its exact case, a bold counterpart, and a quoted-query probe reproduced the regression. A single forward scan now accepts only a trailing formatting-marker/emoji run; literal text after an internal marker resets the candidate boundary. Quoted query suffixes retain the original literal rule. Changed paths are rejected, while unchanged paths and nested formatting followed by emoji pass. The third QUICK review reproduced repeated delimiters hiding a changed shortcode-shaped path. The scan now keeps repeated-delimiter runs literal because one active delimiter can close only once; changed separated/adjacent repeats are rejected and unchanged repeats pass. The fourth QUICK review found that an intermediate segment before an embedded returned link could be mistaken for the end of a URI. The exception now requires a complete source token: EOF, original markup or a delimiter within the suffix. The exact changed-reference case is rejected, and its unchanged counterpart with a trailing emoji alias confirms. All four BLOCK records and reproductions are preserved; the final gate below reviews the complete round-3 delta from 355a458adad243a7e17968e72832b9ffc73df6d5.
+
+M1: Get removes malformed, invalid-field and oversized receipts under the store mutex, logs the removal once, syncs the directory, and returns unknown immediately. The HTTP test asserts 404 on the first corrupt lookup, the file is gone, the next lookup stays unknown, and exactly one removal was logged. Independent sweep cleanup and fresh-receipt preservation remain tested. I/O and confined-open errors remain operational errors. Store comments and CHANGELOG match this contract.
+
+N1: test convenience wrappers now point to the production matcher slackReadbackTextMatches. N2 is a handoff note: gp-yj6n should start from that matcher at the final source listed above. N3: PR trailers name the mayor's Fable r2 CLEAN at 355a458a; the round-3 Fable read remains the mayor's next gate.
+
+| Base | Full Go | Race subset | Python |
+| --- | --- | --- | --- |
+| fork | 2389 passed cases (1347 top-level); 0 failures; 0 skipped; exit 0. | 369 passed cases (26 top-level); 0 failures; 0 skipped; exit 0. | 655 passed, 2 skipped, 2 warnings in 39.10s |
+| upstream | 1585 passed cases (720 top-level); 0 failures; 0 skipped; exit 0. | 363 passed cases (23 top-level); 0 failures; 0 skipped; exit 0. | 479 passed, 2 skipped, 2 warnings in 25.89s |
+
+Exact commands and source SHAs are in each transcript. Go: go1.26.5 darwin/arm64 with ICU CGO flags. GC_NO_INSTALL=1; GC_TEMPLATE unset; no pnpm or dependency changes. Python warnings are the existing os.fork multithreading deprecations. Transcripts are trimmed and retain all Go test result lines.
+
+Final review: installed-helper immutable snapshot, review mode, --class QUICK, --model gpt-6-astra, base 355a458adad243a7e17968e72832b9ffc73df6d5, head 89d3b6692f050b96e3416928b249a079889a6b1d. Verdict: CLEAN. The identical source delta on the twin is separately tested; parity and the helper hash are recorded. The earlier BLOCK is not presented as clean.
+
+The preceding fork head 355a458a failed Check in unchanged Gastown shell tests (canonical-collision/redirected-artifact metadata assertions and missing rg); CodeQL passed. round3-previous-fork-ci.txt records run 38698882854. Final PR-head CI is reported separately in READY 3.
+
+Sibling footer matches: 0. Footer-contract docs/README matches: 0. Adapter matches are only the footer regression guard and the three unrelated turn_ref protocol lines. No Slack post, manifest change, adapter rebuild, rollout, merge or ready-for-review action was performed.

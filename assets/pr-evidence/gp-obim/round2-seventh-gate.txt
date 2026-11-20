@@ -1,0 +1,11 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (2002 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T03:54:47Z
+
+- **Major — [publish_readback_match.go:133](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:133): Valid path links fail suffix validation.** Posted `www.a.co/x,www.b.co/y` and returned `<http://www.a.co/x|www.a.co/x>,<http://www.b.co/y|www.b.co/y>` normalize identically, but the guard rejects the comma-separated suffix because the first URL has a path. It also rejects `www.a.co/x🎉` when Slack preserves the emoji outside the link as `:tada:`. Compare the preserved suffix against returned spans while retaining protection against deleted URL bytes; add both regressions.
+
+- **Major — [publish_readback_match.go:24](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:24): Escaped prose is misclassified as an explicit link.** Posted `Use <status: done 🎉>` and returned `Use &lt;status: done :tada:&gt;` normalize correctly, but the scheme-prefix check treats both prose spans as destinations and rejects their differing emoji spellings. Distinguish genuine links from angle-delimited prose before enforcing destination equality, and add an escaped-prose emoji regression.
+
+Both failures produce `readback_unconfirmed`, leaving keyed retries able to duplicate delivered messages.
+
+No findings in M1 or N3. Counterexamples were checked with an in-memory model; Go tests were not run under the read-only constraint.
+
+VERDICT: BLOCK

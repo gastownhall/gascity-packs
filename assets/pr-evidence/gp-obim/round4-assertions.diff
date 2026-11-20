@@ -1,0 +1,193 @@
+diff --git a/slack-full/adapter/publish_readback_test.go b/slack-full/adapter/publish_readback_test.go
+index 8ccc49c1..8df6b4af 100644
+--- a/slack-full/adapter/publish_readback_test.go
++++ b/slack-full/adapter/publish_readback_test.go
+@@ -356 +356 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"comma path suffix stays literal", "www.a.co/x,:id:", "<http://www.a.co/x|www.a.co/x>,:ok:", false},
++		{"path sentence comma before prose alias", "www.a.co/x,:thumbsup:", "<http://www.a.co/x|www.a.co/x>,:+1:", true},
+@@ -405,0 +406,28 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
++		{"round4 curly double opening quote stays literal", "“www.a.co/x“:id:", "“<http://www.a.co/x|www.a.co/x>“:ok:", false},
++		{"round4 curly single opening quote stays literal", "‘www.a.co/x‘:id:", "‘<http://www.a.co/x|www.a.co/x>‘:ok:", false},
++		{"round4 guillemet opening quote stays literal", "«www.a.co/x«:id:", "«<http://www.a.co/x|www.a.co/x>«:ok:", false},
++		{"round4 single guillemet opening quote stays literal", "‹www.a.co/x‹:id:", "‹<http://www.a.co/x|www.a.co/x>‹:ok:", false},
++		{"round4 literal underscore run before auto link", "a" + strings.Repeat("_", 39970) + "b www.a.co", "a" + strings.Repeat("_", 39970) + "b <http://www.a.co|www.a.co>", true},
++		{"round4 internal Unicode before path text stays literal", "https://a.co/🎉report", "<https://a.co/>:x:report", false},
++		{"round4 implicit internal Unicode before path text stays literal", "www.a.co/🎉report", "<http://www.a.co/|www.a.co/>:x:report", false},
++		{"round4 userinfo shortcode stays literal", "https://user:id:@example.com", "<https://user>:ok:@example.com", false},
++		{"round4 IPv6 authority shortcode stays literal", "https://[2001:b::1]", "<https://[2001>:a::1]", false},
++		{"round4 IPv6 host adjacent alias", "https://[2001:b::1]:thumbsup:", "<https://[2001:b::1]>:+1:", true},
++		{"round4 implicit IPv6 host adjacent alias", "[2001:b::1]:thumbsup:", "<http://[2001:b::1]|[2001:b::1]>:+1:", true},
++		{"round4 userinfo then host adjacent alias", "https://user:id:@example.com:thumbsup:", "<https://user>:id:@example.com:+1:", true},
++		{"round4 userinfo marker stays literal", "*https://user*:id:@example.com", "*<https://user>*:ok:@example.com", false},
++		{"round4 unchanged userinfo before trailing emoji", "https://user:id:@example.com🎉", "<https://user>:id:@example.com:tada:", true},
++		{"round4 internal query emoji before parameter stays literal", "https://a.co/?q=🎉&id=:id:", "<https://a.co/?q=>🎉&id=:ok:", false},
++		{"round4 paired query quotes stay literal", "'See https://a.co/?q='abc':id: details'", "'See <https://a.co/?q=>'abc':ok: details'", false},
++		{"round4 path segment marker before query stays literal", "*https://a.co/*?:id:", "*<https://a.co/>*?:ok:", false},
++		{"round4 prose text after closing marker and emoji", "*www.a.co/x*:thumbsup:now", "*<http://www.a.co/x|www.a.co/x>*:+1:now", true},
++		{"round4 full authority shortcode before path stays literal", "https://a.co:id:/x", "<https://a.co>:ok:/x", false},
++		{"round4 implicit authority shortcode before path stays literal", "www.a.co:id:/x", "<http://www.a.co|www.a.co>:ok:/x", false},
++		{"round4 review Unicode before query stays literal", "https://a.co/🎉?:id:", "<https://a.co/>🎉?:ok:", false},
++		{"round4 unformatted path before Unicode", "https://a.co/pr/1🎉", "<https://a.co/pr/1>:tada:", true},
++		{"round4 unformatted host before Unicode", "https://a.co👍", "<https://a.co>:+1:", true},
++		{"round4 unformatted path punctuation before Unicode", "https://a.co/pr/1!🎉", "<https://a.co/pr/1>!:tada:", true},
++		{"round4 comma inside path stays literal", "www.a.co/x,:id:/end", "<http://www.a.co/x|www.a.co/x>,:ok:/end", false},
++		{"round4 Unicode inside full path stays literal", "https://a.co/👍/:id:", "<https://a.co/>:+1:/:id:", false},
++		{"round4 unchanged Unicode inside path", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/👍/:id:", true},
++		{"round4 gate closing parenthesis before emoji", "(https://a.co)🎉", "(<https://a.co>):tada:", true},
+@@ -409 +437 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"full URI unformatted suffix stays literal", "https://a.co:thumbsup:", "<https://a.co>:+1:", false},
++		{"full URI host adjacent alias is prose", "https://a.co:thumbsup:", "<https://a.co>:+1:", true},
+@@ -451 +479 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"inherited implicit URI permits Unicode conversion", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/:+1:/:id:", true},
++		{"inherited implicit URI preserves internal Unicode", "hou.vc/@U123/👍/:id:", "<http://hou.vc/|hou.vc/><@U123>/:+1:/:id:", false},
+@@ -465,2 +493,2 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"unlabeled URI changed literal Unicode suffix", "https://example.com/🎉", "<https://example.com/>:tada:", false},
+-		{"neighboring URI preserves strict suffix", "www.a.co,https://b.co/🎉", "<http://www.a.co|www.a.co>,<https://b.co/>:tada:", false},
++		{"full URI trailing Unicode is prose", "https://example.com/🎉", "<https://example.com/>:tada:", true},
++		{"neighboring URI trailing Unicode is prose", "www.a.co,https://b.co/🎉", "<http://www.a.co|www.a.co>,<https://b.co/>:tada:", true},
+@@ -484,2 +512,2 @@ func TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate(t *testing.T) {
+-		{"hostname followed by skin tone and text", "www.a.co👍🏽now", "<http://www.a.co|www.a.co>:+1::skin-tone-4:now", true},
+-		{"path followed by skin tone and text", "www.a.co/x👍🏽now", "<http://www.a.co/x|www.a.co/x>:+1::skin-tone-4:now", true},
++		{"hostname Unicode before continued text stays literal", "www.a.co👍🏽now", "<http://www.a.co|www.a.co>:+1::skin-tone-4:now", false},
++		{"path Unicode before continued text stays literal", "www.a.co/x👍🏽now", "<http://www.a.co/x|www.a.co/x>:+1::skin-tone-4:now", false},
+@@ -1147,0 +1176,140 @@ func assertSlackReadbackQuery(t *testing.T, query url.Values, channel, messageTS
++
++// The cross product is the oracle: URL spelling, enclosure and prose suffix are
++// independent fixtures, not outputs from the tokenizer under test. The few
++// negative canonical cells are typed identifiers continuing an unenclosed path
++// or query. Raw echoes always match; changed link destinations never match.
++func TestSlackNormalizeURLSuffixMatrix(t *testing.T) {
++	urls := []struct {
++		name, posted, target string
++		implicit, path       bool
++	}{
++		{"bare-domain", "a.co", "http://a.co", true, false},
++		{"http", "http://a.co", "http://a.co", false, false},
++		{"https", "https://a.co", "https://a.co", false, false},
++		{"www", "www.a.co", "http://www.a.co", true, false},
++		{"path", "https://a.co/a_b/~c/*d/(e)", "https://a.co/a_b/~c/*d/(e)", false, true},
++		{"query", "https://a.co/search?q=one&x=two", "https://a.co/search?q=one&x=two", false, true},
++		{"other-scheme", "s3://a.co/pr/1", "s3://a.co/pr/1", false, true},
++	}
++	enclosures := []struct{ name, open, close string }{
++		{"none", "", ""}, {"bold", "*", "*"}, {"italic", "_", "_"},
++		{"strike", "~", "~"}, {"parens", "(", ")"}, {"square", "[", "]"},
++		{"double-quotes", "\"", "\""}, {"single-quotes", "'", "'"},
++		{"angle-less", "See: ", ""}, {"double-bold", "**", "**"},
++		{"double-italic", "__", "__"},
++		{"curly-double", "“", "”"}, {"curly-single", "‘", "’"},
++		{"guillemets", "«", "»"}, {"single-guillemets", "‹", "›"},
++	}
++	suffixes := []struct{ name, posted, stored string }{
++		{"nothing", "", ""}, {"space-text", " then text", " then text"},
++		{"comma", ",", ","}, {"period", ".", "."}, {"question", "?", "?"},
++		{"exclamation", "!", "!"}, {"shortcode", ":thumbsup:", ":+1:"},
++		{"space-emoji", " 🎉", " :tada:"},
++		{"second-link", " https://b.co/next", " <https://b.co/next>"},
++		{"unicode", "🎉", ":tada:"},
++		{"comma-shortcode", ",:thumbsup:", ",:+1:"},
++		{"period-shortcode", ".:thumbsup:", ".:+1:"},
++		{"question-shortcode", "?:thumbsup:", "?:+1:"},
++		{"exclamation-shortcode", "!:thumbsup:", "!:+1:"},
++		{"comma-unicode", ",🎉", ",:tada:"},
++		{"text-shortcode", "done:thumbsup:", "done:+1:"},
++		{"shortcode-text", ":thumbsup:now", ":+1:now"},
++	}
++	cells := 0
++	for _, url := range urls {
++		link := "<" + url.target + ">"
++		if url.implicit {
++			link = "<" + url.target + "|" + url.posted + ">"
++		}
++		for _, enclosure := range enclosures {
++			for _, suffix := range suffixes {
++				posted := enclosure.open + url.posted + enclosure.close + suffix.posted
++				stored := enclosure.open + link + enclosure.close + suffix.stored
++				want := enclosure.close != "" ||
++					(((suffix.name != "shortcode" && suffix.name != "text-shortcode" && suffix.name != "shortcode-text") || !url.path) && suffix.name != "question-shortcode")
++				// An underscore/apostrophe between word characters is a literal
++				// identifier character, even when an opener appeared earlier.
++				if suffix.name == "text-shortcode" && url.path && !strings.HasSuffix(url.posted, ")") &&
++					(enclosure.name == "italic" || enclosure.name == "double-italic" || (enclosure.name == "single-quotes" || enclosure.name == "curly-single")) {
++					want = false
++				}
++				for _, variant := range []struct {
++					name, stored string
++					want         bool
++				}{
++					{"canonical", stored, want},
++					{"verbatim", posted, true},
++					{"changed-target", strings.Replace(stored, "a.co", "evil.co", 1), false},
++				} {
++					cells++
++					name := url.name + "/" + enclosure.name + "/" + suffix.name + "/" + variant.name
++					t.Run(name, func(t *testing.T) {
++						row := struct {
++							Name, Posted, Stored string
++							Want                 bool
++						}{name, posted, variant.stored, variant.want}
++						encoded, err := json.Marshal(row)
++						if err != nil {
++							t.Fatal(err)
++						}
++						t.Logf("URL_MATRIX %s", encoded)
++						if got := slackReadbackTextMatches(posted, variant.stored); got != variant.want {
++							t.Fatalf("match(%q, %q) = %v, want %v", posted, variant.stored, got, variant.want)
++						}
++					})
++				}
++			}
++		}
++	}
++	if cells != 5355 {
++		t.Fatalf("matrix cells = %d, want 7 URL forms x 15 enclosures x 17 suffixes x 3 readbacks = 5355", cells)
++	}
++}
++
++// Split readbacks must preserve internal URI bytes regardless of enclosure.
++// These mutations exercise the token end, rather than merely changing a whole
++// returned target that the initial alignment would already reject.
++func TestSlackNormalizeURLLiteralMatrix(t *testing.T) {
++	for _, url := range []struct{ posted, stored string }{
++		{"https://a.co/", "<https://a.co/>"},
++		{"www.a.co/", "<http://www.a.co/|www.a.co/>"},
++	} {
++		for _, enclosure := range []struct{ open, close string }{
++			{"", ""}, {"*", "*"}, {"_", "_"}, {"~", "~"}, {"**", "**"},
++			{"__", "__"}, {"'", "'"}, {"\"", "\""}, {"(", ")"}, {"[", "]"},
++		} {
++			for _, path := range []string{
++				":_custom:/:id:/x", ":white_check_mark:/:id:/x", "foo_bar/:id:/x",
++				"~user/:id:/x", "*user/:id:/x", "**:id:/x", "*:id:*", "**:id:",
++				"(x/:id:)/end", "?q=':id:'", "x,:id:/end", "*:id:@U123/x",
++				"🎉?:id:", "👍?:id:", "🎉#:id:", "🎉/:id:",
++				"?q='abc':id:", `?q="abc":id:`, "?q=“abc”:id:", "?q=‘abc’:id:",
++				"?q=«abc»:id:", "?q=‹abc›:id:", "'abc':id:", `"abc":id:`,
++				`?q='a\'b':id:`, `?q="a\"b":id:`,
++				"?q='a)b':id:", "?q='a]b':id:", `?q="a}b":id:`, `?q='a\')b':id:`,
++				"?q:'abc':id:", `?q={"x":"abc"}:id:`,
++				"?q=🎉&id=:id:", "?q=🎉;id=:id:", "?q=🎉&:id:",
++				"?q=🎉value:id:", "?q=🎉:id:", "?q=🎉=value:id:",
++				"🎉ref:id:", "👍ref:id:",
++			} {
++				for _, suffix := range []struct{ posted, stored string }{
++					{"", ""}, {" :thumbsup:", " :+1:"}, {"🎉", ":tada:"},
++				} {
++					posted := enclosure.open + url.posted + path + enclosure.close + suffix.posted
++					for _, changed := range []bool{false, true} {
++						t.Run(posted+"/changed="+map[bool]string{true: "true", false: "false"}[changed], func(t *testing.T) {
++							storedPath := strings.ReplaceAll(path, "@U123", "<@U123>")
++							if changed {
++								storedPath = strings.Replace(storedPath, ":id:", ":ok:", 1)
++							}
++							stored := enclosure.open + url.stored + storedPath + enclosure.close + suffix.stored
++							if got := slackReadbackTextMatches(posted, stored); got == changed {
++								t.Fatalf("match(%q, %q) = %v, want %v", posted, stored, got, !changed)
++							}
++						})
++					}
++				}
++			}
++		}
++	}
++}

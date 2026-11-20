@@ -1,0 +1,9 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (3009 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T04:45:33Z
+
+- **Major — Preserve suffixes on full-scheme auto-links.** [publish_readback_match.go:130](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:130): Suffix verification only runs for `implicit` links. Posting `https://example.com/:id:` and reading back `<https://example.com/>` now succeeds: the link consumes the URL prefix, then the tail comparison folds away `:id:`. This confirms a truncated literal URL that the baseline rejected. Apply suffix protection to scheme-bearing auto-links too, and add this regression case.
+
+- **Major — Bound suffix verification at neighboring angle spans.** [publish_readback_match.go:156](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:156): The suffix checker receives the entire normalized remainder and crosses into subsequent explicit links. For example, posting `www.a.co,<https://b.co/🎉|b.co/🎉>` and receiving `<http://www.a.co|www.a.co>,<https://b.co/🎉|b.co/:tada:>` incorrectly fails. Redundant-label normalization makes the remainders begin `,b.co/…` and `,https://b.co/…`, so suffix verification rejects before the explicit-label matcher can accept the permitted conversion. Preserve structural boundaries here and add this combined regression case.
+
+Go tests were not run because they create files, contrary to the read-only gate.
+
+VERDICT: BLOCK

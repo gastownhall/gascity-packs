@@ -1,0 +1,7 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (1946 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T04:24:49Z
+
+- **Major — [publish_readback_match.go:115](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:115): Preserve boundaries after angle-bracket prose.** Posting `Use <std::vector>www.a.co` and reading back `Use &lt;std::vector&gt;<http://www.a.co|www.a.co>` previously matched. Normalization now leaves `std::vectorwww.a.co`, and this check rejects the link because its preceding character is `r`. Only recognized links/references receive the boundary exemption. This produces `readback_unconfirmed`, allowing a retry to repost an already delivered message. Preserve original non-link angle boundaries too, and add this regression case.
+
+Validation used source inspection and in-memory probes. Go tests were not run because they write build and temporary files.
+
+VERDICT: BLOCK

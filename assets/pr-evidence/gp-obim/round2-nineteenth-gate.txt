@@ -1,0 +1,7 @@
+# codex-gate exec: prompt /tmp/gp-obim-round2.LCwHSC/fork-gate-prompt.txt (2474 bytes) repo /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; model gpt-6-astra; 2026-10-15T06:17:53Z
+
+- **Minor — Square-bracketed prose can fail readback** at [publish_readback_match.go:411](/Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:411). `www.a.co[:thumbsup:]` versus `<http://www.a.co|www.a.co>[:+1:]` previously matched but now fails: `[` falls through and disables shortcode normalization. Treat `[` as a prose boundary after a bare hostname, while preserving literal brackets within paths, and add this regression case.
+
+Static review only; tests were not run under the read-only gate.
+
+VERDICT: CLEAN

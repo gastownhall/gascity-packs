@@ -1,0 +1,12 @@
+# codex-gate review: base e6163fcaef4fb0a225e0234ba7d39204eedc929f (merge base of --base e6163fcaef4fb0a225e0234ba7d39204eedc929f = e6163fcaef4fb0a225e0234ba7d39204eedc929f and the head) head fcc0fffbd6568d289d0c743fbd284f22244829c3; 3 file(s); class QUICK; model gpt-6-astra; 2026-10-15T09:05:32Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 5 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |   5 +
+#  slack-full/adapter/publish_readback_match.go | 388 +++++++++++++++++++++++++++++++------------------------------------
+#  slack-full/adapter/publish_readback_test.go  | 138 +++++++++++++++++++++++-
+#  3 files changed, 319 insertions(+), 212 deletions(-)
+
+- **Major — Changed query identifiers can falsely confirm delivery** at [publish_readback_match.go:520](/var/folders/n0/yx26c20j4y5b0597zqpc5kzh0000gn/T/codex-gate-tree.Aer56K/tree/slack-full/adapter/publish_readback_match.go:520). For expected `https://a.co/🎉?:id:` and stored `<https://a.co/>🎉?:ok:`, the new matcher returns true; the base rejects it. The `?` before a shortcode leaves `proseTail=true` and `pathAfter=false`, allowing the preceding emoji to move the URL boundary before the query. Consequently, `:id:` and `:ok:` compare as prose emoji despite being different query contents. Mark this query continuation as literal and add a regression case.
+
+Tests were not run under the read-only gate.
+
+VERDICT: BLOCK

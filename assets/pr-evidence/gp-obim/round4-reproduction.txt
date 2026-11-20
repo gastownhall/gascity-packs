@@ -1,0 +1,8 @@
+2026/10/15 03:49:31 publish: conv=C1 text=18ch posted=18ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 03:49:31 slack readback failed: Slack readback content mismatch for message 1700.001
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.01s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_gate_closing_parenthesis_before_emoji (0.00s)
+        publish_readback_test.go:561: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.267s
+FAIL

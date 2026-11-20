@@ -1,0 +1,14 @@
+# codex-gate review: base e6163fcaef4fb0a225e0234ba7d39204eedc929f (merge base of --base e6163fcaef4fb0a225e0234ba7d39204eedc929f = e6163fcaef4fb0a225e0234ba7d39204eedc929f and the head) head e5da7c26681606fa2e7d2a4c5398e49d047829f4; 3 file(s); class QUICK; model gpt-6-astra; 2026-10-15T09:12:30Z
+# reviewed in a pristine detached worktree at the head (HEAD of /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex; 23 untracked entr(ies) there ignored)
+#  slack-full/CHANGELOG.md                      |   5 +
+#  slack-full/adapter/publish_readback_match.go | 390 +++++++++++++++++++++++++++++++------------------------------------
+#  slack-full/adapter/publish_readback_test.go  | 140 +++++++++++++++++++++++-
+#  3 files changed, 323 insertions(+), 212 deletions(-)
+
+- **Major — Opening quotes can incorrectly terminate a URL.** [publish_readback_match.go:513](/var/folders/n0/yx26c20j4y5b0597zqpc5kzh0000gn/T/codex-gate-tree.VNK6no/tree/slack-full/adapter/publish_readback_match.go:513) checks delimiter identity and width without checking quote direction. Consequently, posted `“www.a.co/x“:id:` matches stored `“<http://www.a.co/x|www.a.co/x>“:ok:`: the second opening quote releases the literal URL suffix into emoji folding. The base rejects this changed content. Exclude opening quotation marks from closing-boundary detection.
+
+- **Major — Following text breaks previously accepted emoji aliases.** [publish_readback_match.go:511](/var/folders/n0/yx26c20j4y5b0597zqpc5kzh0000gn/T/codex-gate-tree.VNK6no/tree/slack-full/adapter/publish_readback_match.go:511) leaves `proseTail` false after scanning ordinary text. Posted `*www.a.co/x*:thumbsup:now` therefore fails against `*<http://www.a.co/x|www.a.co/x>*:+1:now`, although the base accepts it. The closing formatting marker is ignored and the alias becomes literal, producing a permanent readback failure. Preserve formatting boundaries when an adjacent emoji is followed by prose; add this case to the matrix.
+
+Go tests were not run under the read-only gate.
+
+VERDICT: BLOCK

@@ -1,0 +1,16 @@
+Source: 95dbd62b
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new link guard rejects unchanged messages containing certain adjacent explicit and automatic links, regressing delivery confirmation. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Review comment:
+
+- [P2] Preserve explicit-link boundaries when checking verbatim spans — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:97-99
+  For posted text `<https://a.co>,www.b.co`, normalization produces `https://a.co,www.b.co`, which `slackVerbatimSpan` treats as one URI. If Slack returns `<https://a.co>,<http://www.b.co|www.b.co>`, this check rejects the second link as being inside that URI, despite the explicit boundary in the original message. Previously successful readbacks therefore become permanent `readback_unconfirmed` failures. Preserve the original link boundaries when constructing or checking verbatim spans.
+The new link guard rejects unchanged messages containing certain adjacent explicit and automatic links, regressing delivery confirmation. Go tests could not run because the read-only sandbox prevents creation of the build directory.
+
+Review comment:
+
+- [P2] Preserve explicit-link boundaries when checking verbatim spans — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:97-99
+  For posted text `<https://a.co>,www.b.co`, normalization produces `https://a.co,www.b.co`, which `slackVerbatimSpan` treats as one URI. If Slack returns `<https://a.co>,<http://www.b.co|www.b.co>`, this check rejects the second link as being inside that URI, despite the explicit boundary in the original message. Previously successful readbacks therefore become permanent `readback_unconfirmed` failures. Preserve the original link boundaries when constructing or checking verbatim spans.

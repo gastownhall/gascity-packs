@@ -1,0 +1,18 @@
+2026/10/15 04:22:43 publish: conv=C1 text=20ch posted=20ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 04:22:43 publish: conv=C1 text=25ch posted=25ch reply_to= idem=link-key session=s1 as="" mentions_rewritten=false
+2026/10/15 04:22:43 slack readback failed: Slack readback content mismatch for message 1700.001
+--- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate (0.01s)
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_path_segment_marker_before_query_stays_literal (0.00s)
+        publish_readback_test.go:572: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:true FailureKind: Metadata:map[] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=false
+    --- FAIL: TestHandlePublishKeyedAutoLinksReadBackWithoutDuplicate/round4_prose_text_after_closing_marker_and_emoji (0.00s)
+        publish_readback_test.go:572: receipt = {Conversation:{ScopeID: Provider: AccountID: ConversationID:C1 ParentConversationID: Kind:} MessageID:1700.001 Delivered:false FailureKind:permanent Metadata:map[readback:readback_unconfirmed] readbackTarget:{channel: messageTS: threadTS: expectedText:} sourceSessionID:}, want delivered=true
+--- FAIL: TestSlackNormalizeURLSuffixMatrix (0.03s)
+    --- FAIL: TestSlackNormalizeURLSuffixMatrix/path/bold/text-shortcode/canonical (0.00s)
+        publish_readback_test.go:1236: URL_MATRIX {"Name":"path/bold/text-shortcode/canonical","Posted":"*https://a.co/a_b/~c/*d/(e)*done:thumbsup:","Stored":"*\u003chttps://a.co/a_b/~c/*d/(e)\u003e*done:+1:","Want":true}
+        publish_readback_test.go:1238: match("*https://a.co/a_b/~c/*d/(e)*done:thumbsup:", "*<https://a.co/a_b/~c/*d/(e)>*done:+1:") = false, want true
+    --- FAIL: TestSlackNormalizeURLSuffixMatrix/path/double-bold/text-shortcode/canonical (0.00s)
+        publish_readback_test.go:1236: URL_MATRIX {"Name":"path/double-bold/text-shortcode/canonical","Posted":"**https://a.co/a_b/~c/*d/(e)**done:thumbsup:","Stored":"**\u003chttps://a.co/a_b/~c/*d/(e)\u003e**done:+1:","Want":true}
+        publish_readback_test.go:1238: match("**https://a.co/a_b/~c/*d/(e)**done:thumbsup:", "**<https://a.co/a_b/~c/*d/(e)>**done:+1:") = false, want true
+FAIL
+FAIL	github.com/sjarmak/gc-slack-adapter	0.303s
+FAIL

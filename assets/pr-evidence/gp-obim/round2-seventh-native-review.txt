@@ -1,0 +1,22 @@
+Source: e035c801
+cwd: /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex
+env -u GC_TEMPLATE GC_NO_INSTALL=1 codex -p city -m gpt-6-astra -a never -s read-only review --base 065d009bfff97bb9bbbddb9642bc9589a2308c91 -c 'sandbox_workspace_write.network_access=true' < /dev/null
+
+The new link-verification guard rejects valid Slack canonicalizations, producing false permanent delivery failures. Go tests could not run because the sandbox prohibits temporary-file creation.
+
+Full review comments:
+
+- [P2] Skip verbatim occurrences when searching for an auto-linked URL — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:64-68
+  A valid message containing a leading `🎉`, a fenced code block with 200 `www.a.co` lines, and a final bare `www.a.co` is now rejected. Slack converts the leading emoji to `:tada:`, so the exact-prefix shortcut fails; this search then exhausts its budget on occurrences inside the code block before reaching the actual link. This roughly 1.8 KB message previously confirmed but now produces permanent `readback_unconfirmed`. Skip verbatim candidates or align normalized prefixes without repeatedly charging for the entire prefix.
+
+- [P2] Exclude angle-bracket prose from explicit-link detection — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:23-28
+  For escaped prose such as `&lt;Status: ready 🎉&gt;`, Slack can return `&lt;Status: ready :tada:&gt;`. After entity unescaping, this scheme-prefix check incorrectly records the entire `Status: ready 🎉` string as a link destination. The destination comparison then rejects the legitimate emoji conversion, although the previous normalized comparison accepted it. Restrict explicit-link detection to actual link syntax so colon-bearing prose continues through emoji normalization.
+The new link-verification guard rejects valid Slack canonicalizations, producing false permanent delivery failures. Go tests could not run because the sandbox prohibits temporary-file creation.
+
+Full review comments:
+
+- [P2] Skip verbatim occurrences when searching for an auto-linked URL — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:64-68
+  A valid message containing a leading `🎉`, a fenced code block with 200 `www.a.co` lines, and a final bare `www.a.co` is now rejected. Slack converts the leading emoji to `:tada:`, so the exact-prefix shortcut fails; this search then exhausts its budget on occurrences inside the code block before reaching the actual link. This roughly 1.8 KB message previously confirmed but now produces permanent `readback_unconfirmed`. Skip verbatim candidates or align normalized prefixes without repeatedly charging for the entire prefix.
+
+- [P2] Exclude angle-bracket prose from explicit-link detection — /Users/tailor512/city/.worktrees/gascity-packs/lane-implementation-worker-codex/slack-full/adapter/publish_readback_match.go:23-28
+  For escaped prose such as `&lt;Status: ready 🎉&gt;`, Slack can return `&lt;Status: ready :tada:&gt;`. After entity unescaping, this scheme-prefix check incorrectly records the entire `Status: ready 🎉` string as a link destination. The destination comparison then rejects the legitimate emoji conversion, although the previous normalized comparison accepted it. Restrict explicit-link detection to actual link syntax so colon-bearing prose continues through emoji normalization.
