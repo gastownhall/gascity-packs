@@ -102,6 +102,73 @@ class ClosureTests(unittest.TestCase):
         self.assertEqual(ids, [b["id"] for b in collect.closure(list(reversed(beads)), ROOT)])
 
 
+class GraphV2ClosureTests(unittest.TestCase):
+    def test_shared_convoy_does_not_pull_in_a_neighboring_run(self) -> None:
+        beads = [
+            bead(ROOT, metadata={"gc.kind": "workflow", "gc.formula_contract": "graph.v2",
+                                 "gc.input_convoy_id": "ga-shared"},
+                 dependencies=[{"depends_on_id": "ga-shared"}]),
+            bead("ga-step", metadata={"gc.root_bead_id": ROOT},
+                 dependencies=[{"id": "ga-neighbor-step"}]),
+            bead("ga-shared", issue_type="convoy"),
+            bead("ga-neighbor", metadata={"gc.kind": "workflow",
+                                         "gc.formula_contract": "graph.v2",
+                                         "gc.var.convoy_id": "ga-shared"}),
+            bead("ga-neighbor-step", metadata={"gc.root_bead_id": "ga-neighbor"}),
+            bead("ga-parent-link-only", metadata={"gc.parent_bead_id": "ga-step"}),
+            bead("ga-unbound", metadata=None, dependencies=None),
+        ]
+        self.assertEqual([b["id"] for b in collect.closure(beads, ROOT)], [ROOT, "ga-step"])
+
+    def test_root_without_owned_records_does_not_fall_back_to_traversal(self) -> None:
+        beads = [
+            bead(ROOT, metadata={"gc.kind": "workflow", "gc.formula_contract": "graph.v2",
+                                 "gc.var.issue": "ga-epic"}),
+            bead("ga-epic", issue_type="epic"),
+            bead("ga-other", dependencies=[{"depends_on_id": ROOT}]),
+        ]
+        self.assertEqual(collect.closure(beads, ROOT), [beads[0]])
+
+    def test_owned_records_are_sorted_regardless_of_input_order(self) -> None:
+        beads = [
+            bead("ga-z", metadata={"gc.root_bead_id": ROOT}),
+            bead(ROOT, metadata={"gc.kind": "workflow", "gc.formula_contract": "graph.v2"}),
+            bead("ga-a", metadata={"gc.root_bead_id": ROOT, "gc.attempt": "2"}),
+        ]
+        for rows in (beads, list(reversed(beads))):
+            self.assertEqual([b["id"] for b in collect.closure(rows, ROOT)],
+                             ["ga-a", ROOT, "ga-z"])
+
+    def test_roots_without_both_graph_v2_markers_keep_legacy_closure(self) -> None:
+        for metadata in ({"gc.kind": "workflow"}, {"gc.formula_contract": "graph.v2"},
+                         {"gc.kind": "step", "gc.formula_contract": "graph.v2"}):
+            with self.subTest(metadata=metadata):
+                beads = [bead(ROOT, metadata=metadata,
+                              dependencies=[{"depends_on_id": "ga-legacy"}]),
+                         bead("ga-legacy")]
+                self.assertEqual([b["id"] for b in collect.closure(beads, ROOT)],
+                                 ["ga-legacy", ROOT])
+
+
+    def test_only_visible_direct_blockers_are_retained_as_timing_context(self) -> None:
+        beads = [
+            bead(ROOT, metadata={"gc.kind": "workflow", "gc.formula_contract": "graph.v2"}),
+            bead("ga-step", metadata={"gc.root_bead_id": ROOT}, dependencies=[
+                {"depends_on_id": "ga-blocker", "type": "blocks"},
+                {"id": "ga-default-blocker"},
+                {"id": "ga-related", "type": "related"},
+                {"id": "ga-missing", "type": "blocks"}]),
+            bead("ga-blocker", dependencies=[{"id": "ga-transitive"}]),
+            bead("ga-default-blocker"), bead("ga-related"), bead("ga-transitive"),
+        ]
+        for rows in (beads, list(reversed(beads))):
+            owned = collect.closure(rows, ROOT)
+            self.assertEqual([b["id"] for b in owned], [ROOT, "ga-step"])
+            captured = collect.timing_context(rows, owned, ROOT)
+            self.assertEqual([b["id"] for b in captured],
+                             ["ga-blocker", "ga-default-blocker", ROOT, "ga-step"])
+
+
 class SlugTests(unittest.TestCase):
     def test_claude_code_slug_replaces_slashes_and_dots(self) -> None:
         self.assertEqual(collect.project_slug("/home/u/work.git"), "-home-u-work-git")
@@ -366,6 +433,44 @@ class CollectEndToEndTests(unittest.TestCase):
         self.assertIn("tokens: in 1000 out 200", proc.stdout)
         self.assertIn("runtime wall: 60.0s", proc.stdout)
         self.assertIn("est cost: $0.5000", proc.stdout)
+
+
+    def test_graph_v2_blocker_context_does_not_expand_event_or_usage_membership(self) -> None:
+        base = pathlib.Path(self.tmp.name)
+        rows = json.loads((base / "rig-beads.json").read_text())
+        rows[0]["metadata"].update({"gc.kind": "workflow", "gc.formula_contract": "graph.v2"})
+        rows[1]["dependencies"] = [{"id": "ga-blocker", "type": "blocks"}]
+        rows += [bead("ga-blocker", created_at="2026-07-01T10:00:00Z",
+                      closed_at="2026-07-01T10:04:00Z",
+                      metadata={"gc.root_bead_id": "ga-other"},
+                      dependencies=[{"id": "ga-transitive"}]),
+                 bead("ga-transitive", closed_at="2026-07-01T10:03:00Z")]
+        rig_input = base / "graph-rig-beads.json"
+        rig_input.write_text(json.dumps(rows))
+        # Use a separate city input so the legacy fixture remains unchanged.
+        city = base / "graph-city"
+        (city / ".gc").mkdir(parents=True)
+        (city / ".gc" / "events.jsonl").write_text("".join(
+            json.dumps({"ts": "2026-07-01T10:05:00Z", "subject": bid}) + "\n"
+            for bid in ("ga-s1", "ga-blocker", "ga-transitive")))
+        (city / ".gc" / "usage.jsonl").write_text("".join(
+            json.dumps({"run_id": bid, "idempotency_key": bid}) + "\n"
+            for bid in (ROOT, "ga-blocker", "ga-transitive")))
+        out = base / "graph-capture"
+        env = dict(os.environ, PATH=f"{base / 'bin'}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+                   HOME=str(self.home), FAKE_BD_RIG=str(rig_input),
+                   FAKE_BD_CITY=str(base / "city-beads.json"))
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "profile_collect.py"), ROOT,
+             "--rig", str(self.rig), "--city", str(city), "--out", str(out)],
+            capture_output=True, text=True, env=env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        captured = json.loads((out / "beads.json").read_text())
+        self.assertEqual({b["id"] for b in captured}, {ROOT, "ga-s1", "ga-blocker"})
+        with gzip.open(out / "events.window.jsonl.gz", "rt") as f:
+            self.assertEqual([json.loads(line)["subject"] for line in f], ["ga-s1"])
+        facts = (out / "usage.window.jsonl").read_text().splitlines()
+        self.assertEqual([json.loads(line)["run_id"] for line in facts], [ROOT])
 
 
 class CollectFailureTests(unittest.TestCase):

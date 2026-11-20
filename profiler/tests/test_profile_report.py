@@ -136,6 +136,27 @@ class ClosedRunReportTests(unittest.TestCase):
         self.assertNotIn("src=", html)
 
 
+class GraphV2TimingContextTests(unittest.TestCase):
+    def test_external_blocker_preserves_one_minute_wait_without_becoming_a_step(self) -> None:
+        beads = [
+            bead(ROOT, created_at="2026-07-01T13:00:00Z", closed_at="2026-07-01T13:10:00Z",
+                 metadata={"gc.kind": "workflow", "gc.formula_contract": "graph.v2"}),
+            bead("ga-step", created_at="2026-07-01T13:00:00Z",
+                 started_at="2026-07-01T13:09:00Z", closed_at="2026-07-01T13:10:00Z",
+                 metadata={"gc.root_bead_id": ROOT},
+                 dependencies=[{"id": "ga-blocker", "type": "blocks"}]),
+            bead("ga-blocker", created_at="2026-07-01T13:00:00Z",
+                 started_at="2026-07-01T13:01:00Z", closed_at="2026-07-01T13:08:00Z",
+                 metadata={"gc.root_bead_id": "ga-neighbor"}),
+        ]
+        r = report.analyze(ROOT, beads, [])
+        self.assertEqual([s["id"] for s in r["steps"]], ["ga-step"])
+        self.assertEqual(r["steps"][0]["ready"], "2026-07-01T13:08:00Z")
+        self.assertEqual(r["steps"][0]["wait_m"], 1.0)
+        self.assertEqual(r["totals"]["steps"], 1)
+        self.assertEqual(r["totals"]["dispatch_wait_m"], 1.0)
+
+
 class InFlightRootTests(unittest.TestCase):
     """Regression: an unclosed root used to raise TypeError in --html because
     window.end was None. It must render, and read as in flight."""

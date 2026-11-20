@@ -26,13 +26,25 @@ whatever name the city imports it under (`[imports.profiler]` here).
 | File | Contents |
 |---|---|
 | `manifest.json` | schema (`gc.profile.capture.v1`), window, per-file hashes, disclosed gaps |
-| `beads.json` | the run's full bead closure (root, steps, drain sub-workflows, convoys) |
+| `beads.json` | Graph v2: root-owned beads and visible direct blocking prerequisites for timing; legacy roots: the linked bead closure |
 | `session-beads.json` | agent session + nudge beads for the run window |
 | `events.window.jsonl.gz` | the run's slice of the durable city event log |
 | `transcripts/*.jsonl.gz` | provider transcripts resolved via session `work_dir` + `session_key` |
 | `usage.window.jsonl` | usage facts (tokens / wall / cost) for the run |
 | `formula-provenance.json` | formula identity, runtime vars, packs.lock |
 | `git.json` | commit timestamps and refs from the rig |
+
+
+Graph v2 roots identify themselves with `gc.kind=workflow` and
+`gc.formula_contract=graph.v2`. Their bead capture uses exact root ownership;
+shared launch convoys, epics, and dependencies do not expand run membership.
+The capture also retains raw rows for direct blocking prerequisites of owned
+steps when those rows are already visible in the rig query. These context rows
+supply blocker-close times without counting as steps or expanding event,
+session, or usage membership. Their own dependencies are not traversed, and no
+additional store query is made. Older roots without both markers retain the
+metadata and dependency traversal, which can include shared convoys and related
+runs.
 
 `report` derives step spans (ready → started → closed, with dispatch waits
 computed from blocker-close times), session lanes by role, totals, a
