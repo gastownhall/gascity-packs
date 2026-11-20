@@ -567,6 +567,31 @@ directory cleanup).
 gc mail send mayor/ -s "DOCTOR: <finding>" -m "<details>"
 ```
 
+**Systemd timer sweep (standing since 2026-11-02, per mayor directive after
+the Oct-30 root-timer miss):**
+
+```bash
+systemctl list-timers --all --no-pager
+```
+
+Read the full activation grid for UNFAMILIAR units. This sweep exists
+because the Oct-30 corruption (city-2px: root gk-factory-idle.timer ran
+`bd list` as root every 10min and spawned a root dolt into the gk store)
+was invisible to User= filters and unit listings — only `list-timers --all`
+shows every installed timer on one grid regardless of who installed it.
+
+Red flags:
+- Any timer not seen in prior sweeps, especially ones referencing bd, dolt,
+  gc, gk, or anything under $HOME.
+- Root-installed timers acting on user-owned stores (the Oct-30 pattern).
+- A timer whose NEXT/ACTIVATES columns show units you cannot account for.
+
+Any red flag: capture `systemctl cat <unit>` for the unit and its script,
+then escalate to mayor with the listing pasted — do NOT disable or edit a
+root-installed unit yourself (operator-owned; a wrong disable can break a
+factory lane). A benign new timer (fwupd, logrotate, apt) needs only a log
+line.
+
 Close this step after check."""
 
 [[steps]]
