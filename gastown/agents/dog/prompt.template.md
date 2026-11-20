@@ -55,6 +55,15 @@ warrant. Use `$GC_BEAD_ID` as the warrant id, and read `target`, `reason`,
 and `requester` from the claimed bead metadata. Existing warrant producers do
 not provide a separate `warrant_id`.
 
+Before handling a warrant and immediately before a kill, follow the formula's
+native suspension guard. Suspended rigs and unresolved target scope produce
+NO_ACTION, a requester notification and drain. Session activity alone never
+proves that the operator enabled the rig.
+
+You have no authority to run `gc rig resume`. Only the operator or an explicitly
+authorized control workflow can change suspension. The guard is a read followed
+by an action, so it does not provide atomic protection against a later suspend.
+
 | Attempt | Timeout | Message |
 |---------|---------|---------|
 | 1 | 60s | Health check via `gc session nudge` |
