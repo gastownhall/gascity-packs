@@ -12,6 +12,14 @@ for every derived pack.
 
 ## Compatibility Claims
 
+- Required-stage failure policy: the build inherits or overrides the native
+  `build-body` scope and includes every required stage in its `needs`. Whole-step
+  overrides preserve `gc.scope_ref`, `gc.scope_role`, and `gc.on_fail`; review
+  expansions propagate optional `failure_scope` through setup, logical checks,
+  and finalizers. Existing repair children and attempt limits remain unchanged,
+  and standalone expansions use an empty scope default. The owning checks are
+  `gascity/tests/test_build_failure_policy.py` and
+  `tests/test_build_failure_policy_live_gc.py`.
 - Import contract: `gstack/pack.toml` imports the Gas City pack as `gc` from
   `../gascity`, so the pack inherits the shared `gc.*` surface (base formulas,
   role agents, template fragments) instead of re-defining it.
@@ -69,7 +77,7 @@ for every derived pack.
   `same-session` path drains `gstack-work-item` in one shared single-lane
   session with `on_item_failure = "skip_remaining"`. Both preserve the
   build-base drain lifecycle, convoy identity, and per-item evidence.
-- Providerless routes: every step in the pack's formulas routes via
+- Providerless routes: every runnable step in the pack's formulas routes via
   `gc.run_target` to a providerless pack-local agent (`gstack.*`, declared in
   `agents/*/agent.toml` with no provider pin), to the `gc.run-operator` or
   `gc.publisher` role, or to the caller-selected `{implementation_target}`
@@ -156,7 +164,7 @@ assert [s for s in child_order if s not in added] == \
     [s for s in base_order if s in child_order]
 assert set(child_order) - added == {
     'requirements', 'plan', 'plan-review', 'decompose',
-    'implement', 'implement-same-session', 'review', 'finalize', 'publish',
+    'implement', 'implement-same-session', 'review', 'finalize', 'publish', 'build-body',
 }
 assert set(base_order) - set(child_order) == {'prepare'}
 steps = {step['id']: step for step in child['steps']}

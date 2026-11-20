@@ -25,14 +25,14 @@ default = "gc.build.code_review_report_path,gc.build.review_report_path,gc.var.r
 [[template]]
 id = "{target}.setup-gstack-code-review"
 title = "Prepare gstack code review"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-code-review/{target}.setup-gstack-code-review.md"
 
 [[template]]
 id = "{target}.gstack-code-review-loop"
 title = "Run gstack code review until approved"
 needs = ["{target}.setup-gstack-code-review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-code-review/{target}.gstack-code-review-loop.md"
 
 [template.check]
@@ -91,7 +91,7 @@ description_file = "../assets/workflows/gstack-code-review/{target}.apply-review
 id = "{target}"
 title = "Finalize gstack code review"
 needs = ["{target}.gstack-code-review-loop"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "{artifact_path_keys}", "gc.scope_ref" = "{failure_scope}", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/gstack-code-review/{target}.md"
 
 [template.check]
@@ -101,3 +101,7 @@ max_attempts = 3
 mode = "exec"
 path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
+
+[vars.failure_scope]
+description = "Optional enclosing native scope. Build entrypoints bind this to build-body; standalone use remains unscoped."
+default = ""

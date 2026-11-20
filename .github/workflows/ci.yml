@@ -63,6 +63,7 @@ jobs:
           done
           GC_TEST_BIN="$GC_BIN" python3 -m pytest oversight-rig/tests/test_order_scopes.py -q
           GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_gc_role_prompt_integration.py tests/test_pack_composition_warnings.py -q
+          GC_TEST_BIN="$GC_BIN" python3 -m pytest tests/test_build_failure_policy_live_gc.py -q
 
       # Installed, not parsed. `gc lint` above reads each pack on its own and
       # the per-pack suites read their own TOML; neither can say what gc does

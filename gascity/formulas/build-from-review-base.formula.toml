@@ -90,14 +90,14 @@ default = "false"
 [[steps]]
 id = "prepare-review"
 title = "Validate review continuation inputs"
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-review-base/prepare-review.md"
 
 [[steps]]
 id = "review"
 title = "Review continuation implementation"
 needs = ["prepare-review"]
-metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-review-base/review.md"
 
 [steps.check]
@@ -112,14 +112,14 @@ timeout = "5m"
 id = "repair-review"
 title = "Repair or block continuation review findings"
 needs = ["review"]
-metadata = { "gc.run_target" = "gc.run-operator" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-review-base/repair-review.md"
 
 [[steps]]
 id = "finalize"
 title = "Finalize continuation result"
 needs = ["repair-review"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-review-base/finalize.md"
 
 [steps.check]
@@ -134,5 +134,12 @@ timeout = "5m"
 id = "publish"
 title = "Optionally publish continuation result"
 needs = ["finalize"]
-metadata = { "gc.run_target" = "gc.publisher" }
+metadata = { "gc.run_target" = "gc.publisher", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/build-from-review-base/publish.md"
+
+[[steps]]
+id = "build-body"
+title = "Build pipeline scope"
+needs = ["prepare-review", "review", "repair-review", "finalize", "publish"]
+description_file = "../assets/workflows/build-from-review-base/build-body.md"
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "build", "gc.scope_role" = "body" }

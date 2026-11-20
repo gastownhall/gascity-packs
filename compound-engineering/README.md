@@ -121,6 +121,13 @@ reordered.
 | `finalize` | Expands `compound-resolution`: `inventory-artifacts -> review-resolution` (`ce-pr-comment-resolver`) `-> synthesize-resolution` (`ce-compound` learnings distillation). |
 | `publish` | Inherited from `build-base`; gated by `push` and `open_pr`. |
 
+All required build stages belong to the native
+`build-body` scope. A terminal stage failure stops the remaining build after the
+stage's existing repair attempts are exhausted. `finalize` and `publish` are
+required stages, not failure cleanup. Review expansions receive the enclosing
+scope from build callers and remain unscoped when used standalone; see the
+[base failure policy](../gascity/README.md#required-stage-failure-policy).
+
 Supported postures, declared in `[metadata.gc.methodology]`:
 
 - `interaction_modes`: `interactive`, `autonomous`, `headless`

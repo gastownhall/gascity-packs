@@ -54,7 +54,7 @@ default = "compound-fix-loop"
 id = "requirements"
 title = "Compound brainstorm requirements"
 needs = ["prepare"]
-metadata = { "gc.run_target" = "compound-engineering.ce-brainstorm", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
+metadata = { "gc.run_target" = "compound-engineering.ce-brainstorm", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-build/requirements.md"
 
 [steps.check]
@@ -69,7 +69,7 @@ timeout = "5m"
 id = "plan"
 title = "Compound plan"
 needs = ["requirements"]
-metadata = { "gc.run_target" = "compound-engineering.ce-plan", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path" }
+metadata = { "gc.run_target" = "compound-engineering.ce-plan", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-build/plan.md"
 
 [steps.check]
@@ -84,8 +84,9 @@ timeout = "5m"
 id = "plan-review"
 title = "Compound plan review"
 needs = ["plan"]
-metadata = { "gc.run_target" = "compound-engineering.ce-plan-review-synthesizer" }
+metadata = { "gc.run_target" = "compound-engineering.ce-plan-review-synthesizer", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "compound-plan-review"
+expand_vars = { failure_scope = "build-body" }
 description_file = "../assets/workflows/compound-build/plan-review.md"
 
 [[steps]]
@@ -93,7 +94,7 @@ id = "implement"
 title = "Drain Compound Engineering work"
 needs = ["decompose"]
 condition = "{{drain_policy}} == separate"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-build/implement.md"
 
 [steps.drain]
@@ -106,7 +107,7 @@ id = "implement-same-session"
 title = "Drain Compound Engineering work in one shared session"
 needs = ["decompose"]
 condition = "{{drain_policy}} == same-session"
-metadata = { "gc.run_target" = "{{implementation_target}}" }
+metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/compound-build/implement-same-session.md"
 
 [steps.drain]
@@ -122,15 +123,16 @@ single_lane = true
 id = "review"
 title = "Compound code review"
 needs = ["summarize-implementation"]
-metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path" }
+metadata = { "gc.run_target" = "compound-engineering.ce-code-review-synthesizer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "compound-code-review"
-expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path" }
+expand_vars = { implementation_target = "{{implementation_target}}", review_mode = "{{review_mode}}", artifact_path_keys = "gc.build.review_report_path", failure_scope = "build-body" }
 description_file = "../assets/workflows/compound-build/review.md"
 
 [[steps]]
 id = "finalize"
 title = "Compound finalization"
 needs = ["review"]
-metadata = { "gc.run_target" = "compound-engineering.ce-compound", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path" }
+metadata = { "gc.run_target" = "compound-engineering.ce-compound", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.scope_ref" = "build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 expand = "compound-resolution"
+expand_vars = { failure_scope = "build-body" }
 description_file = "../assets/workflows/compound-build/finalize.md"
