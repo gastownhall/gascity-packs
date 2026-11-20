@@ -335,11 +335,12 @@ remote_branch_matches() {
     return "$branch_rc"
 }
 
-# Verified-PR source evidence. The exact polecat/<bead> branch is preferred.
-# GitHub's "automatically delete head branches" removes it on merge, and
-# GitHub retains the PR head immutably at refs/pull/<n>/head, so only when the
-# branch is ABSENT may that ref stand in for it, and only at the exact
-# validated head SHA. Return codes match remote_branch_matches.
+# PR source evidence. The exact polecat/<bead> branch is preferred. GitHub's
+# "automatically delete head branches" removes it on merge AND on a redundant
+# close, and GitHub retains the PR head immutably at refs/pull/<n>/head, so
+# only when the branch is ABSENT may that ref stand in for it, and only at
+# the exact validated SHA. Shared by mr_merged and merged/already_merged
+# handoffs. Return codes match remote_branch_matches.
 remote_pr_source_matches() {
     pr_branch=$1
     pr_sha=$2
@@ -416,16 +417,16 @@ case "$HANDOFF_RESULT" in
             echo "ARTIFACT_CLEANUP_BLOCKED incomplete direct-merge evidence for $WORK" >&2
             exit 1
         fi
-        if remote_branch_matches "$BRANCH" "$EXPECTED_ARTIFACT_SHA"; then
+        if remote_pr_source_matches "$BRANCH" "$EXPECTED_ARTIFACT_SHA" "$PR_NUMBER"; then
             :
         else
             REMOTE_STATUS=$?
             if [ "$REMOTE_STATUS" -eq 1 ]; then
                 record_cleanup_state pending || true
-                echo "ARTIFACT_CLEANUP_BLOCKED could not read origin/$BRANCH for $WORK; cleanup remains pending" >&2
+                echo "ARTIFACT_CLEANUP_BLOCKED could not read origin/$BRANCH or its PR head ref for $WORK; cleanup remains pending" >&2
             else
                 record_cleanup_state blocked || true
-                echo "ARTIFACT_CLEANUP_BLOCKED origin/$BRANCH does not retain the artifact source for $WORK" >&2
+                echo "ARTIFACT_CLEANUP_BLOCKED origin/$BRANCH (or its PR head ref) does not retain the artifact source for $WORK" >&2
             fi
             exit 1
         fi
