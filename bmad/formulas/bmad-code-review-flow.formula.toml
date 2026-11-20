@@ -64,7 +64,7 @@ description_file = "../assets/workflows/bmad-code-review-flow/{target}.acceptanc
 [[template.children]]
 id = "{target}.gap-analysis-review"
 title = "BMAD review: gap analysis"
-metadata = { "gc.run_target" = "bmad.story-self-checker" }
+metadata = { "gc.run_target" = "bmad.acceptance-auditor" }
 description_file = "../assets/workflows/bmad-code-review-flow/{target}.gap-analysis-review.md"
 
 [[template.children]]
