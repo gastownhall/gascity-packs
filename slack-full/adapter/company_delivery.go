@@ -1222,6 +1222,7 @@ func (g *companyGateway) ensureTargets(r *IngressReceipt, room *CompanyRoom, wak
 	}
 	for _, wt := range wakes {
 		var session, targetCity string
+		viaOverlay := false
 		binding, bound := bindings.BindingFor(room.Name, wt.Agent.Name)
 		if bound {
 			// Existing room bindings win when present, even for an overlay agent.
@@ -1232,7 +1233,7 @@ func (g *companyGateway) ensureTargets(r *IngressReceipt, room *CompanyRoom, wak
 			// canonical per-agent session via dm_bindings — the singleton session
 			// the agent already runs — carrying that binding's city.
 			if db, ok := g.dmBindStore.Snapshot().BindingFor(wt.Agent.Name); ok {
-				session, targetCity, bound = db.Session, db.City, true
+				session, targetCity, bound, viaOverlay = db.Session, db.City, true, true
 			}
 		}
 		if !bound {
@@ -1270,6 +1271,9 @@ func (g *companyGateway) ensureTargets(r *IngressReceipt, room *CompanyRoom, wak
 			UpdatedAt:      now,
 			Agent:          wt.Agent.Name,
 			DelegationKey:  wt.DelegationKey,
+			// Set only when the session came from the overlay's dm_bindings
+			// fallback; a room binding wins and leaves the turn an ordinary one.
+			RosterDriftOverlay: viaOverlay,
 		}
 	}
 }
