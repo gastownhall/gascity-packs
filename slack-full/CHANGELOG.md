@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A 5xx or transport error on the inbound POST no longer drops the
+  message.** When `POST /v0/city/{city}/extmsg/inbound` failed, the legacy
+  path logged `inbound POST failed` and dropped the Slack message. A 5xx
+  there can arrive after gc already stored the transcript entry, so the
+  message was lost and nobody was woken. The adapter now retries a 5xx or a
+  transport error with jittered exponential backoff (5 attempts, delays of
+  about 1, 2, 4 and 8 s, 60 s budget that also bounds each attempt). A 4xx
+  is not retried. Every attempt sends the same body, so gc's dedup on
+  `provider_message_id` keeps one transcript entry and one wake. Each retry
+  is logged, and so is a final `inbound POST giving up: msg=<channel>/<ts>`.
+
 - **A HOME-less rebuild no longer uses a shared, guessable build cache.**
   When HOME, XDG_CACHE_HOME and GOCACHE are unset, `adapter/run.sh` used to
   build with `$TMPDIR/gc-slack-adapter-gocache` and

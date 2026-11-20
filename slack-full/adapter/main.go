@@ -517,6 +517,10 @@ type config struct {
 	// every inbound then flows through the legacy path byte-for-byte.
 	// Wired in main() before any handler closes over the cfg value.
 	companyGateway *companyGateway
+	// inboundRetry bounds postInbound's retry of a 5xx or transport error
+	// (inbound_retry.go). The zero value is defaultInboundRetry; tests set
+	// it to inject a recording sleep.
+	inboundRetry inboundRetryPolicy
 }
 
 func loadConfig() (config, error) {
@@ -2867,7 +2871,7 @@ func processSlackEvent(cfg config, aliasReg *handleAliasRegistry, threadReg *thr
 		ReceivedAt:       time.Now().UTC(),
 	}
 	if err := postInbound(cfg, inbound); err != nil {
-		log.Printf("inbound POST failed: %v", err)
+		log.Printf("inbound POST failed: chan=%s ts=%s: %v", msg.Channel, msg.TS, err)
 		return
 	}
 	log.Printf("inbound: chan=%s user=%s ts=%s thread=%s target=%q files=%d text=%dch",
@@ -4336,26 +4340,34 @@ func handleIdentityDelete(reg *identityRegistry) http.HandlerFunc {
 	}
 }
 
+// postInbound POSTs msg to gc's extmsg inbound endpoint. A 5xx or a
+// transport error is retried under cfg.inboundRetry (inbound_retry.go);
+// every attempt sends the same body, so gc's dedup on provider_message_id
+// keeps a retried message to one transcript entry.
 func postInbound(cfg config, msg externalInboundMessage) error {
 	body, _ := json.Marshal(map[string]any{
 		"message": msg,
 	})
 	// PathEscape cityName for the same reason as registerAdapter (gc-cby.28).
 	target := fmt.Sprintf("%s/v0/city/%s/extmsg/inbound", cfg.gcAPIBase, url.PathEscape(cfg.cityName))
-	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GC-Request", "gc-slack-adapter")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: %s", resp.Status, string(respBody))
-	}
-	return nil
+	msgID := msg.Conversation.ConversationID + "/" + msg.ProviderMessageID
+	return postInboundWithRetry(cfg.inboundRetry, msgID, func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-GC-Request", "gc-slack-adapter")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			respBody, _ := io.ReadAll(resp.Body)
+			return &inboundStatusError{status: resp.Status, code: resp.StatusCode, body: string(respBody)}
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	})
 }
