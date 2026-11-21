@@ -42,6 +42,12 @@ A formatted markdown digest covering:
 
 The digest is mailed to the mayor and archived as a digest bead.
 
+When the city health probe's human-queue check (gc.human_queue.v1) is
+present, the digest also renders a **Human Queue** section: per-rig depth,
+oldest age and 30-day drain rate of human-attention decision beads, plus
+open regulated (GDPR/MDR/PHI/HDS/DPA/DPO) Class B items. Unreadable stores
+render as "unreadable", never as zeros.
+
 Read each step's description before acting — Config values override defaults."""
 formula = "mol-digest-generate"
 phase = "vapor"
@@ -129,6 +135,38 @@ c) **Warrants filed:**
 gc bd list --label=warrant --created-after=$SINCE --json
 ```
 
+d) **Human Queue stock snapshot** (stock, not flow — per-store depth/age/
+drain-rate of human-attention decision beads, measured continuously by the
+city health probe, not by this digest):
+
+```bash
+cat "${GC_CITY:-$PWD}/.gc/runtime/health.json" \
+  | jq '.probes["human-queue"]'
+```
+
+The envelope shape (gc.human_queue.v1): `stores[]` carries per store
+`store`, `status` ("ok" or "unknown"), `class_a_open`, `class_b_open`,
+`class_b_oldest_age_d`, `class_b_filed_30d`, `class_b_closed_30d`,
+`class_b_drain_rate`; a city-level `regulated_class_b[]` lists open
+regulated (GDPR/MDR/PHI/HDS/DPA/DPO) Class B items with their age.
+
+FAIL-CLOSED RULES — these are what make the section trustworthy:
+
+- A store with `status == "unknown"` is UNREADABLE, not empty. Render it
+  as "unreadable" in the digest. NEVER render a missing/None count as 0 —
+  "all clear" over a set that was never examined is the exact failure mode
+  this probe exists to prevent.
+- Class A ("Decide: Merge PR #N" tacit-consent gates) is context only.
+  Its consumer is machine gate-sweep; report its depth but do NOT ask the
+  human to act on it — a stale Class A is an infra bug, not human work.
+- If the file is missing, or `.probes["human-queue"]` is absent/null
+  (probe not deployed in this city, or older than the human-queue check),
+  SKIP the Human Queue section entirely — write a one-line note
+  "(human-queue probe not present this cycle)" instead of an empty or
+  zeroed table. Do NOT re-derive the classification from `gc bd list`:
+  the deterministic probe owns that logic and duplicating it here is how
+  the two drift.
+
 Continue to digest generation when all data is collected."""
 
 [[steps]]
@@ -159,6 +197,22 @@ Transform data into a formatted digest and deliver it.
 ## Agent Health
 - Agents started/stopped/crashed: N/N/N
 - Warrants filed: N (pardoned: X, executed: Y)
+
+## Human Queue
+(human attention STOCK, from the health probe's gc.human_queue.v1 envelope —
+omit this whole section with a one-line note if the probe was absent this
+cycle; see the fail-closed rules in the collect-data step)
+
+| Rig | Class A | Class B | Oldest B (d) | 30d filed/closed | Drain |
+|-----|---------|---------|--------------|------------------|-------|
+| ... | ...     | ...     | ...          | ...              | ...   |
+
+- Unreadable stores (status "unknown"): list them by name — never as zeros.
+- Stalled queues (Class B > 0, drain ~0): call out by name at the top.
+- Regulated open Class B items (GDPR/MDR/PHI/HDS/DPA/DPO): `<id> (<store>,
+  <age>d)`. These are the items that legally cannot be resolved by a timer.
+- Class A depth is FYI only (machine gate-sweep owns it); a Class A backlog
+  is an infra bug to report, not human work to request.
 
 ## Trends
 - Backlog: increasing / stable / decreasing
