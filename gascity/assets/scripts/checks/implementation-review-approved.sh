@@ -83,7 +83,11 @@ is_approved() {
   candidate="$(printf '%s' "${1-}" | tr '[:upper:]' '[:lower:]')"
   [ -n "$candidate" ] || return 1
   for known in "${APPROVAL_VERDICTS[@]}"; do
-    if [ "$candidate" = "${known,,}" ]; then
+    # `tr`, not `${known,,}`: the gate PATH on macOS is /bin/bash 3.2, where
+    # that expansion is a fatal "bad substitution" -- and bash exits 0 on it,
+    # so the gate APPROVED every bead, a non-approving verdict included.
+    known="$(printf '%s' "$known" | tr '[:upper:]' '[:lower:]')"
+    if [ "$candidate" = "$known" ]; then
       return 0
     fi
   done
