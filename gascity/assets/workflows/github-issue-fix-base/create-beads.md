@@ -53,6 +53,23 @@ convoy. This is not a timeout-driven task.
    close this bead. A resumed worker must read the gate metadata and continue
    waiting from this gate.
 
+Before creating beads, check that the plan is the one that was approved (#9451,
+gascity-packs #666). Compare the sha256 of the implementation plan file with
+`gc.github.implementation_plan_approved_sha` on the root metadata:
+
+```bash
+expected="$(gc bd show "$WORKFLOW_ROOT_ID" --json | jq -r '.[0].metadata["gc.github.implementation_plan_approved_sha"] // empty')"
+actual="$(sha256sum "$GC_PLAN_PATH" | cut -d' ' -f1)"
+if [ "$expected" != "$actual" ]; then
+  echo "approved plan sha $expected does not match current plan sha $actual; the plan changed after approval. Recovery: set gc.github.implementation_plan_gate=revision_requested, get a new approval, then rerun create-beads." >&2
+  exit 1
+fi
+```
+
+On a mismatch, leave this bead and the downstream steps open. Do not close the
+root. Mail the human the two shas and the recovery command, so a re-gate can
+resume the run.
+
 Use `gc.github.create_beads_gate=approved` only after explicit human approval,
 then create the task beads and implementation convoy. Use `revision_requested`
 when `tasks.md` must be revised before bead creation. Close fail only for
