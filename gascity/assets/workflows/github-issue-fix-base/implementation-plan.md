@@ -59,6 +59,18 @@ writing the implementation plan artifact. This is not a timeout-driven task.
    close this bead. A resumed worker must read the gate metadata and continue
    waiting from this gate.
 
+Freeze the plan before approval (#9451, gascity-packs #666). All plan edits
+happen before the human gate. Once the human approves, record the sha256 of the
+approved plan file in the root metadata before anything else:
+
+```bash
+gc bd update "$WORKFLOW_ROOT_ID" --set-metadata \
+  "gc.github.implementation_plan_approved_sha=$(sha256sum "$GC_PLAN_PATH" | cut -d' ' -f1)"
+```
+
+The plan must not change after approval. A later edit requires
+`revision_requested`, which reopens this gate and records a new approval.
+
 Use `gc.github.implementation_plan_gate=approved` only after explicit human
 approval. Use `revision_requested` when the plan must be revised before
 downstream design review. Close fail only for explicit rejection or abort, not
