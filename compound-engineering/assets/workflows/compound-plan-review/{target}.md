@@ -9,14 +9,18 @@ with `gc.build.plan_review_status=approved` and
 `gc.outcome=pass`.
 
 Plan artifact validation: this step is gated by
-`.gc/scripts/checks/build-artifact-valid.sh`, which validates the plan
+the pack-owned `build-artifact-valid.sh` check, which validates the plan
 recorded at workflow root metadata `gc.build.plan_path` (fallback
 `gc.var.plan_path`) against schema `gc.build.plan.v1`. Plan-review fix lanes
 edit the plan in place, so re-validate it here before closing:
 
 - From `$GC_RIG_ROOT`, run the artifact validator with the claimed bead id and
   fix any error before setting `gc.outcome=pass`:
-  `GC_BEAD_ID=<claimed-step-id> .gc/scripts/checks/build-artifact-valid.sh`.
+  `GC_BEAD_ID=<claimed-step-id> "<gc.check_path>"`, where `<gc.check_path>` is the
+  script recorded as `gc.check_path` on this step's validation loop control bead
+  (the dependent of this step bead whose `gc.kind` is `ralph`). Gas City resolves
+  it to the gascity pack's own `build-artifact-valid.sh` asset, so nothing has to
+  be copied into the rig.
 - Repair the plan in place and keep its YAML front matter intact. Its
   front-matter `status` must be one of `draft`, `questions`, `approved`,
   `changes_required`, `blocked`, or `superseded`. Replace any other value
